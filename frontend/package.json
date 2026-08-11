@@ -14,6 +14,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@xyflow/react": "^12.11.2",
     "lucide-react": "^1.31.0",
+    "pyodide": "^314.0.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-resizable-panels": "^4.12.2"

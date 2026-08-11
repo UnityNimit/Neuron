@@ -15,6 +15,8 @@ export default function App() {
   const [isGraphLoaded, setIsGraphLoaded] = useState(false);
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState("");
+  const [pyodideInstance, setPyodideInstance] = useState(null);
+  const [isCompilerReady, setIsCompilerReady] = useState(false);
   
   // --- NEW: Standard Input State for Codeforces ---
   const [stdin, setStdin] = useState("");
@@ -42,6 +44,40 @@ export default function App() {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ event: 'CODE_EDIT', node_id: nodeId, new_code: newCode }));
     }
+  }, []);
+
+  // --- FIXED: Initialize the Browser-Native Python Engine (Pyodide via CDN) ---
+  useEffect(() => {
+    async function initPyodide() {
+      try {
+        console.log("Downloading WebAssembly Python Engine...");
+        
+        // Dynamically inject the Pyodide script into the browser
+        const script = document.createElement('script');
+        script.src = "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js";
+        script.async = true;
+        document.body.appendChild(script);
+
+        // Wait for the script to load, then initialize Python!
+        script.onload = async () => {
+          const pyodide = await window.loadPyodide({
+            indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/",
+            stdout: (msg) => {
+              setTerminalLogs(prev => [...prev, { text: msg, isError: false }]);
+            },
+            stderr: (msg) => {
+              setTerminalLogs(prev => [...prev, { text: msg, isError: true }]);
+            }
+          });
+          setPyodideInstance(pyodide);
+          setIsCompilerReady(true);
+          console.log("✅ Pyodide is locked and loaded!");
+        };
+      } catch (err) {
+        console.error("Pyodide failed to load:", err);
+      }
+    }
+    initPyodide();
   }, []);
 
   useEffect(() => {
@@ -148,12 +184,12 @@ export default function App() {
     }
   };
 
-  if (!isGraphLoaded) {
+  if (!isGraphLoaded || !isCompilerReady) {
     return (
       <div className="w-screen h-screen bg-[#0f0f0f] flex flex-col items-center justify-center font-sans">
         <img src="/logo.png" alt="Neuron Logo" className="w-24 h-24 mb-6 animate-pulse drop-shadow-[0_0_20px_rgba(59,130,246,0.6)]" />
         <h1 className="text-white font-bold tracking-[0.2em] text-2xl mb-2 flex items-center gap-2">NEURON</h1>
-        <p className="text-slate-500 text-xs tracking-widest uppercase mb-10">Initializing AI Engine & UMAP Layout...</p>
+        <p className="text-slate-500 text-xs tracking-widest uppercase mb-10">Welcome</p>
         <div className="w-64 h-1 bg-slate-800 rounded-full overflow-hidden">
           <div className="h-full bg-blue-500 w-full animate-pulse rounded-full"></div>
         </div>

@@ -133,31 +133,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     impacted_nodes = [node_id]
                 await websocket.send_json({"event": "BLAST_RADIUS", "payload": impacted_nodes})
 
-            elif event_type == "RUN_CODE":
-                print(f"🚀 Compiling and running {app_state['active_file']}...")
-                file_to_run = os.path.join(TARGET_DIR, app_state["active_file"])
-                stdin_data = message.get("stdin", "") # <--- NEW: Read Input from UI
-                
-                await websocket.send_json({"event": "TERMINAL_OUTPUT", "payload": f">>> Executing {app_state['active_file']}...\n"})
-                
-                def execute_code():
-                    custom_env = os.environ.copy()
-                    custom_env["PYTHONIOENCODING"] = "utf-8"
-                    return subprocess.run(
-                        [sys.executable, file_to_run],
-                        cwd=TARGET_DIR, capture_output=True, text=True, encoding="utf-8", env=custom_env, timeout=15.0,
-                        input=stdin_data # <--- NEW: Feeds right into standard input!
-                    )
-                
-                try:
-                    result = await asyncio.to_thread(execute_code)
-                    if result.stdout: await websocket.send_json({"event": "TERMINAL_OUTPUT", "payload": result.stdout})
-                    if result.stderr: await websocket.send_json({"event": "TERMINAL_ERROR", "payload": result.stderr})
-                    await websocket.send_json({"event": "TERMINAL_OUTPUT", "payload": f"\n>>> Process finished with exit code {result.returncode}\n"})
-                except subprocess.TimeoutExpired:
-                    await websocket.send_json({"event": "TERMINAL_ERROR", "payload": "\n❌ ERROR: Execution Timed Out.\n"})
-                except Exception as e:
-                    await websocket.send_json({"event": "TERMINAL_ERROR", "payload": f"\n❌ System Error: {repr(e)}\n"})
+            
                     
     except WebSocketDisconnect:
         active_connections.remove(websocket)
