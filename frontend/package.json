@@ -15,7 +15,8 @@
     "@xyflow/react": "^12.11.2",
     "lucide-react": "^1.31.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-resizable-panels": "^4.12.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
