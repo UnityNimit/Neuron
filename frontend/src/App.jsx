@@ -5,22 +5,26 @@ import '@xyflow/react/dist/style.css';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { FileCode2, TerminalSquare, TextCursorInput } from 'lucide-react';
 
-// Views (Components)
+// Views
 import CodeNode from './components/CodeNode';
 import TopBar from './components/layout/TopBar';
 import ActivityBar from './components/layout/ActivityBar';
 import Sidebar from './components/layout/Sidebar';
+import SettingsModal from './components/layout/SettingsModal';
 
 // Controllers & Services
 import { useWorkspace } from './hooks/useWorkspace';
 import { loadPyodideEngine } from './services/pyodideService';
+import { useSettings } from './hooks/useSettings';
 
 const nodeTypes = { codeNode: CodeNode };
 
 export default function App() {
   const workspace = useWorkspace();
+  const { settings, updateSetting } = useSettings(); // Load our settings controller
   
   const [layout, setLayout] = useState({ sidebar: true, terminal: true, stdin: true });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // Modal state
   const [stdin, setStdin] = useState("");
   const [isCompilerReady, setIsCompilerReady] = useState(false);
   const terminalEndRef = React.useRef(null);
@@ -58,14 +62,17 @@ export default function App() {
   
   useEffect(() => { if (escPressed) workspace.setBlastRadius(null); }, [escPressed]);
 
+  // INJECT SETTINGS INTO NODES
   const displayNodes = useMemo(() => {
-    if (!workspace.blastRadius) return workspace.nodes;
+    if (!workspace.blastRadius) {
+      return workspace.nodes.map(node => ({ ...node, data: { ...node.data, settings } }));
+    }
     return workspace.nodes.map(node => ({
       ...node,
       style: { ...node.style, opacity: workspace.blastRadius.includes(node.id) ? 1 : 0.2, transition: 'all 0.4s ease' },
-      data: { ...node.data, isImpacted: workspace.blastRadius.includes(node.id) }
+      data: { ...node.data, isImpacted: workspace.blastRadius.includes(node.id), settings }
     }));
-  }, [workspace.nodes, workspace.blastRadius]);
+  }, [workspace.nodes, workspace.blastRadius, settings]);
 
   const handleRunCode = () => workspace.wsRef.current?.readyState === WebSocket.OPEN && workspace.wsRef.current.send(JSON.stringify({ event: 'RUN_CODE', stdin }));
   const handleSwitchFile = (filename) => { if (filename !== workspace.currentFile) { workspace.setIsGraphLoaded(false); workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); }};
@@ -82,34 +89,38 @@ export default function App() {
     );
   }
 
-  // YOUR FIX: Balance the math so the total is exactly 1000 weight!
   const centerHorizontalSize = 1000 - (layout.sidebar ? 200 : 0) - (layout.stdin ? 200 : 0);
   const centerVerticalSize = 1000 - (layout.terminal ? 200 : 0);
 
   return (
     <div className="w-screen h-screen bg-[#0f0f0f] flex flex-col font-sans text-slate-300 overflow-hidden">
+      
+      {/* THE SETTINGS MODAL */}
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        settings={settings} 
+        updateSetting={updateSetting} 
+      />
+
       <TopBar onRun={handleRunCode} layout={layout} setLayout={setLayout} />
       
       <div className="flex flex-row flex-grow overflow-hidden">
-        <ActivityBar layout={layout} setLayout={setLayout} />
+        {/* Pass the toggle function to the Activity Bar */}
+        <ActivityBar layout={layout} setLayout={setLayout} onOpenSettings={() => setIsSettingsOpen(true)} />
         
-        {/* CHANGED autoSaveId to v3 to wipe out the broken cached max-sizes! */}
         <Group orientation="horizontal" className="flex-grow overflow-hidden" autoSaveId="neuron-layout-v3">
-          
           {layout.sidebar && (
             <>
-              {/* YOUR SETTINGS PRESERVED */}
               <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]">
                 <Sidebar files={workspace.files} currentFile={workspace.currentFile} onSwitchFile={handleSwitchFile} onCreateFile={handleCreateFile} onDeleteFile={handleDeleteFile} />
               </Panel>
-              
               <Separator className="w-2 bg-transparent hover:bg-blue-500 transition-colors cursor-col-resize relative flex items-center justify-center z-50">
                 <div className="w-[1px] h-full bg-[#2b2d31]" />
               </Separator>
             </>
           )}
           
-          {/* Automatically balances your large numbers */}
           <Panel id="main-canvas" order={2} defaultSize={centerHorizontalSize} minSize={200} className="flex flex-col bg-[#0f0f0f]">
             <Group orientation="vertical" autoSaveId="neuron-vertical-v3">
               <Panel id="canvas-area" order={1} defaultSize={centerVerticalSize} minSize={200} className="flex flex-col relative">
@@ -129,9 +140,7 @@ export default function App() {
                   <Separator className="h-2 bg-transparent hover:bg-blue-500 transition-colors cursor-row-resize relative flex items-center justify-center z-50">
                     <div className="h-[1px] w-full bg-[#2b2d31]" />
                   </Separator>
-                  
-                  {/* YOUR SETTINGS PRESERVED */}
-                  <Panel id="terminal-area" order={2} defaultSize={250} minSize={15} maxSize={300} className="bg-[#181818] flex flex-col font-mono text-sm min-h-[150px]">
+                  <Panel id="terminal-area" order={2} defaultSize={200} minSize={15} maxSize={300} className="bg-[#181818] flex flex-col font-mono text-sm min-h-[150px]">
                     <div className="h-8 shrink-0 bg-[#1e1e1e] border-b border-[#2b2d31] flex items-center px-4 gap-2 text-slate-400 text-xs">
                       <TerminalSquare size={14} /> TERMINAL
                     </div>
@@ -154,8 +163,6 @@ export default function App() {
               <Separator className="w-2 bg-transparent hover:bg-blue-500 transition-colors cursor-col-resize relative flex items-center justify-center z-50">
                 <div className="w-[1px] h-full bg-[#2b2d31]" />
               </Separator>
-              
-              {/* Using your logic for the Input panel as well */}
               <Panel id="stdin-panel" order={3} defaultSize={200} minSize={100} maxSize={500} className="bg-[#181818] flex flex-col">
                 <div className="h-9 shrink-0 bg-[#1e1e1e] flex items-center px-4 border-b border-[#2b2d31] gap-2 text-slate-400 text-xs uppercase tracking-widest font-semibold">
                   <TextCursorInput size={14} /> Input
