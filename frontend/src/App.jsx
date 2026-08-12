@@ -111,7 +111,8 @@ export default function App() {
   const centerHorizontalSize = 1000 - (layout.sidebar ? 200 : 0) - (layout.stdin ? 200 : 0);
   const centerVerticalSize = 1000 - (layout.terminal ? 200 : 0);
   const activeCodeStr = workspace.nodes.map(n => n.data.code || "").join("\n");
-
+  const lineCount = activeCodeStr ? activeCodeStr.split("\n").length : 0;
+  const wordCount = activeCodeStr.trim() ? activeCodeStr.trim().split(/\s+/).length : 0;
   return (
     <div className="w-screen h-screen bg-[#0f0f0f] flex flex-col font-sans text-slate-300 overflow-hidden">
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSetting={updateSetting} />
