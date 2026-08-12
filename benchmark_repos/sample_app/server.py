@@ -1,5 +1,11 @@
-def solve():
-    print('Hello Neuron!')
-
-if __name__ == '__main__':
-    solve()
+print(1)
+
+
+
+def solve():
+    p
+
+
+def nimit():
+
+    
