@@ -1,41 +1,53 @@
 // src/hooks/useDebouncedEditor.js
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-export function useDebouncedEditor({ id, initialCode, onCodeEdit }) {
+export function useDebouncedEditor({ id, initialCode, onCodeEdit, filePath }) {
   const [localCode, setLocalCode] = useState(initialCode);
   const isFocusedRef = useRef(false);
   const timerRef = useRef(null);
+  const initialCodeRef = useRef(initialCode);
 
-  // The Shield: Only update local code if we are NOT focused!
   useEffect(() => {
+    initialCodeRef.current = initialCode;
     if (!isFocusedRef.current) {
       setLocalCode(initialCode);
     }
   }, [initialCode]);
 
-  // Hook directly into Monaco's native engine to lock the state
+  // FIX: Unmount Cleanup! Kills pending save timers when switching files
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleEditorMount = useCallback((editor) => {
     editor.onDidFocusEditorWidget(() => {
       isFocusedRef.current = true;
     });
     editor.onDidBlurEditorWidget(() => {
       isFocusedRef.current = false;
-      // Force a strict save when clicking away, just in case!
-      if (onCodeEdit) onCodeEdit(id, editor.getValue());
     });
-  }, [id, onCodeEdit]);
+  }, []);
 
   const handleEditorChange = useCallback((value) => {
-    setLocalCode(value); // Instantly update UI so typing is 100% smooth
-    
+    if (value === undefined) return;
+    setLocalCode(value);
+
     if (timerRef.current) clearTimeout(timerRef.current);
-    
-    // Tell backend to save to disk 800ms after you stop typing
+
     timerRef.current = setTimeout(() => {
-      if (onCodeEdit) onCodeEdit(id, value);
+      // FIX: Only save if the code actually changed from initial
+      if (onCodeEdit && value !== initialCodeRef.current) {
+        onCodeEdit(id, value, filePath);
+        initialCodeRef.current = value;
+      }
       timerRef.current = null;
     }, 800);
-  }, [id, onCodeEdit]);
+  }, [id, onCodeEdit, filePath]);
 
   return { localCode, handleEditorMount, handleEditorChange };
 }

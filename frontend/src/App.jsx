@@ -3,19 +3,21 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { ReactFlow, Background, Controls, MiniMap, addEdge, useKeyPress } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Panel, Group, Separator } from 'react-resizable-panels';
-import { FileCode2, TerminalSquare, TextCursorInput } from 'lucide-react';
+import { FileCode2, TextCursorInput } from 'lucide-react';
 
-// Authentication
 import { supabase } from './supabaseClient';
 
-// Views (Components)
+// Views
 import CodeNode from './components/CodeNode';
 import TopBar from './components/layout/TopBar';
 import ActivityBar from './components/layout/ActivityBar';
 import Sidebar from './components/layout/Sidebar';
 import SettingsModal from './components/layout/SettingsModal';
+import NewItemModal from './components/layout/NewItemModal';
+import StatusBar from './components/layout/StatusBar';
+import TerminalPanel from './components/layout/TerminalPanel'; // NEW TERMINAL MANAGER
 
-// Controllers & Services
+// Controllers
 import { useWorkspace } from './hooks/useWorkspace';
 import { loadPyodideEngine } from './services/pyodideService';
 import { useSettings } from './hooks/useSettings';
@@ -23,43 +25,31 @@ import { useSettings } from './hooks/useSettings';
 const nodeTypes = { codeNode: CodeNode };
 
 export default function App() {
-  // --- 1. AUTHENTICATION STATE ---
   const [session, setSession] = useState(null);
-
-  // --- 2. CONTROLLER HOOKS ---
-  const workspace = useWorkspace();
+  const workspace = useWorkspace(session);
   const { settings, updateSetting } = useSettings();
   
-  // --- 3. UI LAYOUT STATES ---
   const [layout, setLayout] = useState({ sidebar: true, terminal: true, stdin: true });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isNewItemOpen, setIsNewItemOpen] = useState(false);
   const [stdin, setStdin] = useState("");
   const [isCompilerReady, setIsCompilerReady] = useState(false);
-  const terminalEndRef = React.useRef(null);
   
   const impactPressed = useKeyPress(['Alt+i', 'Alt+I']);
   const escPressed = useKeyPress('Escape');
 
-  // Supabase Auth Session Listener
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
     return () => subscription.unsubscribe();
   }, []);
 
-  // Initialize WebAssembly Pyodide Engine
   useEffect(() => {
     loadPyodideEngine(
       (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: false }]),
       (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: true }])
     ).then(() => setIsCompilerReady(true));
   }, []);
-
-  useEffect(() => { terminalEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [workspace.terminalLogs]);
 
   const handleNodesChange = useCallback((changes) => {
     workspace.onNodesChange(changes);
@@ -82,7 +72,6 @@ export default function App() {
   
   useEffect(() => { if (escPressed) workspace.setBlastRadius(null); }, [escPressed]);
 
-  // Inject user's custom settings into nodes
   const displayNodes = useMemo(() => {
     if (!workspace.blastRadius) {
       return workspace.nodes.map(node => ({ ...node, data: { ...node.data, settings } }));
@@ -94,36 +83,44 @@ export default function App() {
     }));
   }, [workspace.nodes, workspace.blastRadius, settings]);
 
-  const handleRunCode = async () => {
-    if (!isCompilerReady || !window.pyodide) {
-      workspace.setTerminalLogs([{ text: "❌ Python Engine is still loading...", isError: true }]);
-      return;
-    }
-
-    workspace.setTerminalLogs([{ text: `>>> Executing ${workspace.currentFile} in browser sandbox...`, isError: false }]);
-
-    const sortedNodes = [...workspace.nodes].sort((a, b) => a.position.y - b.position.y);
-    let fullCodeToExecute = sortedNodes.map(n => n.data.code).join("\n\n");
-
-    try {
-      window.pyodide.setStdin({
-        stdin: () => {
-          const lines = stdin.split('\n');
-          return lines.length > 0 ? lines.shift() : "";
-        }
-      });
-      await window.pyodide.runPythonAsync(fullCodeToExecute);
-      workspace.setTerminalLogs(prev => [...prev, { text: "\n>>> Process finished with exit code 0", isError: false }]);
-    } catch (error) {
-      workspace.setTerminalLogs(prev => [...prev, { text: `\n${error.message}`, isError: true }]);
+  const handleRunCode = () => {
+    workspace.setActiveSessionId('output'); // Auto-switch to Output tab on Run
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.wsRef.current.send(JSON.stringify({ event: 'RUN_CODE', stdin }));
     }
   };
 
-  const handleSwitchFile = (filename) => { if (filename !== workspace.currentFile) { workspace.setIsGraphLoaded(false); workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); }};
-  const handleCreateFile = () => { const filename = prompt("Enter new file name:"); if (filename) { workspace.setIsGraphLoaded(false); workspace.wsRef.current?.send(JSON.stringify({ event: 'CREATE_FILE', filename })); }};
-  const handleDeleteFile = (filename, e) => { e.stopPropagation(); if (window.confirm(`Delete ${filename}?`)) workspace.wsRef.current?.send(JSON.stringify({ event: 'DELETE_FILE', filename })); };
+  const handleSwitchFile = (filename) => { 
+    if (filename !== workspace.currentFile) { 
+      workspace.setIsGraphLoaded(false); 
+      workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); 
+    }
+  };
 
-  // --- 1. GOOGLE AUTH LOGIN SCREEN ---
+  const handleOpenFolder = () => {
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.wsRef.current.send(JSON.stringify({ event: 'OPEN_FOLDER_DIALOG' }));
+    }
+  };
+
+  const handleCreateItem = (itemName, itemType) => {
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.setIsGraphLoaded(false);
+      workspace.wsRef.current.send(JSON.stringify({ 
+        event: 'CREATE_ITEM', 
+        item_name: itemName, 
+        item_type: itemType 
+      }));
+    }
+  };
+
+  const handleDeleteFile = (filename, e) => { 
+    if (e) e.stopPropagation(); 
+    if (window.confirm(`Delete ${filename}?`)) {
+      workspace.wsRef.current?.send(JSON.stringify({ event: 'DELETE_FILE', filename })); 
+    }
+  };
+
   if (!session) {
     return (
       <div className="w-screen h-screen bg-[#0f0f0f] flex flex-col items-center justify-center font-sans relative overflow-hidden">
@@ -149,41 +146,26 @@ export default function App() {
     );
   }
 
-  // --- 2. DIAGNOSTIC LOADING SCREEN ---
   if (!workspace.isGraphLoaded || !isCompilerReady) {
     return (
       <div className="w-screen h-screen bg-[#0f0f0f] flex flex-col items-center justify-center font-sans">
         <img src="/logo.png" alt="Neuron Logo" className="w-24 h-24 mb-6 animate-pulse" />
         <h1 className="text-white font-bold tracking-[0.2em] text-2xl mb-2">NEURON</h1>
-        <p className="text-slate-500 text-xs tracking-widest uppercase mb-6">Initializing Systems...</p>
-
-        {/* REAL-TIME SYSTEM STATUS BOX */}
-        <div className="flex flex-col gap-3 text-xs font-mono bg-[#141414] p-5 rounded-xl border border-slate-800 min-w-[300px] shadow-2xl">
-          <div className="flex items-center justify-between">
-            <span className="text-slate-400">Python Backend (port 8000):</span>
-            <span className={workspace.isGraphLoaded ? "text-green-400 font-bold" : "text-yellow-500 animate-pulse"}>
-              {workspace.isGraphLoaded ? "✓ Ready" : "Connecting..."}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-slate-400">WASM Compiler (Pyodide):</span>
-            <span className={isCompilerReady ? "text-green-400 font-bold" : "text-yellow-500 animate-pulse"}>
-              {isCompilerReady ? "✓ Ready" : "Downloading..."}
-            </span>
-          </div>
-        </div>
+        <div className="w-64 h-1 bg-slate-800 rounded-full mt-8 overflow-hidden"><div className="h-full bg-blue-500 w-full animate-pulse rounded-full"></div></div>
       </div>
     );
   }
 
-  // --- 3. FULL IDE UI ---
   const centerHorizontalSize = 1000 - (layout.sidebar ? 200 : 0) - (layout.stdin ? 200 : 0);
   const centerVerticalSize = 1000 - (layout.terminal ? 200 : 0);
+
+  const activeCodeStr = workspace.nodes.map(n => n.data.code || "").join("\n");
+  const lineCount = activeCodeStr.split("\n").length;
+  const wordCount = activeCodeStr.trim() ? activeCodeStr.trim().split(/\s+/).length : 0;
 
   return (
     <div className="w-screen h-screen bg-[#0f0f0f] flex flex-col font-sans text-slate-300 overflow-hidden">
       
-      {/* Settings Modal */}
       <SettingsModal 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
@@ -191,7 +173,19 @@ export default function App() {
         updateSetting={updateSetting} 
       />
 
-      <TopBar onRun={handleRunCode} layout={layout} setLayout={setLayout} />
+      <NewItemModal
+        isOpen={isNewItemOpen}
+        onClose={() => setIsNewItemOpen(false)}
+        onCreate={handleCreateItem}
+      />
+
+      <TopBar 
+        onRun={handleRunCode} 
+        onOpenFolder={handleOpenFolder} 
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        layout={layout} 
+        setLayout={setLayout} 
+      />
       
       <div className="flex flex-row flex-grow overflow-hidden">
         <ActivityBar 
@@ -205,9 +199,32 @@ export default function App() {
           
           {layout.sidebar && (
             <>
-              {/* YOUR EXACT PRESERVED SIZES */}
               <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]">
-                <Sidebar files={workspace.files} currentFile={workspace.currentFile} onSwitchFile={handleSwitchFile} onCreateFile={handleCreateFile} onDeleteFile={handleDeleteFile} />
+                <Sidebar 
+                  items={workspace.items} 
+                  currentFile={workspace.currentFile} 
+                  absTargetDir={workspace.absTargetDir}
+                  onSwitchFile={handleSwitchFile} 
+                  onCreateFile={() => setIsNewItemOpen(true)} 
+                  onDeleteFile={handleDeleteFile} 
+                  onRenameItem={(item) => {
+                    const newPath = prompt("Enter new name / path:", item.path);
+                    if (newPath && newPath !== item.path && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+                      workspace.wsRef.current.send(JSON.stringify({ event: 'RENAME_ITEM', old_path: item.path, new_path: newPath }));
+                    }
+                  }}
+                  onMoveItem={(srcPath, destFolder) => {
+                    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+                      workspace.wsRef.current.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: srcPath, dest_folder: destFolder }));
+                    }
+                  }}
+                  onRevealExplorer={(path) => {
+                    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+                      workspace.wsRef.current.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path }));
+                    }
+                  }}
+                  onRunFile={handleRunCode}
+                />
               </Panel>
               
               <Separator className="w-2 bg-transparent hover:bg-blue-500 transition-colors cursor-col-resize relative flex items-center justify-center z-50">
@@ -235,19 +252,21 @@ export default function App() {
                   <Separator className="h-2 bg-transparent hover:bg-blue-500 transition-colors cursor-row-resize relative flex items-center justify-center z-50">
                     <div className="h-[1px] w-full bg-[#2b2d31]" />
                   </Separator>
-                  
+
+                  {/* MULTI-TABBED INTERACTIVE TERMINAL PANEL */}
                   <Panel id="terminal-area" order={2} defaultSize={250} minSize={15} maxSize={300} className="bg-[#181818] flex flex-col font-mono text-sm min-h-[150px]">
-                    <div className="h-8 shrink-0 bg-[#1e1e1e] border-b border-[#2b2d31] flex items-center px-4 gap-2 text-slate-400 text-xs">
-                      <TerminalSquare size={14} /> TERMINAL
-                    </div>
-                    <div className="flex-grow p-4 overflow-y-auto">
-                      {workspace.terminalLogs.map((log, index) => (
-                        <div key={index} className={`${log.isError ? 'text-red-400 font-bold' : 'text-green-400'} mb-1 leading-relaxed whitespace-pre-wrap`}>
-                          <span className="text-slate-600 mr-2">➜</span> {log.text}
-                        </div>
-                      ))}
-                      <div ref={terminalEndRef} />
-                    </div>
+                    <TerminalPanel 
+                      logs={workspace.terminalLogs}
+                      sessions={workspace.terminalSessions}
+                      activeSessionId={workspace.activeSessionId}
+                      absTargetDir={workspace.absTargetDir}
+                      onSelectSession={(id) => workspace.setActiveSessionId(id)}
+                      onCreateSession={workspace.createTerminalSession}
+                      onCloseSession={workspace.closeTerminalSession}
+                      onSendTerminalCommand={workspace.sendTerminalCommand}
+                      onKillProcess={workspace.killTerminalProcess}
+                      onClearOutput={() => workspace.setTerminalLogs([])}
+                    />
                   </Panel>
                 </>
               )}
@@ -277,6 +296,14 @@ export default function App() {
 
         </Group>
       </div>
+
+      <StatusBar 
+        activeFile={workspace.currentFile}
+        lineCount={lineCount}
+        wordCount={wordCount}
+        language={workspace.currentFile?.split('.').pop() === 'py' ? 'Python' : 'Plain Text'}
+      />
+
     </div>
   );
 }
