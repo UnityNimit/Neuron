@@ -42,7 +42,19 @@ def get_file_list():
         for f in files:
             rel_path = os.path.relpath(os.path.join(root, f), TARGET_DIR).replace("\\", "/")
             items.append({"path": rel_path, "type": "file"})
-    return sorted(items, key=lambda x: (x["type"] != "folder", x["path"].lower()))
+            
+    # PERFECT VS CODE HIERARCHY SORTING
+    def sort_key(item):
+        parts = item["path"].split("/")
+        key = []
+        for i, part in enumerate(parts):
+            is_last = (i == len(parts) - 1)
+            # 0 for folder, 1 for file -> forces folders to appear before files at the SAME level
+            is_file = 1 if (is_last and item["type"] == "file") else 0
+            key.append((is_file, part.lower()))
+        return key
+
+    return sorted(items, key=sort_key)
 
 def get_workspace_state(active_file: str):
     items = get_file_list()

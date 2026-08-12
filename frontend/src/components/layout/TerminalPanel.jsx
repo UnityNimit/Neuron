@@ -18,15 +18,30 @@ export default function TerminalPanel({
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showShellDropdown, setShowShellDropdown] = useState(false);
+  
   const terminalEndRef = useRef(null);
+  const dropdownRef = useRef(null);
 
+  // Auto-scroll to the bottom
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs, sessions, activeSessionId]);
 
+  // Click-away listener to close the shell dropdown
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowShellDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
   const handleKeyDown = (e) => {
+    // Ctrl+C to kill running process
     if (e.ctrlKey && e.key === 'c' && activeSession?.isRunning) {
       onKillProcess(activeSessionId);
       return;
@@ -73,15 +88,15 @@ export default function TerminalPanel({
   return (
     <div className="w-full h-full bg-[#141414] flex flex-col font-mono text-sm border-t border-[#2b2d31]">
       
-      {/* 1. Terminal Top Bar Tabs */}
+      {/* 1. Terminal Top Bar */}
       <div className="h-8 shrink-0 bg-[#1e1e1e] border-b border-[#2b2d31] flex items-center justify-between px-2 text-xs select-none">
         
-        {/* Tabs & Shell Picker */}
-        <div className="flex items-center gap-1 overflow-x-auto">
+        {/* TABS AREA (Scrollable, but scrollbar hidden via CSS) */}
+        <div className="flex items-center gap-1 overflow-x-auto flex-grow mr-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {/* Output Tab */}
           <button
             onClick={() => onSelectSession('output')}
-            className={`px-3 py-1 rounded-t flex items-center gap-2 transition-all ${
+            className={`px-3 py-1 rounded-t flex items-center gap-2 transition-all shrink-0 ${
               activeSessionId === 'output' 
                 ? 'bg-[#141414] text-blue-400 font-bold border-t-2 border-t-blue-500' 
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -96,7 +111,7 @@ export default function TerminalPanel({
             <div
               key={s.id}
               onClick={() => onSelectSession(s.id)}
-              className={`px-3 py-1 rounded-t flex items-center gap-2 cursor-pointer transition-all group ${
+              className={`px-3 py-1 rounded-t flex items-center gap-2 cursor-pointer transition-all group shrink-0 ${
                 activeSessionId === s.id 
                   ? 'bg-[#141414] text-green-400 font-bold border-t-2 border-t-green-500' 
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -112,21 +127,25 @@ export default function TerminalPanel({
               </button>
             </div>
           ))}
+        </div>
 
+        {/* ACTIONS AREA (Fixed to the right) */}
+        <div className="flex items-center gap-2 shrink-0">
+          
           {/* New Terminal Dropdown Button */}
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <button 
               onClick={() => setShowShellDropdown(!showShellDropdown)}
-              className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors ml-1 flex items-center gap-0.5"
+              className="px-1.5 py-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors flex items-center gap-0.5"
               title="New Terminal"
             >
               <Plus size={14} />
               <ChevronDown size={10} />
             </button>
 
-            {/* Dropdown Menu */}
+            {/* Dropdown Menu (Z-index 200 ensures it goes over everything) */}
             {showShellDropdown && (
-              <div className="absolute top-7 left-0 z-[150] w-48 bg-[#1e1e1e] border border-[#333] shadow-2xl rounded-md py-1 text-slate-300">
+              <div className="absolute top-6 right-0 z-[200] w-48 bg-[#1e1e1e] border border-[#333] shadow-2xl rounded-md py-1 text-slate-300 animate-in fade-in slide-in-from-top-1 duration-150">
                 <button 
                   onClick={() => { onCreateSession('powershell'); setShowShellDropdown(false); }}
                   className="w-full px-3 py-1.5 text-left hover:bg-blue-600 hover:text-white flex items-center gap-2 text-xs"
@@ -148,10 +167,7 @@ export default function TerminalPanel({
               </div>
             )}
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2">
           {activeSession?.isRunning && (
             <button 
               onClick={() => onKillProcess(activeSessionId)}
@@ -193,7 +209,7 @@ export default function TerminalPanel({
               <div key={i} className="flex flex-col gap-1 mb-2">
                 <div className="flex items-center text-slate-400 font-semibold select-text">
                   <span className="text-green-400 mr-2 select-none">
-                    {activeSession.shellType === 'cmd' ? '>' : 'PS'}
+                    {activeSession.shellType === 'cmd' ? '>' : activeSession.shellType === 'bash' ? '$' : 'PS'}
                   </span>
                   <span className="text-slate-300">{h.cwd}&gt;</span>
                   <span className="text-white ml-2">{h.command}</span>
@@ -206,7 +222,7 @@ export default function TerminalPanel({
             {/* Prompt Line */}
             <div className="flex items-center gap-2 mt-1 select-none">
               <span className="text-green-400 font-bold">
-                {activeSession.shellType === 'cmd' ? '>' : 'PS'}
+                {activeSession.shellType === 'cmd' ? '>' : activeSession.shellType === 'bash' ? '$' : 'PS'}
               </span>
               <span className="text-slate-300 font-semibold">{activeSession.cwd}&gt;</span>
               <input 

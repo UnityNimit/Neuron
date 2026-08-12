@@ -28,7 +28,7 @@ export function useWorkspace(session) {
   
   useEffect(() => { currentFileRef.current = currentFile; }, [currentFile]);
 
-  // FIX: Pass explicit filename so delayed debounces never overwrite wrong files!
+  // Pass explicit filename so delayed debounces never overwrite wrong files!
   const handleCodeEdit = useCallback((nodeId, newCode, filePath) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ 
@@ -75,9 +75,11 @@ export function useWorkspace(session) {
               setNodes(nodesWithCallbacks);
               setEdges(data.payload.graph?.edges || []);
               setIsGraphLoaded(true);
-            } else if (data.event === 'BLAST_RADIUS') {
+            } 
+            else if (data.event === 'BLAST_RADIUS') {
               setBlastRadius(data.payload);
-            } else if (data.event === 'TERMINAL_OUTPUT' || data.event === 'TERMINAL_ERROR') {
+            } 
+            else if (data.event === 'TERMINAL_OUTPUT' || data.event === 'TERMINAL_ERROR') {
               const newLogs = (data.payload || '').split('\n').filter(line => line !== '').map(log => ({ text: log, isError: data.event === 'TERMINAL_ERROR' }));
               setTerminalLogs(prev => [...prev, ...newLogs]);
             } 
@@ -139,10 +141,10 @@ export function useWorkspace(session) {
     return () => { clearTimeout(reconnectTimer); if (ws) { ws.onclose = null; ws.close(); } };
   }, [session, setNodes, setEdges, handleCodeEdit]);
 
-  // CREATE NEW TERMINAL SESSION (PowerShell, CMD, or Bash)
+  // CREATE NEW TERMINAL SESSION (PowerShell, CMD, Bash)
   const createTerminalSession = (shellType = 'powershell') => {
     const nextNum = terminalSessions.filter(s => s.shellType === shellType).length + 1;
-    const nameMap = { powershell: 'PowerShell', cmd: 'Command Prompt', bash: 'Bash' };
+    const nameMap = { powershell: 'PowerShell', cmd: 'CMD', bash: 'Bash' };
     const newId = `term_${Date.now()}`;
     const newSession = { 
       id: newId, 
