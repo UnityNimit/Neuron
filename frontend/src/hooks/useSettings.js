@@ -1,5 +1,5 @@
 // src/hooks/useSettings.js
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 const defaultSettings = {
   fontSize: 13,
@@ -11,14 +11,26 @@ const defaultSettings = {
 
 export function useSettings() {
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem('neuron-settings');
-    return saved ? JSON.parse(saved) : defaultSettings;
+    // CRASH PROTECTION: Wrap in try/catch in case localStorage is corrupt
+    try {
+      const saved = localStorage.getItem('neuron-settings');
+      if (saved && saved !== "undefined") {
+        return { ...defaultSettings, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.error("Failed to parse settings from localStorage:", e);
+    }
+    return defaultSettings;
   });
 
   const updateSetting = (key, value) => {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
-      localStorage.setItem('neuron-settings', JSON.stringify(next));
+      try {
+        localStorage.setItem('neuron-settings', JSON.stringify(next));
+      } catch (e) {
+        console.error("Failed to save settings:", e);
+      }
       return next;
     });
   };

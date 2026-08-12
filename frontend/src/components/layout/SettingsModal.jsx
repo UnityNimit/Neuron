@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { Search, X, Settings2 } from 'lucide-react';
 
-// Configuration for our settings (Makes it easy to add more later)
 const SETTINGS_DEF = [
   { id: 'fontSize', label: 'Editor: Font Size', desc: 'Controls the font size in pixels.', type: 'number', category: 'Text Editor' },
   { id: 'wordWrap', label: 'Editor: Word Wrap', desc: 'Controls how lines should wrap.', type: 'select', options: ['off', 'on', 'bounded'], category: 'Text Editor' },
@@ -16,18 +15,14 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
   if (!isOpen) return null;
 
-  // Filter settings based on search
   const filteredSettings = SETTINGS_DEF.filter(s => 
     s.label.toLowerCase().includes(searchQuery.toLowerCase()) || 
     s.desc.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
-    // The darkened background overlay (z-[100] ensures it is above everything)
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center">
-      
-      {/* The Modal Container */}
-      <div className="bg-[#181818] w-[800px] h-[600px] max-h-[90vh] border border-[#333] shadow-2xl rounded-lg flex flex-col font-sans overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center font-sans">
+      <div className="bg-[#181818] w-[800px] h-[600px] max-h-[90vh] border border-[#333] shadow-2xl rounded-lg flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header & Search */}
         <div className="bg-[#1e1e1e] p-4 border-b border-[#333] flex flex-col gap-4">
@@ -41,7 +36,6 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
             </button>
           </div>
           
-          {/* VS Code Style Search Bar */}
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input 
@@ -55,7 +49,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
           </div>
         </div>
 
-        {/* Settings List Area */}
+        {/* Settings List */}
         <div className="flex-grow overflow-y-auto p-6 bg-[#141414]">
           {filteredSettings.length === 0 ? (
             <div className="text-center text-slate-500 mt-10">No settings found.</div>
@@ -66,7 +60,6 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                   <span className="text-slate-200 font-medium text-sm mb-1">{setting.label}</span>
                   <span className="text-slate-500 text-xs mb-3">{setting.desc}</span>
                   
-                  {/* Dynamic Inputs based on type */}
                   {setting.type === 'number' && (
                     <input 
                       type="number" 

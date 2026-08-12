@@ -16,7 +16,7 @@ export default function CodeNode({ id, data }) {
     return { glowColor: 'shadow-blue-500/30', borderColor: 'border-slate-700' };
   }, [data.isImpacted, data.risk]);
 
-  // Extract settings (fallbacks provided in case they haven't loaded)
+  // Extract settings from node payload
   const settings = data.settings || {};
 
   return (
@@ -32,6 +32,8 @@ export default function CodeNode({ id, data }) {
           <span className="text-xs text-slate-400">Python</span>
         </div>
       </div>
+
+      {/* Monaco Editor with Dynamic Settings Injection */}
       <div className="h-[250px] w-full p-2 bg-[#1e1e1e]">
         <Editor
           height="100%"

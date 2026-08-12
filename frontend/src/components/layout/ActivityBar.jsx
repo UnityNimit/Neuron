@@ -2,12 +2,11 @@
 import React from 'react';
 import { Files, Search, Settings, UserCircle } from 'lucide-react';
 
-// Notice 'onOpenSettings' is received here!
-export default function ActivityBar({ layout, setLayout, onOpenSettings }) {
+export default function ActivityBar({ layout, setLayout, onOpenSettings, onLogout }) {
   return (
     <div className="w-12 h-full bg-[#181818] border-r border-[#2b2d31] flex flex-col items-center justify-between py-4 shrink-0 z-40">
       
-      {/* Top Icons */}
+      {/* Top Navigation */}
       <div className="flex flex-col gap-4 w-full items-center">
         <button 
           onClick={() => setLayout(prev => ({ ...prev, sidebar: !prev.sidebar }))}
@@ -22,13 +21,18 @@ export default function ActivityBar({ layout, setLayout, onOpenSettings }) {
         </button>
       </div>
 
-      {/* Bottom Icons */}
+      {/* Bottom Actions */}
       <div className="flex flex-col gap-4 w-full items-center">
-        <button className="p-2 rounded-xl text-slate-500 hover:text-slate-300 transition-colors" title="Accounts">
+        {/* Sign Out Trigger */}
+        <button 
+          onClick={onLogout} 
+          className="p-2 rounded-xl text-slate-500 hover:text-red-400 transition-colors" 
+          title="Sign Out"
+        >
           <UserCircle size={24} strokeWidth={1.5} />
         </button>
         
-        {/* THIS IS THE FIX: The onClick event must trigger onOpenSettings */}
+        {/* Settings Modal Trigger */}
         <button 
           onClick={onOpenSettings} 
           className="p-2 rounded-xl text-slate-500 hover:text-slate-300 transition-colors" 
