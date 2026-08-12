@@ -3,39 +3,39 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 
 export function useDebouncedEditor({ id, initialCode, onCodeEdit }) {
   const [localCode, setLocalCode] = useState(initialCode);
-  const [isFocused, setIsFocused] = useState(false);
+  const isFocusedRef = useRef(false);
   const timerRef = useRef(null);
 
-  // The Shield: Only update from the backend if you are NOT typing in this specific box
+  // The Shield: Only update local code if we are NOT focused!
   useEffect(() => {
-    if (!isFocused) {
+    if (!isFocusedRef.current) {
       setLocalCode(initialCode);
     }
-  }, [initialCode, isFocused]);
+  }, [initialCode]);
 
-  // Hook directly into Monaco's native engine to see if your cursor is inside
+  // Hook directly into Monaco's native engine to lock the state
   const handleEditorMount = useCallback((editor) => {
-    editor.onDidFocusEditorWidget(() => setIsFocused(true));
-    editor.onDidBlurEditorWidget(() => setIsFocused(false));
-  }, []);
+    editor.onDidFocusEditorWidget(() => {
+      isFocusedRef.current = true;
+    });
+    editor.onDidBlurEditorWidget(() => {
+      isFocusedRef.current = false;
+      // Force a strict save when clicking away, just in case!
+      if (onCodeEdit) onCodeEdit(id, editor.getValue());
+    });
+  }, [id, onCodeEdit]);
 
   const handleEditorChange = useCallback((value) => {
-    setLocalCode(value); // Instantly update your screen so typing feels 100% smooth
+    setLocalCode(value); // Instantly update UI so typing is 100% smooth
     
     if (timerRef.current) clearTimeout(timerRef.current);
     
-    // Tell the backend to save to disk 600ms after you stop typing
+    // Tell backend to save to disk 800ms after you stop typing
     timerRef.current = setTimeout(() => {
-      if (onCodeEdit) {
-        onCodeEdit(id, value);
-      }
+      if (onCodeEdit) onCodeEdit(id, value);
       timerRef.current = null;
-    }, 600);
+    }, 800);
   }, [id, onCodeEdit]);
 
-  return {
-    localCode,
-    handleEditorMount,
-    handleEditorChange
-  };
+  return { localCode, handleEditorMount, handleEditorChange };
 }

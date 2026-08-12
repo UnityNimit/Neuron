@@ -114,11 +114,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     os.remove(del_filepath)
                 await broadcast_workspace()
 
+            # --- CODE EDITING ---
             elif event_type == "CODE_EDIT":
                 node_id = message["node_id"]
                 new_code = message["new_code"]
                 file_path = os.path.join(TARGET_DIR, app_state["active_file"])
-                update_function_in_file(file_path, node_id, new_code)
+                
+                # If they edit the "Whole File" Node, bypass LibCST and write directly!
+                if node_id.endswith(".py"):
+                    print(f"⌨️ Direct save to file: {file_path}")
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        f.write(new_code)
+                else:
+                    # If they edit a specific Function Node, use surgical LibCST mutations
+                    print(f"⌨️ Surgically saving function {node_id} via LibCST...")
+                    update_function_in_file(file_path, node_id, new_code)
                 
             elif event_type == "IMPACT_ANALYSIS":
                 node_id = message["node_id"]

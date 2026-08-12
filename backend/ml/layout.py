@@ -9,8 +9,12 @@ def calculate_ml_layout(nodes, edges):
     Takes raw nodes and edges, runs them through Node2Vec and UMAP,
     and returns exact (X, Y) pixel coordinates for the React Canvas.
     """
-    if len(nodes) < 2:
-        return nodes # Not enough data to run ML
+    # FIX 1: If there are fewer than 3 nodes, assign simple grid positions!
+    # UMAP requires at least 3 nodes to perform 2D dimensionality reduction safely.
+    if len(nodes) < 3:
+        for i, node in enumerate(nodes):
+            node["position"] = {"x": 250 + (i * 500), "y": 150}
+        return nodes
 
     # 1. Build the NetworkX Graph
     G = nx.Graph()
@@ -27,9 +31,9 @@ def calculate_ml_layout(nodes, edges):
     embeddings = np.array([model.wv[node_id] for node_id in node_ids])
 
     # 3. UMAP Dimensionality Reduction
-    n_neighbors = min(len(nodes) - 1, 15) 
+    # FIX 2: Force n_neighbors to always be at least 2 so UMAP never raises ValueError
+    n_neighbors = max(2, min(len(nodes) - 1, 15))
     
-    # FIX: Added init='random' so SciPy doesn't crash on tiny 3-node graphs!
     reducer = umap.UMAP(
         n_neighbors=n_neighbors, 
         min_dist=0.5, 
