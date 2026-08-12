@@ -20,23 +20,22 @@ export default function TopBar({
 
   const menuItems = ['File', 'Edit', 'Selection', 'View', 'Go', 'Run', 'Terminal', 'Help'];
 
-  // --- NEW: THE FILE MENU ---
+  // --- THE EXACT FILE MENU REQUESTED ---
   const fileDropdownItems = [
-    { label: "New File...", action: onCreateFile, shortcut: "Ctrl+N" },
+    { label: "New File", action: onCreateFile, shortcut: "Ctrl+N" },
     { label: "New Window", action: () => window.open(window.location.href, '_blank'), shortcut: "Ctrl+Shift+N" },
     { separator: true },
-    { label: "Open File...", action: () => alert("Open File Dialog (Not implemented)") },
+    { label: "Open File...", action: () => alert("Open File not implemented in this demo.") },
     { label: "Open Folder...", action: onOpenFolder, shortcut: "Ctrl+K Ctrl+O" },
-    { label: "Open Recent", action: () => {} },
+    { label: "Open Recent", action: () => alert("No recent workspaces found.") },
     { separator: true },
-    { label: "Save", action: () => alert("Saved!"), shortcut: "Ctrl+S" },
-    { label: "Save As...", action: () => alert("Save As...") },
-    { label: "Auto Save", action: () => {}, toggle: true },
+    { label: "Save", action: () => alert("Code is continuously saved!"), shortcut: "Ctrl+S" },
+    { label: "Save As...", action: () => alert("Save As not needed (Auto-Sync is active)") },
+    { label: "Auto Save", action: () => {}, toggle: true }, // Visual toggle indicator
     { separator: true },
     { label: "Exit", action: () => window.close() }
   ];
 
-  // --- THE HELP MENU ---
   const helpDropdownItems = [
     { label: "Welcome", action: () => alert("Welcome to Neuron: The Spatial IDE!") },
     { label: "Show All Commands", action: onOpenCommandPalette, shortcut: "Ctrl+Shift+P" },
@@ -58,7 +57,6 @@ export default function TopBar({
           <button className="p-1 hover:text-slate-200 hover:bg-[#2a2d31] rounded transition-colors"><ChevronRight size={14} /></button>
         </div>
 
-        {/* NATIVE MENUS */}
         <div className="hidden lg:flex items-center text-[12px] text-slate-400 relative" ref={menuRef}>
           {menuItems.map((item) => (
             <div key={item} className="relative">
@@ -69,7 +67,6 @@ export default function TopBar({
                 {item}
               </button>
 
-              {/* RENDER THE ACTIVE DROPDOWN */}
               {activeMenu === item && (item === 'Help' || item === 'File') && (
                 <div className="absolute top-full left-0 mt-1 w-64 bg-[#252526] border border-[#454545] rounded-md shadow-2xl py-1 z-[100] animate-in fade-in slide-in-from-top-1 duration-150">
                   {(item === 'File' ? fileDropdownItems : helpDropdownItems).map((opt, idx) => (
@@ -77,7 +74,10 @@ export default function TopBar({
                       <div key={idx} className="h-[1px] bg-[#454545] my-1 mx-2" />
                     ) : (
                       <button key={idx} onClick={() => { opt.action(); setActiveMenu(null); }} className="w-full text-left px-6 py-1.5 hover:bg-[#094771] hover:text-white text-[#cccccc] flex items-center justify-between">
-                        <span>{opt.label}</span>
+                        <div className="flex items-center gap-2">
+                          {opt.toggle && <span className="text-blue-400 font-bold">✓</span>}
+                          <span className={opt.toggle ? "ml-1" : "ml-4"}>{opt.label}</span>
+                        </div>
                         {opt.shortcut && <span className="text-[10px] text-slate-500">{opt.shortcut}</span>}
                       </button>
                     )
@@ -98,6 +98,9 @@ export default function TopBar({
       </div>
 
       <div className="flex items-center gap-2">
+        <button onClick={onOpenFolder} className="hidden md:flex items-center gap-1.5 bg-[#252526] hover:bg-[#333] text-slate-300 px-2.5 py-1 rounded text-xs border border-[#3c3c3c] transition-colors" title="Open Folder on Local Computer">
+          <FolderOpen size={13} className="text-blue-400" /><span>Open</span>
+        </button>
         <div className="flex items-center gap-0.5 bg-[#232325] p-0.5 rounded border border-[#333]">
           <button onClick={() => toggleLayout('sidebar')} className={`p-1 rounded transition-colors ${layout.sidebar ? 'bg-[#3b4048] text-white' : 'text-slate-400 hover:text-slate-200'}`}><PanelLeft size={14} /></button>
           <button onClick={() => toggleLayout('terminal')} className={`p-1 rounded transition-colors ${layout.terminal ? 'bg-[#3b4048] text-white' : 'text-slate-400 hover:text-slate-200'}`}><PanelBottom size={14} /></button>

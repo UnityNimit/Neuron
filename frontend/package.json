@@ -14,6 +14,7 @@
     "@supabase/supabase-js": "^2.109.0",
     "@tailwindcss/vite": "^4.3.3",
     "@xyflow/react": "^12.11.2",
+    "ansi-to-html": "^0.7.2",
     "lucide-react": "^1.31.0",
     "pyodide": "^314.0.3",
     "react": "^19.2.8",

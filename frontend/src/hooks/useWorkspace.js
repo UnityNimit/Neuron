@@ -10,7 +10,6 @@ export function useWorkspace(session) {
   const [absTargetDir, setAbsTargetDir] = useState("");
   const [blastRadius, setBlastRadius] = useState(null);
   
-  // TERMINAL MULTI-SESSION STATE
   const [terminalLogs, setTerminalLogs] = useState([
     { text: "Neuron Output Log v1.0.0", isError: false },
     { text: "Waiting for execution...", isError: false }
@@ -28,7 +27,6 @@ export function useWorkspace(session) {
   
   useEffect(() => { currentFileRef.current = currentFile; }, [currentFile]);
 
-  // Pass explicit filename so delayed debounces never overwrite wrong files!
   const handleCodeEdit = useCallback((nodeId, newCode, filePath) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ 
@@ -62,7 +60,6 @@ export function useWorkspace(session) {
               setCurrentFile(data.payload.active_file || "");
               setAbsTargetDir(data.payload.target_dir_abs || "");
               
-              // Update session CWDs if empty
               setTerminalSessions(prev => prev.map(s => ({
                 ...s, cwd: s.cwd || data.payload.target_dir_abs || ""
               })));
@@ -83,29 +80,15 @@ export function useWorkspace(session) {
               const newLogs = (data.payload || '').split('\n').filter(line => line !== '').map(log => ({ text: log, isError: data.event === 'TERMINAL_ERROR' }));
               setTerminalLogs(prev => [...prev, ...newLogs]);
             } 
-            // HANDLE COMMAND RESPONSES (dir, cd, cls, etc)
-            else if (data.event === 'TERMINAL_RESPONSE') {
-              setTerminalSessions(prev => prev.map(s => {
-                if (s.id === data.session_id) {
-                  return {
-                    ...s,
-                    cwd: data.new_cwd || s.cwd,
-                    history: [...s.history, {
-                      command: data.command,
-                      stdout: data.stdout,
-                      stderr: data.stderr,
-                      cwd: s.cwd
-                    }]
-                  };
-                }
-                return s;
-              }));
-            }
-            // REAL-TIME STREAMING EVENTS (uvicorn, npm run dev, etc)
+            // --- NEW REAL-TIME STREAMING TERMINAL HANDLERS ---
             else if (data.event === 'TERMINAL_STREAM_START') {
               setTerminalSessions(prev => prev.map(s => s.id === data.session_id ? {
                 ...s, isRunning: true, cwd: data.cwd, history: [...s.history, { command: data.command, stdout: "", stderr: "", cwd: data.cwd }]
               } : s));
+            }
+            else if (data.event === 'TERMINAL_CWD_UPDATE') {
+              // Tracks directory changes instantly!
+              setTerminalSessions(prev => prev.map(s => s.id === data.session_id ? { ...s, cwd: data.cwd } : s));
             }
             else if (data.event === 'TERMINAL_STREAM') {
               setTerminalSessions(prev => prev.map(s => {
@@ -141,7 +124,6 @@ export function useWorkspace(session) {
     return () => { clearTimeout(reconnectTimer); if (ws) { ws.onclose = null; ws.close(); } };
   }, [session, setNodes, setEdges, handleCodeEdit]);
 
-  // CREATE NEW TERMINAL SESSION (PowerShell, CMD, Bash)
   const createTerminalSession = (shellType = 'powershell') => {
     const nextNum = terminalSessions.filter(s => s.shellType === shellType).length + 1;
     const nameMap = { powershell: 'PowerShell', cmd: 'CMD', bash: 'Bash' };
