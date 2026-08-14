@@ -3,26 +3,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TerminalSquare, Plus, X, Trash2, Square, CornerDownLeft, ChevronDown } from 'lucide-react';
 import AnsiToHtml from 'ansi-to-html';
 
-// Initialize the ANSI parser with standard dark theme defaults
-const ansiConverter = new AnsiToHtml({
-  fg: '#cccccc',
-  bg: '#1e1e1e',
-  newline: false,
-  escapeXML: true
-});
+const ansiConverter = new AnsiToHtml({ fg: '#cccccc', bg: '#1e1e1e', newline: false, escapeXML: true });
 
 export default function TerminalPanel({ 
   logs, sessions, activeSessionId, absTargetDir,
   onSelectSession, onCreateSession, onCloseSession, 
   onSendTerminalCommand, onKillProcess, onClearOutput 
 }) {
-  const [inputCommand, setItemCommand] = useState("");
+  const [inputCommand, setInputCommand] = useState("");
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showShellDropdown, setShowShellDropdown] = useState(false);
   
   const terminalEndRef = useRef(null);
   const dropdownRef = useRef(null);
+  const inputRef = useRef(null);
+  const containerRef = useRef(null);
 
   useEffect(() => { terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs, sessions, activeSessionId]);
 
@@ -36,40 +32,52 @@ export default function TerminalPanel({
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
+  // Focus input when clicking anywhere inside the terminal background!
+  const handleTerminalClick = (e) => {
+    const selection = window.getSelection();
+    if (selection.toString().length === 0 && inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
   const handleKeyDown = (e) => {
+    // Intercept Ctrl+C
     if (e.ctrlKey && e.key === 'c' && activeSession?.isRunning) {
       onKillProcess(activeSessionId);
       return;
     }
+    
     if (e.key === 'Enter') {
       e.preventDefault();
       if (!inputCommand.trim()) return;
       if (inputCommand.trim() === 'clear' || inputCommand.trim() === 'cls') {
         if (activeSessionId === 'output') onClearOutput();
         else onSendTerminalCommand(activeSessionId, 'cls');
-        setItemCommand("");
+        setInputCommand("");
         return;
       }
       setCommandHistory(prev => [...prev, inputCommand]);
       setHistoryIndex(-1);
       if (activeSessionId !== 'output') onSendTerminalCommand(activeSessionId, inputCommand);
-      setItemCommand("");
+      setInputCommand("");
     } 
     else if (e.key === 'ArrowUp') {
+      e.preventDefault();
       if (commandHistory.length > 0) {
         const nextIndex = historyIndex + 1 < commandHistory.length ? historyIndex + 1 : historyIndex;
         setHistoryIndex(nextIndex);
-        setItemCommand(commandHistory[commandHistory.length - 1 - nextIndex] || "");
+        setInputCommand(commandHistory[commandHistory.length - 1 - nextIndex] || "");
       }
     } 
     else if (e.key === 'ArrowDown') {
+      e.preventDefault();
       if (historyIndex > 0) {
         const nextIndex = historyIndex - 1;
         setHistoryIndex(nextIndex);
-        setItemCommand(commandHistory[commandHistory.length - 1 - nextIndex] || "");
+        setInputCommand(commandHistory[commandHistory.length - 1 - nextIndex] || "");
       } else if (historyIndex === 0) {
         setHistoryIndex(-1);
-        setItemCommand("");
+        setInputCommand("");
       }
     }
   };
@@ -113,15 +121,25 @@ export default function TerminalPanel({
         </div>
       </div>
 
-      <div className="flex-grow p-4 overflow-y-auto font-mono text-xs select-text cursor-text">
+      <div 
+        ref={containerRef}
+        onClick={handleTerminalClick}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.ctrlKey && e.key === 'c' && activeSession?.isRunning) {
+            onKillProcess(activeSessionId);
+          }
+        }}
+        className="flex-grow p-4 overflow-y-auto font-mono text-xs select-text cursor-text outline-none"
+      >
         {activeSessionId === 'output' && (
-          <div>
+          <div className="flex flex-col gap-0.5">
             {logs.map((log, index) => (
-              <div key={index} className={`${log.isError ? 'text-red-400 font-bold' : 'text-green-400'} mb-1 leading-relaxed whitespace-pre-wrap select-text`}>
-                <span className="text-slate-600 mr-2 select-none">➜</span> 
-                {/* Parse Output colors safely! */}
-                <span dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(log.text || "") }} />
-              </div>
+              <div 
+                key={index} 
+                className={`${log.isError ? 'text-red-400' : log.isSystem ? 'text-slate-500' : 'text-slate-300'} whitespace-pre-wrap select-text leading-relaxed`}
+                dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(log.text || "") }} 
+              />
             ))}
           </div>
         )}
@@ -129,37 +147,50 @@ export default function TerminalPanel({
         {activeSessionId !== 'output' && activeSession && (
           <div className="flex flex-col gap-1 select-text">
             {activeSession.history.map((h, i) => (
-              <div key={i} className="flex flex-col gap-1 mb-2">
+              <div key={i} className="flex flex-col gap-1 mb-3">
                 <div className="flex items-center text-slate-400 font-semibold select-text">
-                  <span className="text-green-400 mr-2 select-none">{activeSession.shellType === 'cmd' ? '>' : activeSession.shellType === 'bash' ? '$' : 'PS'}</span>
-                  <span className="text-slate-300">{h.cwd}&gt;</span>
+                  {/* BUG FIX: Removed select-none here so path is copiable! */}
+                  <span className="text-slate-400 select-text">{h.cwd}&gt;</span>
                   <span className="text-white ml-2">{h.command}</span>
                 </div>
-                {/* Parse Terminal colors safely! */}
                 {h.stdout && (
                   <div 
-                    className="text-slate-300 whitespace-pre-wrap pl-4 border-l border-slate-700 font-mono select-text leading-relaxed"
+                    className="text-slate-300 whitespace-pre-wrap select-text leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(h.stdout) }}
                   />
                 )}
                 {h.stderr && (
                   <div 
-                    className="text-red-400 whitespace-pre-wrap pl-4 border-l border-red-800 font-mono select-text leading-relaxed"
+                    className="text-red-400 whitespace-pre-wrap select-text leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(h.stderr) }}
                   />
                 )}
               </div>
             ))}
 
-            <div className="flex items-center gap-2 mt-1 select-none">
-              <span className="text-green-400 font-bold">{activeSession.shellType === 'cmd' ? '>' : activeSession.shellType === 'bash' ? '$' : 'PS'}</span>
-              <span className="text-slate-300 font-semibold">{activeSession.cwd}&gt;</span>
-              <input type="text" autoFocus value={inputCommand} onChange={(e) => setItemCommand(e.target.value)} onKeyDown={handleKeyDown} placeholder={activeSession.isRunning ? "Running... (Press Ctrl+C or click Stop)" : "Type command..."} className="flex-grow bg-transparent text-white font-mono text-xs outline-none border-none caret-blue-500 select-text" />
-              <CornerDownLeft size={12} className="text-slate-600" />
-            </div>
+            {/* Smart Input Line - Disappears if process is running! */}
+            {activeSession.isRunning ? (
+              <div className="mt-2 text-yellow-500/80 animate-pulse select-none">
+                Process is running... (Press Ctrl+C or click Stop to kill)
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mt-1 select-text">
+                {/* BUG FIX: Removed select-none here too! */}
+                <span className="text-slate-300 font-semibold select-text">{activeSession.cwd}&gt;</span>
+                <input 
+                  ref={inputRef}
+                  type="text" 
+                  autoFocus 
+                  value={inputCommand} 
+                  onChange={(e) => setInputCommand(e.target.value)} 
+                  onKeyDown={handleKeyDown} 
+                  className="flex-grow bg-transparent text-white font-mono text-xs outline-none border-none caret-slate-300 select-text" 
+                />
+              </div>
+            )}
           </div>
         )}
-        <div ref={terminalEndRef} />
+        <div ref={terminalEndRef} className="h-4" />
       </div>
     </div>
   );

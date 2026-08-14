@@ -3,9 +3,39 @@ import os
 import json
 import time
 import asyncio
+import subprocess
 from watchdog.events import FileSystemEventHandler
 from core.state import AppState
-from core.parser import parse_python_file
+from core.parser import parse_workspace 
+
+def get_git_status(target_dir):
+    git_statuses = {}
+    try:
+        # Check if it is actually a git repository
+        if not os.path.exists(os.path.join(target_dir, ".git")):
+            return {}
+        
+        # Run standard VS Code git command
+        result = subprocess.run(
+            ['git', 'status', '--porcelain'],
+            cwd=target_dir, capture_output=True, text=True, check=False
+        )
+        for line in result.stdout.splitlines():
+            if len(line) < 4: continue
+            status = line[:2]
+            file_path = line[3:].replace("\\", "/") # Normalize path
+            if file_path.startswith('"') and file_path.endswith('"'):
+                file_path = file_path[1:-1]
+                
+            # Map Git Codes to VS Code UI Codes
+            mapped_status = "M"
+            if "??" in status: mapped_status = "U"
+            elif "A" in status: mapped_status = "A"
+            elif "D" in status: mapped_status = "D"
+            
+            git_statuses[file_path] = mapped_status
+    except Exception: pass
+    return git_statuses
 
 def get_file_list():
     items = []
@@ -34,19 +64,18 @@ def get_workspace_state():
     if AppState.ACTIVE_FILE not in file_paths and file_paths:
         AppState.ACTIVE_FILE = file_paths[0]
 
-    graph_state = {"nodes": [], "edges": []}
-    if AppState.ACTIVE_FILE:
-        file_path = os.path.join(AppState.TARGET_DIR, AppState.ACTIVE_FILE)
-        if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                graph_state = parse_python_file(AppState.ACTIVE_FILE, f.read())
+    graph_state = parse_workspace(AppState.TARGET_DIR, items)
+    
+    # FETCH GIT STATUSES
+    git_statuses = get_git_status(AppState.TARGET_DIR)
                 
     return {
         "items": items,
         "files": file_paths, 
         "graph": graph_state, 
         "active_file": AppState.ACTIVE_FILE,
-        "target_dir_abs": AppState.TARGET_DIR
+        "target_dir_abs": AppState.TARGET_DIR,
+        "git_statuses": git_statuses # ADDED TO PAYLOAD
     }
 
 async def broadcast_workspace():

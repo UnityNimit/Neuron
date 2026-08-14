@@ -1,0 +1,1 @@
+print("Nimit is GAY")
