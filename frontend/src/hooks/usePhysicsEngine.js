@@ -15,12 +15,20 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
   useEffect(() => {
     if (!isGraphLoaded || nodes.length === 0) return;
 
-    const simNodes = nodes.map(n => ({
-      ...n,
-      x: n.position?.x ?? (Math.random() - 0.5) * 500,
-      y: n.position?.y ?? (Math.random() - 0.5) * 500,
-      fx: null, fy: null
-    }));
+    // Preserve existing coordinates to avoid resetting the galaxy
+    const existingNodes = new Map(simDataRef.current.nodes.map(n => [n.id, n]));
+
+    const simNodes = nodes.map(n => {
+      const existing = existingNodes.get(n.id);
+      return {
+        ...n,
+        // WIRED: Dynamic Spawn Scatter
+        x: existing?.x ?? n.position?.x ?? (Math.random() - 0.5) * PHYSICS.SPAWN_SCATTER,
+        y: existing?.y ?? n.position?.y ?? (Math.random() - 0.5) * PHYSICS.SPAWN_SCATTER,
+        fx: existing?.fx ?? null, 
+        fy: existing?.fy ?? null
+      };
+    });
 
     const simEdges = edges.map(e => ({ ...e, source: e.source, target: e.target }));
 
@@ -33,7 +41,8 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
       )
       .force("charge", d3.forceManyBody()
         .strength(d => d.data?.nodeType === 'folder' ? PHYSICS.REPULSION.folder : d.data?.nodeType === 'file' ? PHYSICS.REPULSION.file : PHYSICS.REPULSION.function)
-        .distanceMax(1500)
+        // WIRED: CPU Cutoff distance
+        .distanceMax(PHYSICS.MAX_REPULSION_DISTANCE)
       )
       .force("x", d3.forceX(0).strength(PHYSICS.GRAVITY_PULL))
       .force("y", d3.forceY(0).strength(PHYSICS.GRAVITY_PULL))
@@ -48,8 +57,16 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
     if (document.hidden || centerView !== 'spatial') simulation.stop();
 
     const handleVisibilityChange = () => {
-      if (document.hidden || centerView !== 'spatial') simulation.stop();
-      else simulation.alphaTarget(0.1).restart();
+      if (document.hidden || centerView !== 'spatial') {
+        simulation.stop();
+      } else {
+        // WIRED: Tab-Wakeup Heat (Solves the swirling galaxy glitch!)
+        if (PHYSICS.TAB_WAKEUP_HEAT > 0) {
+          simulation.alphaTarget(PHYSICS.TAB_WAKEUP_HEAT).restart();
+        } else if (simulation.alpha() >= simulation.alphaMin()) {
+          simulation.restart(); // Cold start, purely resumes existing velocity
+        }
+      }
     };
     
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -63,13 +80,15 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
     draggedNodeRef.current = nodeId;
     const simNode = simDataRef.current.nodes.find(n => n.id === nodeId);
     if (simNode) { simNode.fx = x; simNode.fy = y; }
-    simulationRef.current?.alphaTarget(0.3).restart();
+    // WIRED: Dynamic Drag Heat (Cold drag vs Jelly wobble)
+    simulationRef.current?.alphaTarget(PHYSICS.DRAG_KINETIC_HEAT).restart();
   }, []);
 
   const onDragMove = useCallback((nodeId, x, y) => {
     const simNode = simDataRef.current.nodes.find(n => n.id === nodeId);
     if (simNode) { simNode.fx = x; simNode.fy = y; }
-    simulationRef.current?.alphaTarget(0.3).restart();
+    // WIRED: Dynamic Drag Heat
+    simulationRef.current?.alphaTarget(PHYSICS.DRAG_KINETIC_HEAT).restart();
   }, []);
 
   const onDragEnd = useCallback((nodeId) => {
@@ -85,6 +104,5 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
     }
   }, [wsRef]);
 
-  // FIX: Export simDataRef so WebGPU can actually read it!
   return { simDataRef, onDragStart, onDragMove, onDragEnd };
 }
