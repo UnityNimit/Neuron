@@ -13,7 +13,7 @@ export function useWorkspace(session) {
   const [absTargetDir, setAbsTargetDir] = useState("");
   const [blastRadius, setBlastRadius] = useState(null);
   
-  // NEW: GIT STATE
+  // --- ML & SOURCE CONTROL STATES ---
   const [gitStatuses, setGitStatuses] = useState({});
   
   // --- TERMINAL MULTI-SESSION STATES ---
@@ -42,6 +42,7 @@ export function useWorkspace(session) {
     }
   }, []);
 
+  // --- THE WEBSOCKET NEURAL ENGINE ---
   useEffect(() => {
     if (!session) return;
     let ws, reconnectTimer;
@@ -57,23 +58,47 @@ export function useWorkspace(session) {
           try {
             const data = JSON.parse(event.data);
             
+            // 1. WORKSPACE SYNCING
             if (data.event === 'INIT' || data.event === 'SYNC') {
               setItems(data.payload.items || []);
               setFiles(data.payload.files || []);
               setCurrentFile(data.payload.active_file || "");
               setAbsTargetDir(data.payload.target_dir_abs || "");
-              
-              // NEW: Save Git statuses!
               setGitStatuses(data.payload.git_statuses || {});
               
               setTerminalSessions(prev => prev.map(s => ({ ...s, cwd: s.cwd || data.payload.target_dir_abs || "" })));
+              
               const rawNodes = data.payload.graph?.nodes || [];
-              const nodesWithCallbacks = rawNodes.map(node => ({ ...node, data: { ...node.data, onCodeEdit: handleCodeEdit } }));
+              
+              // 🛡️ THE ABSOLUTE ANTI-CRASH GUARANTEE 🛡️
+              // Intercepts backend nodes and sanitizes coordinates before React Flow or D3 ever sees them.
+              const nodesWithCallbacks = rawNodes.map(node => {
+                const safeX = (typeof node.position?.x === 'number' && !isNaN(node.position.x)) 
+                  ? node.position.x 
+                  : (Math.random() - 0.5) * 500;
+                  
+                const safeY = (typeof node.position?.y === 'number' && !isNaN(node.position.y)) 
+                  ? node.position.y 
+                  : (Math.random() - 0.5) * 500;
+                
+                return {
+                  ...node,
+                  position: { x: safeX, y: safeY },
+                  data: { ...node.data, onCodeEdit: handleCodeEdit }
+                };
+              });
+              
               setNodes(nodesWithCallbacks);
               setEdges(data.payload.graph?.edges || []);
-              setIsGraphLoaded(true); setIsFileSyncing(false); 
+              
+              setIsGraphLoaded(true); 
+              setIsFileSyncing(false); 
             } 
+            
+            // 2. ML IMPACT RADIUS
             else if (data.event === 'BLAST_RADIUS') setBlastRadius(data.payload);
+            
+            // 3. TERMINAL STREAMING & LOGIC
             else if (data.event === 'TERMINAL_OUTPUT' || data.event === 'TERMINAL_ERROR') {
               const newLogs = (data.payload || '').split('\n').filter(line => line !== '').map(log => ({ text: log, isError: data.event === 'TERMINAL_ERROR' }));
               setTerminalLogs(prev => [...prev, ...newLogs]);
@@ -114,7 +139,7 @@ export function useWorkspace(session) {
 
     connectWebSocket();
     return () => { clearTimeout(reconnectTimer); if (ws) { ws.onclose = null; ws.close(); } };
-  }, [session, setNodes, setEdges, handleCodeEdit]);
+  }, [session, handleCodeEdit]); // Only re-run if auth session changes
 
   const refreshWorkspace = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) { setIsFileSyncing(true); wsRef.current.send(JSON.stringify({ event: 'SWITCH_FILE', filename: currentFileRef.current })); }
@@ -148,7 +173,7 @@ export function useWorkspace(session) {
   return {
     isGraphLoaded, setIsGraphLoaded, isFileSyncing, setIsFileSyncing,
     items, files, currentFile, setCurrentFile, absTargetDir,
-    gitStatuses, // EXPORTED TO APP
+    gitStatuses, 
     nodes, setNodes, onNodesChange, edges, setEdges, onEdgesChange,
     blastRadius, setBlastRadius, terminalLogs, setTerminalLogs,
     terminalSessions, activeSessionId, setActiveSessionId,

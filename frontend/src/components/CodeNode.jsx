@@ -1,39 +1,57 @@
 // src/components/CodeNode.jsx
-import React, { useMemo } from 'react';
-import { Handle, Position } from '@xyflow/react';
-import { Box, Code2 } from 'lucide-react';
+import React from 'react';
+import { Handle, Position, useStore } from '@xyflow/react';
 
 export default function CodeNode({ id, data }) {
-  const { glowColor, borderColor } = useMemo(() => {
-    if (data.isImpacted) return { glowColor: 'shadow-orange-500/80 shadow-[0_0_30px_rgba(249,115,22,0.6)]', borderColor: 'border-orange-500' };
-    if (data.isFocused) return { glowColor: 'shadow-purple-500/80 shadow-[0_0_30px_rgba(168,85,247,0.6)]', borderColor: 'border-purple-500' };
-    if (data.risk === 'high') return { glowColor: 'shadow-red-500/50', borderColor: 'border-red-500' };
-    return { glowColor: 'shadow-blue-500/10', borderColor: 'border-slate-700' };
-  }, [data.isImpacted, data.isFocused, data.risk]);
+  const zoom = useStore((s) => s.transform[2]);
+  
+  // LOD thresholds based on node type
+  const isFolder = data.nodeType === 'folder';
+  const isFile = data.nodeType === 'file';
+  const isFunction = data.nodeType === 'function';
+
+  // Obsidian Label Fade Logic
+  const showLabel = (isFolder && zoom > 0.1) || (isFile && zoom > 0.3) || (isFunction && zoom > 0.6);
+
+  // Obsidian Sizing & Coloring
+  let sizeClass = 'w-4 h-4'; // default function size
+  let orbColor = 'bg-[#8b5cf6]'; // Functions are Purple
+  let labelColor = 'text-[#999]';
+  let labelSize = 'text-[9px]';
+
+  if (isFolder) {
+    sizeClass = 'w-10 h-10';
+    orbColor = 'bg-[#4b5563]'; // Gray
+    labelColor = 'text-[#ccc] font-bold tracking-widest';
+    labelSize = 'text-[14px]';
+  } else if (isFile) {
+    sizeClass = 'w-6 h-6';
+    orbColor = 'bg-[#3b82f6]'; // Blue
+    labelColor = 'text-[#aaa] font-semibold';
+    labelSize = 'text-[11px]';
+  }
+
+  if (data.isFocused) orbColor = 'bg-[#facc15] shadow-[0_0_25px_rgba(250,204,21,0.6)]'; // Yellow highlight
 
   return (
     <div 
-      onDoubleClick={() => {
-        // This triggers the center screen to flip to the full VS Code Editor!
-        if (data.onDoubleClickNode) data.onDoubleClickNode(data.filePath, data.line || 1);
-      }}
-      className={`w-[300px] h-[60px] bg-[#1e1e1e] rounded-lg border-2 ${borderColor} ${glowColor} flex flex-col justify-center px-4 font-sans cursor-pointer hover:bg-[#252526] transition-colors`}
-      title="Double click to edit code in full screen"
+      onDoubleClick={() => data.onDoubleClickNode && data.onDoubleClickNode(data.filePath, data.line || 1)}
+      className="flex flex-col items-center justify-center cursor-pointer relative"
     >
-      <Handle type="target" position={Position.Top} className="w-2 h-2 bg-blue-500 border-none" />
+      {/* Invisible Handles exactly in the center so lines look native */}
+      <Handle type="target" position={Position.Top} className="opacity-0 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
       
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 overflow-hidden pr-2">
-          <Box size={14} className="text-blue-400 shrink-0" />
-          <span className="text-xs font-semibold text-slate-200 truncate">{data.fileName || "unnamed"}</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {data.line && <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded-sm">Ln {data.line}</span>}
-          <Code2 size={12} className="text-slate-500" />
-        </div>
+      {/* THE ORB */}
+      <div className={`${sizeClass} rounded-full ${orbColor} transition-transform duration-100 hover:scale-125 z-10 shadow-sm`} />
+
+      {/* THE LABEL */}
+      <div className={`absolute top-full mt-1.5 flex flex-col items-center transition-opacity duration-200 pointer-events-none ${showLabel ? 'opacity-100' : 'opacity-0'}`}>
+        <span className={`${labelColor} ${labelSize} font-sans whitespace-nowrap drop-shadow-md`}>
+          {data.label}
+        </span>
       </div>
 
-      <Handle type="source" position={Position.Bottom} className="w-2 h-2 bg-blue-500 border-none" />
+      <Handle type="source" position={Position.Bottom} className="opacity-0 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
     </div>
   );
 }

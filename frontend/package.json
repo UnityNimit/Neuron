@@ -10,11 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@lottiefiles/dotlottie-react": "^0.19.14",
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.109.0",
     "@tailwindcss/vite": "^4.3.3",
     "@xyflow/react": "^12.11.2",
     "ansi-to-html": "^0.7.2",
+    "d3-force": "^3.0.0",
+    "d3-polygon": "^3.0.1",
+    "lottie-react": "^2.4.1",
     "lucide-react": "^1.31.0",
     "pyodide": "^314.0.3",
     "react": "^19.2.8",

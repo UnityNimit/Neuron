@@ -1,24 +1,28 @@
 // src/components/layout/GroupNodes.jsx
 import React from 'react';
-import { Folder, FileCode2 } from 'lucide-react';
+import { useStore } from '@xyflow/react';
 
 export function FolderNode({ data, selected }) {
+  const zoom = useStore((s) => s.transform[2]);
+  const showLabel = zoom > 0.15; // Folders labels show from very far away
+
   return (
-    <div className={`w-full h-full rounded-2xl border-2 bg-[#1e1e1e]/40 backdrop-blur-sm transition-colors ${selected ? 'border-blue-500 shadow-[0_0_30px_rgba(59,130,246,0.3)]' : 'border-slate-700/50 hover:border-slate-600'}`}>
-      <div className="absolute top-0 left-0 bg-slate-800/80 px-6 py-2 rounded-br-xl rounded-tl-xl flex items-center gap-2 border-b-2 border-r-2 border-slate-700/50">
-        <Folder size={20} className="text-[#dcb67a]" />
-        <span className="text-white font-bold tracking-widest uppercase text-sm">{data.label}</span>
+    <div className={`w-full h-full rounded-3xl border-2 transition-all duration-500 ${selected ? 'border-[#519aba]/60 bg-[#519aba]/5' : 'border-[#333]/30 hover:border-[#555]/50'}`}>
+      <div className={`absolute -top-5 left-4 transition-opacity duration-500 ${showLabel ? 'opacity-100' : 'opacity-0'}`}>
+        <span className="text-[#555] font-sans font-bold text-[10px] uppercase tracking-widest">{data.label}</span>
       </div>
     </div>
   );
 }
 
 export function FileNode({ data, selected }) {
+  const zoom = useStore((s) => s.transform[2]);
+  const showLabel = zoom > 0.3; // File labels show mid-zoom
+
   return (
-    <div className={`w-full h-full rounded-xl border-2 bg-[#141414]/80 backdrop-blur-md transition-colors ${selected ? 'border-blue-400 shadow-[0_0_20px_rgba(96,165,250,0.4)]' : 'border-slate-700 hover:border-slate-500'}`}>
-      <div className="bg-[#1e1e1e] px-4 py-3 rounded-t-lg flex items-center gap-2 border-b border-slate-700">
-        <FileCode2 size={16} className="text-[#519aba]" />
-        <span className="text-slate-200 font-semibold tracking-wide">{data.label}</span>
+    <div className={`w-full h-full rounded-2xl border border-dashed transition-all duration-500 ${selected ? 'border-[#a855f7]/60 bg-[#a855f7]/5' : 'border-[#444]/30 hover:border-[#666]/60'}`}>
+      <div className={`absolute -top-4 left-4 transition-opacity duration-500 ${showLabel ? 'opacity-100' : 'opacity-0'}`}>
+        <span className="text-[#888] font-sans font-medium text-[10px]">{data.label}</span>
       </div>
     </div>
   );
