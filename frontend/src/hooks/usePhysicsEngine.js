@@ -5,17 +5,18 @@ import { ENGINE_CONFIG } from '../config/engineConfig';
 
 const { PHYSICS } = ENGINE_CONFIG;
 
-export function usePhysicsEngine(nodes, edges, setNodes, wsRef, isGraphLoaded) {
+export function usePhysicsEngine(nodes, edges, setNodes, wsRef, isGraphLoaded, centerView) {
   const simulationRef = useRef(null);
   const draggedNodeRef = useRef(null);
+  const frameCounter = useRef(0); // For Frame-Skipping
 
   useEffect(() => {
     if (!isGraphLoaded || nodes.length === 0) return;
 
     const simNodes = nodes.map(n => ({
       id: n.id,
-      x: (typeof n.position?.x === 'number' && !isNaN(n.position?.x)) ? n.position.x : (Math.random() - 0.5) * 500, 
-      y: (typeof n.position?.y === 'number' && !isNaN(n.position?.y)) ? n.position.y : (Math.random() - 0.5) * 500,
+      x: n.position?.x ?? 0,
+      y: n.position?.y ?? 0,
       nodeType: n.data?.nodeType || 'function'
     }));
 
@@ -30,25 +31,32 @@ export function usePhysicsEngine(nodes, edges, setNodes, wsRef, isGraphLoaded) {
       )
       .force("charge", d3.forceManyBody()
         .strength(d => d.nodeType === 'folder' ? PHYSICS.REPULSION.folder : d.nodeType === 'file' ? PHYSICS.REPULSION.file : PHYSICS.REPULSION.function)
-        .distanceMax(2000)
+        .distanceMax(1500)
       )
       .force("x", d3.forceX(0).strength(PHYSICS.GRAVITY_PULL))
       .force("y", d3.forceY(0).strength(PHYSICS.GRAVITY_PULL))
       .force("collide", d3.forceCollide()
         .radius(d => d.nodeType === 'folder' ? PHYSICS.COLLISION_RADIUS.folder : d.nodeType === 'file' ? PHYSICS.COLLISION_RADIUS.file : PHYSICS.COLLISION_RADIUS.function)
-        .iterations(3)
       )
       .alphaDecay(PHYSICS.ALPHA_DECAY) 
       .velocityDecay(PHYSICS.VELOCITY_DECAY) 
       .on("tick", () => {
+        frameCounter.current++;
+        
+        // --- FRAME SKIPPING: Only sync to React every 4th frame ---
+        if (frameCounter.current % 4 !== 0) return;
+
+        // --- HIBERNATION: Don't update state if we are in Editor mode ---
+        if (centerView !== 'spatial') return;
+
         setNodes(nds => nds.map(n => {
           if (draggedNodeRef.current === n.id) return n;
           const simNode = simNodes.find(sn => sn.id === n.id);
-          if (simNode) {
-            if (isNaN(simNode.x) || isNaN(simNode.y)) return n;
+          if (simNode && !isNaN(simNode.x)) {
             const curX = n.position?.x ?? 0;
             const curY = n.position?.y ?? 0;
-            if (Math.abs(curX - simNode.x) > 0.5 || Math.abs(curY - simNode.y) > 0.5) {
+            // Only update state if movement is significant (prevents micro-jitter)
+            if (Math.abs(curX - simNode.x) > 1 || Math.abs(curY - simNode.y) > 1) {
                 return { ...n, position: { x: simNode.x, y: simNode.y } };
             }
           }
@@ -58,10 +66,11 @@ export function usePhysicsEngine(nodes, edges, setNodes, wsRef, isGraphLoaded) {
 
     simulationRef.current = simulation;
 
-    if (document.hidden) simulation.stop();
+    // Hibernate if tab is hidden OR user is coding
+    if (document.hidden || centerView !== 'spatial') simulation.stop();
 
     const handleVisibilityChange = () => {
-      if (document.hidden) simulation.stop();
+      if (document.hidden || centerView !== 'spatial') simulation.stop();
       else simulation.alphaTarget(0.1).restart();
     };
     
@@ -70,44 +79,25 @@ export function usePhysicsEngine(nodes, edges, setNodes, wsRef, isGraphLoaded) {
       simulation.stop();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isGraphLoaded, edges.length]); 
+  }, [isGraphLoaded, edges.length, centerView]); // Re-run when view changes
 
-  // ... (Drag functions remain exactly the same)
+  // Drag handlers (Optimized to restart simulation only when needed)
   const onNodeDragStart = useCallback((event, node) => {
     draggedNodeRef.current = node.id; 
-    if (simulationRef.current) {
-      const simNode = simulationRef.current.nodes().find(n => n.id === node.id);
-      if (simNode) {
-        simNode.fx = node.position?.x ?? 0;
-        simNode.fy = node.position?.y ?? 0;
-      }
-      simulationRef.current.alphaTarget(0.3).restart(); 
-    }
+    simulationRef.current?.alphaTarget(0.3).restart(); 
   }, []);
 
   const onNodeDrag = useCallback((event, node) => {
-    if (simulationRef.current) {
-      const simNode = simulationRef.current.nodes().find(n => n.id === node.id);
-      if (simNode) {
-        simNode.fx = node.position?.x ?? 0; 
-        simNode.fy = node.position?.y ?? 0;
-      }
-    }
+    const simNode = simulationRef.current?.nodes().find(n => n.id === node.id);
+    if (simNode) { simNode.fx = node.position.x; simNode.fy = node.position.y; }
   }, []);
 
   const onNodeDragStop = useCallback((event, node) => {
     draggedNodeRef.current = null; 
-    if (simulationRef.current) {
-      const simNode = simulationRef.current.nodes().find(n => n.id === node.id);
-      if (simNode) {
-        simNode.fx = null; 
-        simNode.fy = null;
-      }
-      simulationRef.current.alphaTarget(0); 
-    }
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ event: 'NODE_MOVE', node_id: node.id, position: node.position || { x: 0, y: 0 } }));
-    }
+    const simNode = simulationRef.current?.nodes().find(n => n.id === node.id);
+    if (simNode) { simNode.fx = null; simNode.fy = null; }
+    simulationRef.current?.alphaTarget(0); 
+    wsRef.current?.send(JSON.stringify({ event: 'NODE_MOVE', node_id: node.id, position: node.position }));
   }, [wsRef]);
 
   return { onNodeDragStart, onNodeDrag, onNodeDragStop };

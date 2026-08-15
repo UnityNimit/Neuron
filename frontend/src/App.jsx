@@ -61,7 +61,7 @@ export default function App() {
 
   // --- ACTIVATE D3 PHYSICS ENGINE ---
   const { onNodeDragStart, onNodeDrag, onNodeDragStop } = usePhysicsEngine(
-    workspace.nodes, workspace.edges, workspace.setNodes, workspace.wsRef, workspace.isGraphLoaded
+    workspace.nodes, workspace.edges, workspace.setNodes, workspace.wsRef, workspace.isGraphLoaded, centerView
   );
 
   // --- BFS GRAPH TRACING (The Hover Ray) ---
