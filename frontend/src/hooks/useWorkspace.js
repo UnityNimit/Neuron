@@ -12,6 +12,7 @@ export function useWorkspace(session) {
   const [currentFile, setCurrentFile] = useState("");
   const [absTargetDir, setAbsTargetDir] = useState("");
   const [blastRadius, setBlastRadius] = useState(null);
+  const [aiInsight, setAiInsight] = useState(null);
   
   // --- ML & SOURCE CONTROL STATES ---
   const [gitStatuses, setGitStatuses] = useState({});
@@ -97,7 +98,13 @@ export function useWorkspace(session) {
             
             // 2. ML IMPACT RADIUS
             else if (data.event === 'BLAST_RADIUS') setBlastRadius(data.payload);
-            
+            else if (data.event === 'LLM_SUMMARY_READY') {
+              console.log("🔵 3. Received AI Summary:", data.summary);
+              setAiInsight({
+                nodeId: data.node_id,
+                summary: data.summary
+              });
+            }
             // 3. TERMINAL STREAMING & LOGIC
             else if (data.event === 'TERMINAL_OUTPUT' || data.event === 'TERMINAL_ERROR') {
               const newLogs = (data.payload || '').split('\n').filter(line => line !== '').map(log => ({ text: log, isError: data.event === 'TERMINAL_ERROR' }));
@@ -175,7 +182,7 @@ export function useWorkspace(session) {
     items, files, currentFile, setCurrentFile, absTargetDir,
     gitStatuses, 
     nodes, setNodes, onNodesChange, edges, setEdges, onEdgesChange,
-    blastRadius, setBlastRadius, terminalLogs, setTerminalLogs,
+    blastRadius, setBlastRadius, aiInsight, setAiInsight, terminalLogs, setTerminalLogs,
     terminalSessions, activeSessionId, setActiveSessionId,
     createTerminalSession, closeTerminalSession, sendTerminalCommand, killTerminalProcess,
     refreshWorkspace, wsRef

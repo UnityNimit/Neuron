@@ -4,11 +4,15 @@ import json
 import os
 import asyncio
 import networkx as nx
+import subprocess  # CRITICAL FIX: Required for subprocess.TimeoutExpired
 
 from core.state import AppState
 from services.workspace_service import get_workspace_state, broadcast_workspace
 from services.file_service import (pick_folder_sync, create_item, rename_item, move_item, delete_item, reveal_in_explorer, edit_code)
 from services.terminal_service import stream_terminal_command, kill_terminal_process, run_python_script_sync
+
+# NEW: Import the headless AI service
+from services.ai_service import fetch_ast_summary 
 
 router = APIRouter()
 
@@ -92,6 +96,28 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"event": "TERMINAL_OUTPUT", "payload": f"\n>>> Process finished with exit code {res.returncode}\n"})
                 except subprocess.TimeoutExpired:
                     await websocket.send_json({"event": "TERMINAL_ERROR", "payload": "\n❌ ERROR: Execution Timed Out.\n"})
+
+            # --- NEW ASYNC AI INTEGRATION ---
+            elif evt == "REQUEST_LLM_SUMMARY":
+                node_id = message["node_id"]
+                code_payload = message["code"]
+                print(f"🟡 2. Backend received LLM request for {node_id}")
+                
+                async def process_summary():
+                    summary = await fetch_ast_summary(code_payload)
+                    # Safety check: Ensure the client hasn't disconnected during inference
+                    if websocket in AppState.CONNECTIONS:
+                        try:
+                            await websocket.send_json({
+                                "event": "LLM_SUMMARY_READY",
+                                "node_id": node_id,
+                                "summary": summary
+                            })
+                        except Exception:
+                            pass
+                            
+                # Fire and forget: protect the main WebSocket event loop
+                asyncio.create_task(process_summary())
                     
     except WebSocketDisconnect:
         if websocket in AppState.CONNECTIONS: 

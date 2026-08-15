@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
 import { FileCode2, Network, Loader2 } from 'lucide-react';
 
@@ -13,7 +13,7 @@ import { useSettings } from './hooks/useSettings';
 import { usePersistentState } from './hooks/usePersistentState';
 import { usePhysicsEngine } from './hooks/usePhysicsEngine';
 
-// 🌌 THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
+// THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
 import PixiSpatialEngine from './components/canvas/PixiSpatialEngine';
 
 // Layout & UI
@@ -44,12 +44,16 @@ export default function App() {
   const [focusIsolationId, setFocusIsolationId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
-  // --- 🌌 ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
+  // --- AI STATE & REFS ---
+  const hoverTimerRef = useRef(null);
+  const [aiInsight, setAiInsight] = useState(null);
+
+  // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
     workspace.nodes, workspace.edges, workspace.wsRef, workspace.isGraphLoaded, centerView
   );
 
-  // 🚀 OPTIMIZATION 1: O(1) ADJACENCY CACHE
+  // OPTIMIZATION 1: O(1) ADJACENCY CACHE
   const adjLists = useMemo(() => {
     const hierarchyAdj = {}; const callAdjForward = {}; const callAdjBackward = {}; 
     workspace.edges.forEach(e => {
@@ -68,7 +72,7 @@ export default function App() {
     return { hierarchyAdj, callAdjForward, callAdjBackward };
   }, [workspace.edges]);
 
-  // 🚀 OPTIMIZATION 2: LIGHTNING-FAST BFS TRACE FOR WEBGPU
+  // OPTIMIZATION 2: LIGHTNING-FAST BFS TRACE FOR WEBGPU
   const activeRay = useMemo(() => {
     if (!hoveredNodeId) return null;
     
@@ -93,24 +97,20 @@ export default function App() {
     return { activeN, activeE };
   }, [hoveredNodeId, adjLists]);
 
-  // --- 🚀 OPTIMIZATION 3: NATIVE HARDWARE KEYBINDS (0ms Latency) ---
+  // --- OPTIMIZATION 3: NATIVE HARDWARE KEYBINDS (0ms Latency) ---
   useEffect(() => {
     const handleGlobalKeys = (e) => {
-      // Command Palette (Ctrl+K)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { 
         e.preventDefault(); setIsCommandPaletteOpen(true); 
       }
-      // AI Impact Analysis (Alt+I)
       if (e.altKey && e.key.toLowerCase() === 'i' && hoveredNodeId) {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
           workspace.wsRef.current.send(JSON.stringify({ event: 'IMPACT_ANALYSIS', node_id: hoveredNodeId }));
         }
       }
-      // Focus Isolation (F)
       if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT') {
         if (hoveredNodeId) setFocusIsolationId(hoveredNodeId);
       }
-      // Clear Map (Escape)
       if (e.key === 'Escape') {
         workspace.setBlastRadius(null);
         setFocusIsolationId(null);
@@ -119,6 +119,35 @@ export default function App() {
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
   }, [hoveredNodeId, workspace]);
+
+  // --- NEW: DECOUPLED AI LISTENER ---
+  useEffect(() => {
+    const ws = workspace.wsRef.current;
+    if (!ws) return;
+
+    const handleAiMessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event === 'LLM_SUMMARY_READY') {
+          // Only show the summary if the user is STILL hovering over that exact node
+          if (hoveredNodeId === data.node_id) {
+            setAiInsight({
+              nodeId: data.node_id,
+              summary: data.summary
+            });
+          }
+        }
+      } catch (e) {}
+    };
+
+    ws.addEventListener('message', handleAiMessage);
+    return () => ws.removeEventListener('message', handleAiMessage);
+  }, [workspace.wsRef, hoveredNodeId]);
+
+  // Clear insight when moving mouse away
+  useEffect(() => {
+    if (!hoveredNodeId) setAiInsight(null);
+  }, [hoveredNodeId]);
 
   // --- MEMOIZED DISPATCHERS ---
   const activeCodeStr = useMemo(() => {
@@ -154,10 +183,37 @@ export default function App() {
     setCenterView('editor');
   }, [workspace, setCenterView]);
 
-  // STABLE WEBGPU HOVER ROUTER
+  // STABLE WEBGPU HOVER ROUTER WITH AI DEBOUNCE
   const handleNodeHover = useCallback((isHovering, id) => {
     setHoveredNodeId(isHovering ? id : null);
-  }, []);
+    
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    
+    if (isHovering && id) {
+      hoverTimerRef.current = setTimeout(() => {
+        if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+          const targetNode = workspace.nodes.find(n => n.id === id);
+          if (targetNode?.data?.code) {
+            console.log("🟢 1. Sending AI Request for:", id);
+            workspace.setAiInsight({
+              nodeId: id,
+              summary: "Analyzing AST logic..." 
+            });
+            workspace.wsRef.current.send(JSON.stringify({ 
+              event: 'REQUEST_LLM_SUMMARY', 
+              node_id: id, 
+              code: targetNode.data.code 
+            }));
+          }
+        }
+      }, 600);
+    }
+  }, [workspace.wsRef, workspace.nodes]);
+
+  // Clear insight when moving mouse away
+  useEffect(() => {
+    // if (!hoveredNodeId) workspace.setAiInsight(null);
+  }, [hoveredNodeId, workspace]);
 
   // --- INIT ROUTING ---
   useEffect(() => { supabase.auth.getSession().then(({ data: { session } }) => setSession(session)); const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session)); return () => subscription.unsubscribe(); }, []);
@@ -193,18 +249,36 @@ export default function App() {
 
                 <div className="flex-grow relative overflow-hidden bg-[#050505]">
                   {centerView === 'spatial' ? (
-                    /* 🌌 THE UNLEASHED WEBGPU ENGINE 🌌 */
-                    <PixiSpatialEngine 
-                      simDataRef={simDataRef}
-                      activeRay={activeRay}
-                      focusIsolationId={focusIsolationId}
-                      blastRadius={workspace.blastRadius}
-                      onDragStart={onDragStart}
-                      onDragMove={onDragMove}
-                      onDragEnd={onDragEnd}
-                      onNodeHover={handleNodeHover}
-                      onNodeDoubleClick={onDoubleClickNode}
-                    />
+                    <div className="relative w-full h-full">
+                      <PixiSpatialEngine 
+                        simDataRef={simDataRef}
+                        activeRay={activeRay}
+                        focusIsolationId={focusIsolationId}
+                        blastRadius={workspace.blastRadius}
+                        onDragStart={onDragStart}
+                        onDragMove={onDragMove}
+                        onDragEnd={onDragEnd}
+                        onNodeHover={handleNodeHover}
+                        onNodeDoubleClick={onDoubleClickNode}
+                      />
+                      
+                      {/* --- NEW: FLOATING AI INSIGHT PANEL --- */}
+                      {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
+                        <div className="absolute top-4 right-4 w-80 bg-[#141414]/95 border border-[#333] shadow-2xl rounded-lg overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200 z-[100] backdrop-blur-sm pointer-events-none">
+                          <div className="bg-[#1e1e1e] border-b border-[#333] px-3 py-2 flex items-center justify-between">
+                            <span className="text-[#93c5fd] font-mono text-[10px] font-bold tracking-widest uppercase">AI File Overview</span>
+                          </div>
+                          <div className="p-4">
+                            <span className="text-slate-200 font-sans text-sm leading-relaxed block">
+                              {workspace.aiInsight.summary}
+                            </span>
+                            <span className="text-slate-500 font-mono text-[9px] mt-3 block truncate">
+                              Target: {workspace.aiInsight.nodeId.split('::').pop()}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <CodeEditor filename={workspace.currentFile} initialCode={activeCodeStr} settings={settings} focusLine={editorFocusLine} onCodeChange={(value) => { if (workspace.wsRef.current?.readyState === WebSocket.OPEN) { workspace.wsRef.current.send(JSON.stringify({ event: 'CODE_EDIT', filename: workspace.currentFile, node_id: workspace.currentFile, new_code: value })); } }} onClearFocus={() => setEditorFocusLine(null)} />
                   )}
