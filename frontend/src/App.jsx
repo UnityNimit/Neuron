@@ -29,6 +29,8 @@ import StdinPanel from './components/layout/StdinPanel';
 import CommandPalette from './components/layout/CommandPalette';
 import SplashScreen from './components/layout/SplashScreen'; 
 
+import { ENGINE_CONFIG } from './config/engineConfig';
+
 const nodeTypes = { 
   obsidianNode: ObsidianNode, codeNode: ObsidianNode, 
   spatialNode: ObsidianNode, folderGroup: ObsidianNode, fileGroup: ObsidianNode 
@@ -197,22 +199,24 @@ export default function App() {
       const isHoveredHighlight = activeRay?.activeE.has(e.id);
       const isDimmedByRay = activeRay && !isHoveredHighlight;
 
-      let strokeColor = e.type === 'call' ? '#8b5cf6' : '#444'; 
+      const { THEME } = ENGINE_CONFIG;
+
+      let strokeColor = e.type === 'call' ? THEME.edges.call : THEME.edges.hierarchy; 
       let strokeWidth = e.type === 'call' ? 1.5 : 1;
-      let opacity = 0.6;
+      let opacity = THEME.edges.opacityNormal;
       let animated = false;
-      let filter = 'none'; // CSS Drop shadow for electric glow
+      let filter = 'none'; 
       let zIndex = 0;
 
       if (isHoveredHighlight) {
-        strokeColor = e.type === 'call' ? '#c084fc' : '#60a5fa'; 
+        strokeColor = e.type === 'call' ? THEME.edges.callGlow : THEME.edges.hierarchyGlow; 
         strokeWidth = 2.5;
         opacity = 1;
         animated = e.type === 'call'; 
-        filter = `drop-shadow(0 0 8px ${strokeColor})`; // The Neon Edge Glow!
+        filter = `drop-shadow(0 0 8px ${strokeColor})`; 
         zIndex = 1000;
       } else if (isDimmedByRay) {
-        opacity = 0.05; 
+        opacity = THEME.edges.opacityDimmed; 
       }
 
       return {
