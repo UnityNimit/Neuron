@@ -1,48 +1,40 @@
 // src/components/debug/PerfMonitor.jsx
 import React, { useEffect, useState } from 'react';
 import { perfTracker } from '../../services/perfTracker';
-import { Activity, Download, Trash2 } from 'lucide-react';
+import { Download } from 'lucide-react';
 
 export default function PerfMonitor() {
-  const [metrics, setMetrics] = useState({ fps: 0, heap: '0MB' });
+  const [m, setM] = useState({ fps: 0, ram: 'N/A', cpu: '0%' });
 
   useEffect(() => {
     perfTracker.start();
-    const interval = setInterval(() => {
-      setMetrics({
-        fps: perfTracker.fps,
-        heap: perfTracker.logs[perfTracker.logs.length - 1]?.heapUsed || '0MB'
-      });
+    const i = setInterval(() => {
+      const last = perfTracker.logs[perfTracker.logs.length - 1];
+      if (last) setM(last);
     }, 500);
-    return () => clearInterval(interval);
+    return () => clearInterval(i);
   }, []);
 
   return (
-    <div className="fixed bottom-12 right-4 z-[9999] bg-[#141414]/90 border border-[#333] p-2 rounded-lg text-[10px] font-mono flex flex-col gap-2 shadow-2xl backdrop-blur-md">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-1">
-          <Activity size={12} className={metrics.fps < 50 ? "text-red-500" : "text-green-500"} />
-          <span className={metrics.fps < 50 ? "text-red-400 font-bold" : "text-slate-300"}>
-            {metrics.fps} FPS
-          </span>
+    <div className="fixed bottom-12 right-4 z-[9999] bg-[#0a0a0ae6] border border-[#333] p-3 rounded-lg text-[11px] font-mono shadow-2xl flex flex-col gap-2">
+      <div className="flex gap-4">
+        <div className="flex flex-col">
+          <span className="text-slate-500 uppercase text-[9px]">Frame Rate</span>
+          <span className={m.fps < 40 ? "text-red-500 font-bold" : "text-green-400"}>{m.fps} FPS</span>
         </div>
-        <div className="text-blue-400">{metrics.heap}</div>
+        <div className="flex flex-col">
+          <span className="text-slate-500 uppercase text-[9px]">CPU Load</span>
+          <span className={parseInt(m.cpu) > 40 ? "text-orange-500" : "text-blue-400"}>{m.cpu}</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-slate-500 uppercase text-[9px]">Memory</span>
+          <span className="text-purple-400">{m.ram}</span>
+        </div>
       </div>
       
-      <div className="flex gap-2 border-t border-[#333] pt-2">
-        <button 
-          onClick={() => perfTracker.exportLogs()}
-          className="flex items-center gap-1 hover:text-white transition-colors"
-        >
-          <Download size={10} /> Export CSV
-        </button>
-        <button 
-          onClick={() => { perfTracker.logs = []; }}
-          className="flex items-center gap-1 hover:text-red-400 transition-colors"
-        >
-          <Trash2 size={10} /> Clear
-        </button>
-      </div>
+      <button onClick={() => perfTracker.exportLogs()} className="flex items-center gap-2 bg-[#222] hover:bg-[#333] p-1 rounded justify-center transition-colors">
+        <Download size={10} /> Export CSV
+      </button>
     </div>
   );
 }
