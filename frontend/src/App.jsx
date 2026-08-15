@@ -28,6 +28,7 @@ import TerminalPanel from './components/layout/TerminalPanel';
 import StdinPanel from './components/layout/StdinPanel';
 import CommandPalette from './components/layout/CommandPalette';
 import SplashScreen from './components/layout/SplashScreen'; 
+import PerfMonitor from './components/debug/PerfMonitor';
 
 import { ENGINE_CONFIG } from './config/engineConfig';
 
@@ -301,8 +302,6 @@ export default function App() {
 
           <Panel id="main-canvas" order={2} className="flex flex-col bg-[#0a0a0a]">
             <Group orientation="vertical" autoSaveId="neuron-vertical-v12">
-              
-              {/* DEEP SPACE CANVAS AREA */}
               <Panel id="canvas-area" order={1} className="relative flex flex-col bg-[#0a0a0a]">
                 
                 <div className="h-9 shrink-0 bg-[#1e1e1e] flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b border-[#333]">
@@ -332,25 +331,20 @@ export default function App() {
                       fitViewOptions={{ padding: 0.2, maxZoom: 1 }} 
                       minZoom={0.01} maxZoom={5}    
                       elevateNodesOnSelect={true} nodesDraggable={true} colorMode="dark"
-                      proOptions={{ hideAttribution: true }} // Ultimate clean UI
+                      proOptions={{ hideAttribution: true }}
                     >
                       <NebulaOverlay />
-                      
-                      {/* Pure Deep Space Grid */}
                       <Background color="#1a1a1a" gap={30} size={1} />
-                      
                       <Controls className="bg-[#141414] border-slate-700 fill-white mb-2 ml-2 shadow-lg" />
-                      
-                      {/* AI Synchronized MiniMap */}
                       <MiniMap 
                         maskColor="rgba(0, 0, 0, 0.85)" 
                         className="bg-[#0a0a0a] border border-[#333] mb-2 mr-2 shadow-xl" 
                         nodeColor={(n) => {
-                          if (n.data?.risk === 'high') return '#ef4444'; // Red (Danger)
-                          if (n.data?.isImpacted) return '#fb923c'; // Orange (Impact Radius)
-                          if (n.data?.nodeType === 'folder') return '#4b5563'; // Gray
-                          if (n.data?.nodeType === 'file') return '#3b82f6'; // Blue
-                          return '#8b5cf6'; // Purple (Functions)
+                          if (n.data?.risk === 'high') return '#ef4444';
+                          if (n.data?.isImpacted) return '#fb923c';
+                          if (n.data?.nodeType === 'folder') return '#4b5563';
+                          if (n.data?.nodeType === 'file') return '#3b82f6';
+                          return '#8b5cf6';
                         }}
                       />
                     </ReactFlow>
@@ -382,6 +376,9 @@ export default function App() {
         </Group>
       </div>
       <StatusBar activeFile={workspace.currentFile} lineCount={lineCount.toString()} wordCount={wordCount.toString()} language={workspace.currentFile?.split('.').pop() === 'js' ? 'JavaScript' : 'Python'} />
+      
+      {/* ADDED PERF MONITOR */}
+      <PerfMonitor />
     </div>
   );
 }
