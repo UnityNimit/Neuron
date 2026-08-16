@@ -2,7 +2,7 @@
 import os
 
 class AppState:
-    TARGET_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "benchmark_repos", "sample_app"))
+    TARGET_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "Neuron-Website"))
     ACTIVE_FILE = "server.py"
     CONNECTIONS = set()
     EXCLUDE_DIRS = {'.git', 'venv', 'node_modules', '__pycache__', 'dist', 'build', '.idea', '.vscode'}

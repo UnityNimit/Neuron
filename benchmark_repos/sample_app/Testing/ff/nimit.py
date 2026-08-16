@@ -1,1 +1,0 @@
-print("Nimit is GAY")
