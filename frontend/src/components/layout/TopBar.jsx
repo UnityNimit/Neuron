@@ -139,7 +139,7 @@ Open Full Editor     Double Click Node`);
   );
 
   return (
-    <div className="h-[38px] shrink-0 bg-[#181818] border-b border-[#2b2d31] flex items-center justify-between px-3 text-[13px] text-slate-300 font-sans select-none z-50">
+    <div className="h-[38px] shrink-0 bg-[#181818] border-b border-[#2b2d31] flex items-center justify-between px-3 text-[13px] text-slate-300 font-sans select-none z-[100] relative">
       
       {/* LEFT SECTION: Logo & Standard Menus */}
       <div className="flex items-center gap-4 flex-1">
@@ -163,31 +163,7 @@ Open Full Editor     Double Click Node`);
         </div>
       </div>
 
-      {/* RIGHT SECTION: Perfect Square Buttons */}
-      <div className="flex items-center justify-end gap-2 flex-1">
-        
-        {/* SQUARE LAYOUT BUTTON */}
-        <div className="relative">
-          <button 
-            onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === 'Layout' ? null : 'Layout'); }}
-            className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors border ${activeMenu === 'Layout' ? 'bg-[#333] text-white border-[#454545]' : 'bg-[#1e1e1e] text-slate-400 border-[#333] hover:text-slate-200 hover:bg-[#2a2d31]'}`}
-            title="Toggle IDE Panels"
-          >
-            <Layout size={14} />
-          </button>
-          {activeMenu === 'Layout' && renderDropdown('Layout')}
-        </div>
-        
-        {/* SQUARE EXECUTE BUTTON */}
-        <button 
-          onClick={onRun} 
-          className="flex items-center justify-center w-7 h-7 bg-green-600/90 hover:bg-green-500 text-white rounded-md transition-colors shadow-md border border-green-700/50"
-          title="Run Code"
-        >
-          {/* ml-0.5 centers the slightly lopsided play triangle perfectly! */}
-          <Play size={15} fill="currentColor" className="ml-0.5" />
-        </button>
-      </div>
+      
       
     </div>
   );

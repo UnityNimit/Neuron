@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
-import { FileCode2, Network, Loader2 } from 'lucide-react';
+import { FileCode2, Network, Loader2, X, Play, Layout } from 'lucide-react';
 
 // Authentication & Core Services
 import { supabase } from './supabaseClient';
@@ -235,16 +235,77 @@ export default function App() {
           {layout.sidebar && (
             <>
               <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]"><Sidebar items={workspace.items} currentFile={workspace.currentFile} absTargetDir={workspace.absTargetDir} gitStatuses={workspace.gitStatuses} onSwitchFile={handleSwitchFile} onCreateItem={handleCreateItem} onDeleteFile={handleDeleteFile} onRunFile={handleRunCode} onRenameItem={(item) => { const n = prompt("New name:", item.path); if(n) workspace.wsRef.current?.send(JSON.stringify({ event: 'RENAME_ITEM', old_path: item.path, new_path: n })); }} onMoveItem={(src, dest) => workspace.wsRef.current?.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: src, dest_folder: dest }))} onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))} onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} /></Panel>
-              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center"><div className="w-[1px] h-full bg-[#2b2d31]" /></Separator>
+              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-40 flex justify-center"><div className="w-[1px] h-full bg-[#2b2d31]" /></Separator>
             </>
           )}
 
           <Panel id="main-canvas" order={2} className="flex flex-col bg-[#0a0a0a]">
             <Group orientation="vertical" autoSaveId="neuron-vertical-v12">
               <Panel id="canvas-area" order={1} className="relative flex flex-col bg-[#0f0f0f]">
-                <div className="h-9 shrink-0 bg-[#1e1e1e] flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b border-[#333] z-50">
-                  <button onClick={() => setCenterView('spatial')} className={`h-full px-4 flex items-center gap-2 text-xs border-r border-[#333] transition-colors ${centerView === 'spatial' ? 'bg-[#0f0f0f] text-blue-400 border-t-2 border-t-blue-500 font-semibold' : 'bg-[#1e1e1e] text-slate-400 hover:bg-[#141414] hover:text-slate-300'}`}><Network size={14} /> Spatial Map</button>
-                  <button onClick={() => setCenterView('editor')} className={`h-full px-4 flex items-center gap-2 text-xs border-r border-[#333] transition-colors ${centerView === 'editor' ? 'bg-[#0a0a0a] text-yellow-400 border-t-2 border-t-yellow-500 font-semibold' : 'bg-[#1e1e1e] text-slate-400 hover:bg-[#141414] hover:text-slate-300'}`}><FileCode2 size={14} /> {workspace.currentFile} {workspace.isFileSyncing && <Loader2 size={12} className="text-yellow-500 animate-spin ml-1" />}</button>
+                <div className="h-9 shrink-0 bg-[#1e1e1e] flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b border-[#333] z-40 relative">
+                  
+                  <button onClick={() => setCenterView('spatial')} className={`h-full px-4 flex items-center gap-2 text-xs border-r border-[#333] transition-colors shrink-0 ${centerView === 'spatial' ? 'bg-[#0f0f0f] text-blue-400 border-t-2 border-t-blue-500 font-semibold' : 'bg-[#1e1e1e] text-slate-400 hover:bg-[#141414] hover:text-slate-300'}`}>
+                    <Network size={14} /> Spatial Map
+                  </button>
+
+                  {/* NEW: Dynamic Multi-File Tabs with Git Status */}
+                  {workspace.openFiles.map(file => {
+                    const gStat = workspace.gitStatuses[file];
+                    const isModified = gStat === 'M';
+                    const isUntracked = gStat === 'U';
+                    
+                    return (
+                      <div 
+                        key={file} 
+                        onClick={() => { setCenterView('editor'); handleSwitchFile(file); }} 
+                        className={`h-full px-3 flex items-center gap-2 text-xs border-r border-[#333] transition-colors cursor-pointer shrink-0 group ${centerView === 'editor' && workspace.currentFile === file ? 'bg-[#0a0a0a] border-t-2 border-t-yellow-500 font-semibold' : 'bg-[#1e1e1e] hover:bg-[#141414]'}`}
+                      >
+                        <FileCode2 size={14} className={isModified ? "text-yellow-600" : isUntracked ? "text-green-600" : "text-slate-400"} /> 
+                        
+                        <span className={`${isModified ? "text-yellow-500" : isUntracked ? "text-green-500" : centerView === 'editor' && workspace.currentFile === file ? "text-yellow-400" : "text-slate-300"}`}>
+                          {file.split('/').pop()}
+                        </span>
+                        
+                        {/* Git Status Badge */}
+                        {gStat && (
+                          <span className={`text-[10px] ml-1 font-bold ${isModified ? "text-yellow-600" : "text-green-600"}`}>
+                            {gStat}
+                          </span>
+                        )}
+
+                        {workspace.isFileSyncing && workspace.currentFile === file && <Loader2 size={12} className="text-yellow-500 animate-spin ml-1" />}
+                        
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            workspace.closeFile(file); 
+                            if (workspace.openFiles.length === 1) setCenterView('spatial'); 
+                          }} 
+                          className="opacity-0 group-hover:opacity-100 hover:bg-[#333] rounded p-0.5 ml-1 transition-opacity text-slate-400 hover:text-slate-200"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* NEW: Moved Buttons from TopBar to the far right */}
+                  <div className="ml-auto flex items-center gap-2 pr-3 shrink-0">
+                    <button 
+                      onClick={() => setLayout(prev => ({ ...prev, sidebar: !prev.sidebar }))}
+                      className="flex items-center justify-center w-7 h-7 rounded-md bg-[#1e1e1e] text-slate-400 border border-[#333] hover:text-slate-200 hover:bg-[#2a2d31] transition-colors"
+                      title="Toggle Sidebar"
+                    >
+                      <Layout size={14} />
+                    </button>
+                    <button 
+                      onClick={handleRunCode} 
+                      className="flex items-center justify-center w-7 h-7 bg-green-600/90 hover:bg-green-500 text-white rounded-md transition-colors shadow-md border border-green-700/50"
+                      title="Run Code"
+                    >
+                      <Play size={15} fill="currentColor" className="ml-0.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-grow relative overflow-hidden bg-[#050505]">
@@ -291,7 +352,6 @@ export default function App() {
         </Group>
       </div>
       <StatusBar activeFile={workspace.currentFile} lineCount={(activeCodeStr?.split("\n").length || 0).toString()} wordCount={(activeCodeStr?.trim().split(/\s+/).length || 0).toString()} language={workspace.currentFile?.split('.').pop() === 'js' ? 'JavaScript' : 'Python'} />
-      <PerfMonitor />
     </div>
   );
 }
