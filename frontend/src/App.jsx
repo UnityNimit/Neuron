@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
-import { FileCode2, Network, Loader2, X, Play, Layout } from 'lucide-react';
+import { FileCode2, Network, Loader2, X, Play, Layout, AlertOctagon } from 'lucide-react';
 
 // Authentication & Core Services
 import { supabase } from './supabaseClient';
@@ -13,7 +13,7 @@ import { useSettings } from './hooks/useSettings';
 import { usePersistentState } from './hooks/usePersistentState';
 import { usePhysicsEngine } from './hooks/usePhysicsEngine';
 
-// THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
+// 🌌 THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
 import PixiSpatialEngine from './components/canvas/PixiSpatialEngine';
 
 // Layout & UI
@@ -27,7 +27,6 @@ import TerminalPanel from './components/layout/TerminalPanel';
 import StdinPanel from './components/layout/StdinPanel';
 import CommandPalette from './components/layout/CommandPalette';
 import SplashScreen from './components/layout/SplashScreen'; 
-import PerfMonitor from './components/debug/PerfMonitor';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -44,16 +43,20 @@ export default function App() {
   const [focusIsolationId, setFocusIsolationId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
-  // --- AI STATE & REFS ---
+  // --- 🚀 HORIZON 2: CAMERA WARP TARGET STATE ---
+  const [warpTargetNodeId, setWarpTargetNodeId] = useState(null);
+
+  // --- AI & REFACTORING TRANSACTION REFS ---
   const hoverTimerRef = useRef(null);
-  const [aiInsight, setAiInsight] = useState(null);
+  const pendingRefactorRef = useRef(null);
+  const [cspRejection, setCspRejection] = useState(null);
 
   // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
     workspace.nodes, workspace.edges, workspace.wsRef, workspace.isGraphLoaded, centerView
   );
 
-  // OPTIMIZATION 1: O(1) ADJACENCY CACHE
+  // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
   const adjLists = useMemo(() => {
     const hierarchyAdj = {}; const callAdjForward = {}; const callAdjBackward = {}; 
     workspace.edges.forEach(e => {
@@ -72,7 +75,7 @@ export default function App() {
     return { hierarchyAdj, callAdjForward, callAdjBackward };
   }, [workspace.edges]);
 
-  // OPTIMIZATION 2: LIGHTNING-FAST BFS TRACE FOR WEBGPU
+  // --- OPTIMIZATION 2: BFS PATHFINDING FOR WEBGPU FOCUS-RAY ---
   const activeRay = useMemo(() => {
     if (!hoveredNodeId) return null;
     
@@ -97,57 +100,119 @@ export default function App() {
     return { activeN, activeE };
   }, [hoveredNodeId, adjLists]);
 
-  // --- OPTIMIZATION 3: NATIVE HARDWARE KEYBINDS (0ms Latency) ---
+  // --- NATIVE HARDWARE KEYBINDS (0ms Latency) ---
   useEffect(() => {
     const handleGlobalKeys = (e) => {
+      // Command Palette (Ctrl+K / Cmd+K)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { 
         e.preventDefault(); setIsCommandPaletteOpen(true); 
       }
+      // AI Impact Analysis (Alt+I)
       if (e.altKey && e.key.toLowerCase() === 'i' && hoveredNodeId) {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
           workspace.wsRef.current.send(JSON.stringify({ event: 'IMPACT_ANALYSIS', node_id: hoveredNodeId }));
         }
       }
-      if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT') {
+      // Focus Isolation (F)
+      if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         if (hoveredNodeId) setFocusIsolationId(hoveredNodeId);
       }
+      // Clear Map & Alerts (Escape)
       if (e.key === 'Escape') {
         workspace.setBlastRadius(null);
         setFocusIsolationId(null);
+        setCspRejection(null);
+      }
+      // Canvas Refactor Undo (Ctrl+Z / Cmd+Z on Spatial Map)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        if (centerView === 'spatial' && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+          e.preventDefault();
+          workspace.wsRef.current.send(JSON.stringify({ event: 'REFACTOR_UNDO' }));
+        }
       }
     };
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [hoveredNodeId, workspace]);
+  }, [hoveredNodeId, workspace, centerView]);
 
-  // --- NEW: DECOUPLED AI LISTENER ---
+  // --- WEBSOCKET EVENT LISTENER: AI & REFACTORING TRANSACTIONS ---
   useEffect(() => {
     const ws = workspace.wsRef.current;
     if (!ws) return;
 
-    const handleAiMessage = (event) => {
+    const handleWsEvents = (event) => {
       try {
         const data = JSON.parse(event.data);
+        
+        // 1. LLM Summary Response
         if (data.event === 'LLM_SUMMARY_READY') {
-          // Only show the summary if the user is STILL hovering over that exact node
           if (hoveredNodeId === data.node_id) {
-            setAiInsight({
+            workspace.setAiInsight({
               nodeId: data.node_id,
               summary: data.summary
             });
           }
         }
+        // 2. CSP Refactoring Rejection (Circular Imports / Name Collisions)
+        else if (data.event === 'REFACTOR_CSP_VIOLATION') {
+          const payload = data.payload || {};
+          const pending = pendingRefactorRef.current;
+          
+          setCspRejection({
+            timestamp: Date.now(),
+            processed: false,
+            reason: payload.reason || "Constraint Violation: Cyclic dependency detected.",
+            violationType: payload.violation_type || "CSP_VIOLATION",
+            cyclePath: payload.cycle_path || [],
+            suggestedFix: payload.suggested_fix,
+            nodeId: pending?.nodeId,
+            originalPos: pending?.originalPos
+          });
+        }
+        // 3. CSP Refactoring Success
+        else if (data.event === 'REFACTOR_SUCCESS' || data.event === 'REFACTOR_FILE_MERGE_SUCCESS') {
+          setCspRejection(null);
+          pendingRefactorRef.current = null;
+        }
       } catch (e) {}
     };
 
-    ws.addEventListener('message', handleAiMessage);
-    return () => ws.removeEventListener('message', handleAiMessage);
+    ws.addEventListener('message', handleWsEvents);
+    return () => ws.removeEventListener('message', handleWsEvents);
   }, [workspace.wsRef, hoveredNodeId]);
 
-  // Clear insight when moving mouse away
-  useEffect(() => {
-    if (!hoveredNodeId) setAiInsight(null);
-  }, [hoveredNodeId]);
+  // --- FUNCTION-TO-FILE AST TRANSPLANT DISPATCHER ---
+  const handleRefactorDrop = useCallback(({ symbolName, sourceFile, destFile, nodeId, originalPos }) => {
+    pendingRefactorRef.current = { symbolName, sourceFile, destFile, nodeId, originalPos };
+    
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.wsRef.current.send(JSON.stringify({
+        event: 'REFACTOR_SYMBOL_MOVE',
+        symbol_name: symbolName,
+        source_file: sourceFile,
+        dest_file: destFile
+      }));
+    }
+  }, [workspace.wsRef]);
+
+  // --- FILE-TO-FILE FUSION (MERGE) DISPATCHER ---
+  const handleFileMergeDrop = useCallback(({ sourceFile, destFile }) => {
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.wsRef.current.send(JSON.stringify({
+        event: 'REFACTOR_FILE_MERGE',
+        source_file: sourceFile,
+        dest_file: destFile
+      }));
+    }
+  }, [workspace.wsRef]);
+
+  // --- 🚀 HORIZON 2: 3D CAMERA WARP DISPATCHER ---
+  const handleWarpToNode = useCallback((nodeId) => {
+    setCenterView('spatial');
+    setWarpTargetNodeId(nodeId);
+    // Auto-clear trigger after flight trajectory begins
+    setTimeout(() => setWarpTargetNodeId(null), 150);
+  }, [setCenterView]);
 
   // --- MEMOIZED DISPATCHERS ---
   const activeCodeStr = useMemo(() => {
@@ -167,12 +232,29 @@ export default function App() {
   }, [workspace, isCompilerReady, stdin, activeCodeStr]);
 
   const handleSwitchFile = useCallback((filename) => { 
-    if (filename !== workspace.currentFile) { workspace.setIsFileSyncing(true); workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); }
+    if (filename !== workspace.currentFile) { 
+      workspace.setIsFileSyncing(true); 
+      workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); 
+    }
   }, [workspace]);
 
-  const handleOpenFolder = useCallback(() => { if (workspace.wsRef.current?.readyState === WebSocket.OPEN) workspace.wsRef.current.send(JSON.stringify({ event: 'OPEN_FOLDER_DIALOG' })); }, [workspace]);
-  const handleCreateItem = useCallback((name, type) => { workspace.setIsFileSyncing(true); workspace.wsRef.current?.send(JSON.stringify({ event: 'CREATE_ITEM', item_name: name, item_type: type })); }, [workspace]);
-  const handleDeleteFile = useCallback((f, e) => { if (e) e.stopPropagation(); if (window.confirm(`Delete ${f}?`)) workspace.wsRef.current?.send(JSON.stringify({ event: 'DELETE_FILE', filename: f })); }, [workspace]);
+  const handleOpenFolder = useCallback(() => { 
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.wsRef.current.send(JSON.stringify({ event: 'OPEN_FOLDER_DIALOG' })); 
+    }
+  }, [workspace]);
+
+  const handleCreateItem = useCallback((name, type) => { 
+    workspace.setIsFileSyncing(true); 
+    workspace.wsRef.current?.send(JSON.stringify({ event: 'CREATE_ITEM', item_name: name, item_type: type })); 
+  }, [workspace]);
+
+  const handleDeleteFile = useCallback((f, e) => { 
+    if (e) e.stopPropagation(); 
+    if (window.confirm(`Delete ${f}?`)) {
+      workspace.wsRef.current?.send(JSON.stringify({ event: 'DELETE_FILE', filename: f })); 
+    }
+  }, [workspace]);
 
   const onDoubleClickNode = useCallback((filePath, line) => {
     if (filePath !== workspace.currentFile) {
@@ -194,7 +276,6 @@ export default function App() {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
           const targetNode = workspace.nodes.find(n => n.id === id);
           if (targetNode?.data?.code) {
-            console.log("🟢 1. Sending AI Request for:", id);
             workspace.setAiInsight({
               nodeId: id,
               summary: "Analyzing AST logic..." 
@@ -210,11 +291,6 @@ export default function App() {
     }
   }, [workspace.wsRef, workspace.nodes]);
 
-  // Clear insight when moving mouse away
-  useEffect(() => {
-    // if (!hoveredNodeId) workspace.setAiInsight(null);
-  }, [hoveredNodeId, workspace]);
-
   // --- INIT ROUTING ---
   useEffect(() => { supabase.auth.getSession().then(({ data: { session } }) => setSession(session)); const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session)); return () => subscription.unsubscribe(); }, []);
   useEffect(() => { loadPyodideEngine((msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: false }]), (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: true }])).then(() => setIsCompilerReady(true)); }, [workspace]);
@@ -225,7 +301,17 @@ export default function App() {
   
   return (
     <div className="w-screen h-screen bg-[#0a0a0a] flex flex-col font-sans text-slate-300 overflow-hidden relative">
-      <CommandPalette isOpen={isCommandPaletteOpen} onClose={() => {setIsCommandPaletteOpen(false); setSearchQuery("");}} searchQuery={searchQuery} setSearchQuery={setSearchQuery} workspace={workspace} onRunCode={handleRunCode} onOpenSettings={() => setIsSettingsOpen(true)} />
+      <CommandPalette 
+        isOpen={isCommandPaletteOpen} 
+        onClose={() => { setIsCommandPaletteOpen(false); setSearchQuery(""); }} 
+        searchQuery={searchQuery} 
+        setSearchQuery={setSearchQuery} 
+        workspace={workspace} 
+        onRunCode={handleRunCode} 
+        onOpenSettings={() => setIsSettingsOpen(true)} 
+        onWarpToNode={handleWarpToNode} // 🚀 WIRED: Natural Language Camera Warp
+      />
+      
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSetting={updateSetting} />
       <TopBar onRun={handleRunCode} onOpenFolder={handleOpenFolder} onCreateFile={() => { const name = prompt("Enter new file name:"); if (name) handleCreateItem(name, 'file'); }} onOpenSettings={() => setIsSettingsOpen(true)} onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} layout={layout} setLayout={setLayout} />
       
@@ -235,7 +321,7 @@ export default function App() {
           {layout.sidebar && (
             <>
               <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]"><Sidebar items={workspace.items} currentFile={workspace.currentFile} absTargetDir={workspace.absTargetDir} gitStatuses={workspace.gitStatuses} onSwitchFile={handleSwitchFile} onCreateItem={handleCreateItem} onDeleteFile={handleDeleteFile} onRunFile={handleRunCode} onRenameItem={(item) => { const n = prompt("New name:", item.path); if(n) workspace.wsRef.current?.send(JSON.stringify({ event: 'RENAME_ITEM', old_path: item.path, new_path: n })); }} onMoveItem={(src, dest) => workspace.wsRef.current?.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: src, dest_folder: dest }))} onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))} onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} /></Panel>
-              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-40 flex justify-center"><div className="w-[1px] h-full bg-[#2b2d31]" /></Separator>
+              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center"><div className="w-[1px] h-full bg-[#2b2d31]" /></Separator>
             </>
           )}
 
@@ -248,8 +334,8 @@ export default function App() {
                     <Network size={14} /> Spatial Map
                   </button>
 
-                  {/* NEW: Dynamic Multi-File Tabs with Git Status */}
-                  {workspace.openFiles.map(file => {
+                  {/* Dynamic Multi-File Tabs with Git Status */}
+                  {(workspace.openFiles || []).map(file => {
                     const gStat = workspace.gitStatuses[file];
                     const isModified = gStat === 'M';
                     const isUntracked = gStat === 'U';
@@ -266,7 +352,6 @@ export default function App() {
                           {file.split('/').pop()}
                         </span>
                         
-                        {/* Git Status Badge */}
                         {gStat && (
                           <span className={`text-[10px] ml-1 font-bold ${isModified ? "text-yellow-600" : "text-green-600"}`}>
                             {gStat}
@@ -278,8 +363,8 @@ export default function App() {
                         <button 
                           onClick={(e) => { 
                             e.stopPropagation(); 
-                            workspace.closeFile(file); 
-                            if (workspace.openFiles.length === 1) setCenterView('spatial'); 
+                            if (workspace.closeFile) workspace.closeFile(file); 
+                            if ((workspace.openFiles || []).length === 1) setCenterView('spatial'); 
                           }} 
                           className="opacity-0 group-hover:opacity-100 hover:bg-[#333] rounded p-0.5 ml-1 transition-opacity text-slate-400 hover:text-slate-200"
                         >
@@ -289,7 +374,7 @@ export default function App() {
                     );
                   })}
 
-                  {/* NEW: Moved Buttons from TopBar to the far right */}
+                  {/* Right Action Bar */}
                   <div className="ml-auto flex items-center gap-2 pr-3 shrink-0">
                     <button 
                       onClick={() => setLayout(prev => ({ ...prev, sidebar: !prev.sidebar }))}
@@ -311,23 +396,28 @@ export default function App() {
                 <div className="flex-grow relative overflow-hidden bg-[#050505]">
                   {centerView === 'spatial' ? (
                     <div className="relative w-full h-full">
+                      {/* 🌌 THE WEBGPU SPATIAL ENGINE 🌌 */}
                       <PixiSpatialEngine 
                         simDataRef={simDataRef}
                         activeRay={activeRay}
                         focusIsolationId={focusIsolationId}
                         blastRadius={workspace.blastRadius}
+                        cspRejectionEvent={cspRejection}
+                        warpTargetNodeId={warpTargetNodeId} // 🚀 WIRED: 3D Camera Warp Vector
                         onDragStart={onDragStart}
                         onDragMove={onDragMove}
                         onDragEnd={onDragEnd}
+                        onRefactorDrop={handleRefactorDrop}
+                        onFileMergeDrop={handleFileMergeDrop}
                         onNodeHover={handleNodeHover}
                         onNodeDoubleClick={onDoubleClickNode}
                       />
                       
-                      {/* --- NEW: FLOATING AI INSIGHT PANEL --- */}
+                      {/* --- FLOATING AI FILE OVERVIEW PANEL --- */}
                       {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
                         <div className="absolute top-4 right-4 w-80 bg-[#141414]/95 border border-[#333] shadow-2xl rounded-lg overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200 z-[100] backdrop-blur-sm pointer-events-none">
                           <div className="bg-[#1e1e1e] border-b border-[#333] px-3 py-2 flex items-center justify-between">
-                            <span className="text-[#93c5fd] font-mono text-[10px] font-bold tracking-widest uppercase">AI File Overview</span>
+                            <span className="text-[#93c5fd] font-mono text-[10px] font-bold tracking-widest uppercase">AI Architectural Overview</span>
                           </div>
                           <div className="p-4">
                             <span className="text-slate-200 font-sans text-sm leading-relaxed block">
@@ -339,6 +429,37 @@ export default function App() {
                           </div>
                         </div>
                       )}
+
+                      {/* --- FLOATING CSP REFACTORING VIOLATION ALERT --- */}
+                      {cspRejection && (
+                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 max-w-lg w-full bg-[#1c0808]/95 border border-red-800/80 shadow-[0_0_50px_rgba(239,68,68,0.3)] rounded-xl p-4 z-[100] backdrop-blur-md animate-in fade-in slide-in-from-bottom-4 duration-200">
+                          <div className="flex items-start gap-3">
+                            <AlertOctagon size={20} className="text-red-400 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-red-200 font-mono text-xs font-bold uppercase tracking-wider">
+                                  Refactoring Guard: {cspRejection.violationType}
+                                </h4>
+                                <button 
+                                  onClick={() => setCspRejection(null)} 
+                                  className="text-red-400 hover:text-red-200 p-0.5"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                              <p className="text-slate-300 font-sans text-xs mt-1.5 leading-relaxed">
+                                {cspRejection.reason}
+                              </p>
+                              {cspRejection.suggestedFix && (
+                                <p className="text-red-300 font-mono text-[10px] mt-2 bg-black/40 p-2 rounded border border-red-950">
+                                  Suggested: {cspRejection.suggestedFix}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   ) : (
                     <CodeEditor filename={workspace.currentFile} initialCode={activeCodeStr} settings={settings} focusLine={editorFocusLine} onCodeChange={(value) => { if (workspace.wsRef.current?.readyState === WebSocket.OPEN) { workspace.wsRef.current.send(JSON.stringify({ event: 'CODE_EDIT', filename: workspace.currentFile, node_id: workspace.currentFile, new_code: value })); } }} onClearFocus={() => setEditorFocusLine(null)} />

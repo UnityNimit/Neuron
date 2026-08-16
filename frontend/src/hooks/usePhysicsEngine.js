@@ -1,20 +1,20 @@
 // src/hooks/usePhysicsEngine.js
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import * as d3 from 'd3-force';
 import { ENGINE_CONFIG } from '../config/engineConfig';
 
 const { PHYSICS } = ENGINE_CONFIG;
 
 // 🪐 PERPETUAL COSMIC CONSTANTS
-const RESTING_ALPHA_TARGET = 0.018; // Keeps the universe alive & floating 24/7
-const DRAGGING_ALPHA_TARGET = 0.22;  // Kinetic impulse when grabbing an orb
+const RESTING_ALPHA_TARGET = 0.018; // Keeps the universe floating 24/7
+const DRAGGING_ALPHA_TARGET = 0.22; 
 
 export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView) {
   const simulationRef = useRef(null);
   const draggedNodeRef = useRef(null);
   const spawnTimerRef = useRef(null);
 
-  // 🚀 MASTER RAM CACHE: Direct memory mapping for WebGPU
+  // 🚀 MASTER RAM CACHE
   const simDataRef = useRef({
     nodes: [],
     edges: [],
@@ -22,6 +22,16 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
     activeNodeCount: 0,
     isSpawningComplete: false
   });
+
+  // 🛡️ TOPOLOGY FINGERPRINTS: Detects link reconnections even if total edge count stays identical!
+  const nodeTopologyKey = useMemo(() => nodes.map(n => n.id).join('|'), [nodes]);
+  const edgeTopologyKey = useMemo(() => {
+    return edges.map(e => {
+      const s = typeof e.source === 'object' ? e.source.id : e.source;
+      const t = typeof e.target === 'object' ? e.target.id : e.target;
+      return `${e.id}:${s}->${t}`;
+    }).join('|');
+  }, [edges]);
 
   useEffect(() => {
     if (!isGraphLoaded || nodes.length === 0) return;
@@ -31,7 +41,7 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
       spawnTimerRef.current = null;
     }
 
-    // 1. IMMUTABLE TREE STRUCTURE & HIERARCHY MAPS
+    // 1. IMMUTABLE HIERARCHY TREE
     const parentMap = new Map();
     const childrenMap = new Map();
 
@@ -47,7 +57,7 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
 
     const existingMap = new Map(simDataRef.current.nodes.map(n => [n.id, n]));
 
-    // 2. PREPARE UNIFIED NODE GRAPH
+    // 2. BUILD NODE GRAPH
     const rawNodes = nodes.map(n => {
       const existing = existingMap.get(n.id);
       const nodeType = n.data?.nodeType || 'function';
@@ -57,8 +67,8 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
         ...n,
         nodeType,
         tier,
-        x: existing?.x ?? 0,
-        y: existing?.y ?? 0,
+        x: existing?.x ?? (n.position?.x || 0),
+        y: existing?.y ?? (n.position?.y || 0),
         vx: existing?.vx ?? 0,
         vy: existing?.vy ?? 0,
         fx: existing?.fx ?? null,
@@ -71,7 +81,7 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
     const nodeLookup = new Map(rawNodes.map(n => [n.id, n]));
     const validNodeIdSet = new Set(rawNodes.map(n => n.id));
 
-    // 3. PREPARE EDGES
+    // 3. SANITIZE EDGES
     const allEdges = edges
       .filter(e => {
         const srcId = typeof e.source === 'object' ? e.source.id : e.source;
@@ -136,7 +146,7 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
         }
         return (PHYSICS.SPRING_DISTANCE.neuralCall || 160);
       })
-      .strength(link => (link.type === 'hierarchy' ? 0.9 : 0.2));
+      .strength(link => (link.type === 'hierarchy' ? 1.0 : 0.2));
 
     const simulation = d3.forceSimulation(activeNodesPool)
       .force("link", linkForce)
@@ -164,14 +174,12 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
         .iterations(3)
       )
       .alphaDecay(0.01)
-      .velocityDecay(0.55); // High cosmic viscosity: Smooth continuous motion with 0 jitter
+      .velocityDecay(0.55);
 
-    // 🚀 THE 24/7 PERPETUAL SIMMER ENGINE
-    // By locking alphaTarget to a resting positive value, D3 never shuts off.
     simulation.alphaTarget(RESTING_ALPHA_TARGET).restart();
     simulationRef.current = simulation;
 
-    // 6. 🚀 STRICT HIERARCHICAL BFS QUEUE (Top-Down Sequence)
+    // 6. ORDERED BFS EMISSION QUEUE
     const roots = rawNodes.filter(n => !parentMap.has(n.id) || n.tier === 0);
     const spawnQueue = [];
     const queuedSet = new Set();
@@ -195,7 +203,6 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
       });
     }
 
-    // Collect any orphan nodes to the end of the queue
     rawNodes.forEach(n => {
       if (!queuedSet.has(n.id)) {
         queuedSet.add(n.id);
@@ -203,10 +210,8 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
       }
     });
 
-    // 7. ⏱️ 5x SLOWER PROCEDURAL 1-BY-1 EMITTER
+    // 7. SEQUENTIAL EMITTER
     const totalToSpawn = spawnQueue.length;
-
-    // Calculate delay per single node (Adaptive: ~180ms for small/medium repos, ~30ms floor for 1000+ nodes)
     const delayPerNodeMs = Math.max(25, Math.min(200, Math.round(14000 / Math.max(1, totalToSpawn))));
 
     const emitNextNode = () => {
@@ -221,13 +226,11 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
         return;
       }
 
-      // Pop STRICTLY 1 node at a time
       const node = spawnQueue.shift();
       const parentId = parentMap.get(node.id);
       const parentNode = parentId ? nodeLookup.get(parentId) : null;
 
       if (!parentNode || !parentNode.isSpawned) {
-        // Root Sun Birth at origin
         const angle = Math.random() * Math.PI * 2;
         const dist = 30 + Math.random() * 50;
         node.x = Math.cos(angle) * dist;
@@ -235,7 +238,6 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
         node.vx = Math.cos(angle) * 3;
         node.vy = Math.sin(angle) * 3;
       } else {
-        // Child birth: Pops out directly from parent's live coordinates
         const angle = Math.random() * Math.PI * 2;
         const birthDist = 8;
 
@@ -246,7 +248,6 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
         node.vx = (parentNode.vx || 0) * 0.2 + Math.cos(angle) * speed;
         node.vy = (parentNode.vy || 0) * 0.2 + Math.sin(angle) * speed;
 
-        // Recoil on parent
         parentNode.vx = (parentNode.vx || 0) - Math.cos(angle) * 0.25;
         parentNode.vy = (parentNode.vy || 0) - Math.sin(angle) * 0.25;
       }
@@ -257,20 +258,15 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
       activeNodesPool.push(node);
       activeNodeIds.add(node.id);
 
-      // Re-sync active links
       const currentActiveEdges = allEdges.filter(
         e => activeNodeIds.has(e.source?.id || e.source) && activeNodeIds.has(e.target?.id || e.target)
       );
 
       simulation.nodes(activeNodesPool);
       linkForce.links(currentActiveEdges);
-
-      // Inject brief energy burst for newly born node while maintaining 24/7 baseline
       simulation.alpha(Math.max(simulation.alpha(), 0.28)).restart();
 
       simDataRef.current.activeNodeCount = activeNodesPool.length;
-
-      // Schedule next individual node birth
       spawnTimerRef.current = setTimeout(emitNextNode, delayPerNodeMs);
     };
 
@@ -293,13 +289,11 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      if (spawnTimerRef.current) {
-        clearTimeout(spawnTimerRef.current);
-      }
+      if (spawnTimerRef.current) clearTimeout(spawnTimerRef.current);
       simulation.stop();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isGraphLoaded, edges.length, centerView]);
+  }, [isGraphLoaded, nodeTopologyKey, edgeTopologyKey, centerView]); // 🚀 FIX: Watches exact graph topology!
 
   // RAW DRAG HANDLERS
   const onDragStart = useCallback((nodeId, x, y) => {
@@ -327,7 +321,6 @@ export function usePhysicsEngine(nodes, edges, wsRef, isGraphLoaded, centerView)
       simNode.fx = null;
       simNode.fy = null;
     }
-    // Settle back to 24/7 perpetual living baseline (Never stops!)
     simulationRef.current?.alphaTarget(RESTING_ALPHA_TARGET);
 
     if (wsRef.current?.readyState === WebSocket.OPEN && simNode) {

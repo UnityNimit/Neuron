@@ -9,8 +9,10 @@ import GlassPanel from '../components/GlassPanel';
 // Documentation Modules
 import GettingStarted from './docs/GettingStarted';
 import Architecture from './docs/Architecture';
-import MachineLearning from './docs/MachineLearning';
-import Reference from './docs/Reference';
+
+import { MachineLearning } from './docs/GettingStarted';
+import { Reference } from './docs/MachineLearning';
+import { Architecture } from './docs/Architecture';
 
 // --- NAVIGATION SCHEMA ---
 const DOCS_NAVIGATION = [
