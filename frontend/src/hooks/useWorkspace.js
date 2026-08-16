@@ -10,6 +10,7 @@ export function useWorkspace(session) {
   const [items, setItems] = useState([]);
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState("");
+  const [openFiles, setOpenFiles] = useState([]);
   const [absTargetDir, setAbsTargetDir] = useState("");
   const [blastRadius, setBlastRadius] = useState(null);
   const [aiInsight, setAiInsight] = useState(null);
@@ -63,6 +64,14 @@ export function useWorkspace(session) {
             if (data.event === 'INIT' || data.event === 'SYNC') {
               setItems(data.payload.items || []);
               setFiles(data.payload.files || []);
+              const newActive = data.payload.active_file || "";
+              setCurrentFile(newActive);
+              
+              // --- ADD THIS: Push new files into the tab array ---
+              setOpenFiles(prev => {
+                if (newActive && !prev.includes(newActive)) return [...prev, newActive];
+                return prev;
+              });
               setCurrentFile(data.payload.active_file || "");
               setAbsTargetDir(data.payload.target_dir_abs || "");
               setGitStatuses(data.payload.git_statuses || {});
@@ -148,6 +157,20 @@ export function useWorkspace(session) {
     return () => { clearTimeout(reconnectTimer); if (ws) { ws.onclose = null; ws.close(); } };
   }, [session, handleCodeEdit]); // Only re-run if auth session changes
 
+  const closeFile = useCallback((filename) => {
+    setOpenFiles(prev => {
+      const next = prev.filter(f => f !== filename);
+      // If closing the active file, fallback to the previous tab
+      if (currentFileRef.current === filename) {
+        const fallback = next.length > 0 ? next[next.length - 1] : "";
+        if (wsRef.current?.readyState === WebSocket.OPEN && fallback) {
+          wsRef.current.send(JSON.stringify({ event: 'SWITCH_FILE', filename: fallback }));
+        }
+      }
+      return next;
+    });
+  }, []);
+
   const refreshWorkspace = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) { setIsFileSyncing(true); wsRef.current.send(JSON.stringify({ event: 'SWITCH_FILE', filename: currentFileRef.current })); }
   }, []);
@@ -180,6 +203,7 @@ export function useWorkspace(session) {
   return {
     isGraphLoaded, setIsGraphLoaded, isFileSyncing, setIsFileSyncing,
     items, files, currentFile, setCurrentFile, absTargetDir,
+    openFiles, setOpenFiles, closeFile,
     gitStatuses, 
     nodes, setNodes, onNodesChange, edges, setEdges, onEdgesChange,
     blastRadius, setBlastRadius, aiInsight, setAiInsight, terminalLogs, setTerminalLogs,

@@ -102,7 +102,7 @@ export default function Sidebar({
     >
       {/* Top Header Actions */}
       <div className="px-3 py-2 text-[10px] font-bold tracking-widest text-slate-400 flex items-center justify-between uppercase shrink-0">
-        <div className="flex items-center gap-1.5"><FolderOpen size={13} /> Explorer</div>
+        <div className="flex items-center gap-1.5"> Explorer</div>
         <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
           <button onClick={() => handleInitiateCreate('file')} className="p-1 hover:bg-[#2a2d31] hover:text-white rounded transition-colors" title="New File"><FilePlus size={13} /></button>
           <button onClick={() => handleInitiateCreate('folder')} className="p-1 hover:bg-[#2a2d31] hover:text-white rounded transition-colors" title="New Folder"><FolderPlus size={13} /></button>
