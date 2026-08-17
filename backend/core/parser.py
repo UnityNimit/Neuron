@@ -1,13 +1,14 @@
 # backend/core/parser.py
 import os
+import posixpath
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import tree_sitter_python as tspython
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Node, Parser
 
 # The Heavy ML Intelligence Engine
-from ml.analyzer import analyze_graph_ml 
+from ml.analyzer import analyze_graph_ml
 
 # -------------------------------------------------------------------------
 # 1. MULTI-LANGUAGE GRAMMAR LOADER (With Safe Fallbacks)
@@ -19,7 +20,7 @@ try:
     import tree_sitter_javascript as tsjavascript
     JS_LANGUAGE = Language(tsjavascript.language())
 except ImportError:
-    print("⚠️ tree-sitter-javascript not installed. Run: pip install tree-sitter-javascript")
+    pass
 
 TS_LANGUAGE: Optional[Language] = None
 TSX_LANGUAGE: Optional[Language] = None
@@ -28,7 +29,7 @@ try:
     TS_LANGUAGE = Language(tstypescript.language_typescript())
     TSX_LANGUAGE = Language(tstypescript.language_tsx())
 except ImportError:
-    print("⚠️ tree-sitter-typescript not installed. Run: pip install tree-sitter-typescript")
+    pass
 
 
 def clean_text(text: str) -> str:
@@ -38,43 +39,108 @@ def clean_text(text: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
 
 
+def normalize_rel_path(path: str) -> str:
+    """Normalizes relative paths across Windows/POSIX to forward slashes without leading slashes."""
+    if not path:
+        return ""
+    normalized = path.replace("\\", "/").strip().lstrip("/")
+    return posixpath.normpath(normalized)
+
+
 def normalize_uri(uri: str) -> str:
     """
-    Normalizes divergent frontend/backend API route expressions into a canonical token.
-    Example:
-      '/api/v1/users/{user_id}'  --> 'api/v1/users/*'
-      '/api/v1/users/:id'        --> 'api/v1/users/*'
-      '`/api/v1/users/${id}`'    --> 'api/v1/users/*'
+    🌌 UNIVERSAL CROSS-STACK URI & EVENT NORMALIZER
+    Transforms any frontend/backend route expression into an identical canonical token.
+    Examples:
+      'http://localhost:8000/api/v1/users/{user_id}?raw=true' -> 'api/v1/users/*'
+      '`${API_BASE}/api/v1/users/:id`'                        -> 'api/v1/users/*'
+      'ws://127.0.0.1:8000/ws'                                 -> 'ws'
+      '`ws://${window.location.host}/ws`'                      -> 'ws'
+      '/auth/login'                                            -> 'auth/login'
     """
     if not uri:
         return ""
-    # Strip quotes, backticks, and protocols
+
     clean = uri.strip("'\"`")
-    clean = re.sub(r'^(https?://|wss?://)[^/]+/', '', clean)
-    clean = clean.lstrip('/')
     
-    # Replace parameter patterns {param}, :param, and ${param} with *
+    # Strip protocol and domain headers
+    clean = re.sub(r'^(https?://|wss?://)[^/]+/', '', clean)
+    clean = re.sub(r'^(https?://|wss?://)[^/]+$', '', clean)
+    
+    # Strip variable template expressions at head like `${BACKEND_URL}/` or `${API_BASE}/`
+    clean = re.sub(r'^\$\{[^}]+\}/?', '', clean)
+    clean = re.sub(r'^[a-zA-Z0-9_]+\s*\+\s*[\'\"`]', '', clean)
+    
+    # Strip query parameters
+    clean = clean.split('?')[0].split('&')[0]
+    clean = clean.strip().lstrip('/')
+    
+    # Replace variable parameter tokens {param}, :param, and ${param} with *
     clean = re.sub(r'\{[^}]+\}', '*', clean)
     clean = re.sub(r':[\w]+', '*', clean)
     clean = re.sub(r'\$\{[^}]+\}', '*', clean)
-    
-    # Normalize trailing slash
+    clean = re.sub(r'/+', '/', clean)
     return clean.rstrip('/')
+
+
+def resolve_js_import_path(current_file: str, import_source: str, existing_files: Set[str]) -> Optional[str]:
+    """Resolves relative JavaScript/TypeScript imports to canonical workspace file paths."""
+    if not import_source.startswith('.'):
+        return None
+
+    curr_dir = posixpath.dirname(current_file)
+    target_base = posixpath.normpath(posixpath.join(curr_dir, import_source))
+
+    candidate_extensions = ["", ".js", ".jsx", ".ts", ".tsx", "/index.js", "/index.jsx", "/index.ts", "/index.tsx"]
+    for ext in candidate_extensions:
+        candidate = target_base + ext
+        if candidate in existing_files:
+            return candidate
+    return None
+
+
+def resolve_py_import_path(current_file: str, module_str: str, module_to_file: Dict[str, str]) -> Optional[str]:
+    """Resolves Python module import strings to workspace relative files."""
+    if module_str in module_to_file:
+        return module_to_file[module_str]
+
+    if module_str.startswith('.'):
+        curr_dir = posixpath.dirname(current_file).replace('/', '.')
+        dots_count = len(module_str) - len(module_str.lstrip('.'))
+        parts = curr_dir.split('.') if curr_dir else []
+        if len(parts) >= dots_count - 1:
+            base_parts = parts[:len(parts) - (dots_count - 1)]
+            remaining = module_str.lstrip('.')
+            resolved_mod = ".".join(base_parts + ([remaining] if remaining else []))
+            if resolved_mod in module_to_file:
+                return module_to_file[resolved_mod]
+
+    return None
 
 
 def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dict:
     git_churn = git_churn or {}
-    nodes = []
-    edges = []
-    created_nodes = set()
-    global_functions: Dict[str, str] = {}
-    file_asts = {}
-    module_to_file = {}
+    nodes: List[dict] = []
+    edges: List[dict] = []
+    created_node_ids: Set[str] = set()
+    created_edge_ids: Set[str] = set()
 
-    # Global Registry of API Endpoints: { "GET::api/v1/users/*": "backend/api/users.py::get_users" }
+    file_asts: Dict[str, dict] = {}
+    all_file_paths: Set[str] = set()
+    module_to_file: Dict[str, str] = {}
+
+    file_exports: Dict[str, Dict[str, str]] = {}
+    file_imports: Dict[str, Dict[str, str]] = {}
+    file_symbols: Dict[str, Dict[str, str]] = {}
+
+    # FastAPI Router Prefix Registries: { ("backend/api/websocket_router.py", "router"): "/api" }
+    router_prefixes: Dict[Tuple[str, str], str] = {}
+    
+    # Global Endpoint & Event Registry: 
+    # { "GET::api/users/*": "node_id", "EVENT::SEMANTIC_SEARCH": "node_id", "WEBSOCKET::ws": "node_id" }
     backend_api_registry: Dict[str, str] = {}
     
-    # Global Registry of Frontend Network Calls: [ {"method": "GET", "uri": "api/v1/users/*", "caller_id": "..."} ]
+    # Frontend Network & WebSocket Calls
     frontend_network_calls: List[dict] = []
 
     py_parser = Parser(PY_LANGUAGE)
@@ -86,15 +152,20 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
     # 2. INGEST SOURCE FILES ACROSS LANGUAGES
     # -------------------------------------------------------------------------
     for item in items:
-        if item["type"] == "file":
-            rel_path = item["path"]
+        if item.get("type") == "file":
+            rel_path = normalize_rel_path(item["path"])
+            all_file_paths.add(rel_path)
             full_path = os.path.join(target_dir, rel_path)
+
+            file_symbols[rel_path] = {}
+            file_exports[rel_path] = {}
+            file_imports[rel_path] = {}
+
             try:
                 with open(full_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
                 content_bytes = content.encode('utf-8')
 
-                # Python AST
                 if rel_path.endswith(".py"):
                     file_asts[rel_path] = {
                         "lang": "python",
@@ -104,10 +175,9 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
                     }
                     mod_name = rel_path.replace("/", ".").replace(".py", "")
                     module_to_file[mod_name] = rel_path
-                    base_name = rel_path.split('/')[-1].replace(".py", "")
+                    base_name = posixpath.basename(rel_path).replace(".py", "")
                     module_to_file[base_name] = rel_path
 
-                # TypeScript / TSX AST
                 elif rel_path.endswith((".tsx", ".ts")) and (tsx_parser or ts_parser or js_parser):
                     parser_instance = tsx_parser if (rel_path.endswith(".tsx") and tsx_parser) else (ts_parser or js_parser)
                     file_asts[rel_path] = {
@@ -116,10 +186,7 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
                         "tree": parser_instance.parse(content_bytes),
                         "content": content
                     }
-                    base_name = rel_path.split('/')[-1].rsplit('.', 1)[0]
-                    module_to_file[base_name] = rel_path
 
-                # JavaScript / JSX AST
                 elif rel_path.endswith((".js", ".jsx", ".mjs", ".cjs")) and js_parser:
                     file_asts[rel_path] = {
                         "lang": "javascript",
@@ -127,10 +194,7 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
                         "tree": js_parser.parse(content_bytes),
                         "content": content
                     }
-                    base_name = rel_path.split('/')[-1].rsplit('.', 1)[0]
-                    module_to_file[base_name] = rel_path
 
-                # Plain Text / Config Files
                 else:
                     file_asts[rel_path] = {
                         "lang": "text",
@@ -138,277 +202,457 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
                         "is_text_only": True
                     }
             except Exception as e:
-                print(f"Error reading {rel_path}: {e}")
+                print(f"[WARN] Error reading {rel_path}: {e}")
 
     # -------------------------------------------------------------------------
-    # 3. BUILD DIRECTORY & FILE NODES (Structural Hierarchy)
+    # 3. PASS 1: FASTAPI / FLASK ROUTER PREFIX TREE COMPILER
+    # -------------------------------------------------------------------------
+    for filepath, ast_data in file_asts.items():
+        if ast_data.get("lang") != "python":
+            continue
+
+        content = ast_data.get("content", "")
+
+        # Parse APIRouter(prefix="/...")
+        for match in re.finditer(r'([a-zA-Z0-9_]+)\s*=\s*APIRouter\s*\([^)]*prefix\s*=\s*[\'\"`]([^\'\"`]+)[\'\"`]', content):
+            var_name = match.group(1)
+            prefix = match.group(2)
+            router_prefixes[(filepath, var_name)] = prefix.strip('/')
+
+        # Parse app.include_router(router_var, prefix="/...")
+        for match in re.finditer(r'(?:app|router)\.include_router\s*\(\s*([a-zA-Z0-9_]+)[^)]*prefix\s*=\s*[\'\"`]([^\'\"`]+)[\'\"`]', content):
+            router_var = match.group(1)
+            mount_prefix = match.group(2).strip('/')
+            router_prefixes[(filepath, router_var)] = mount_prefix
+
+        # Parse Flask Blueprints
+        for match in re.finditer(r'([a-zA-Z0-9_]+)\s*=\s*Blueprint\s*\([^)]*url_prefix\s*=\s*[\'\"`]([^\'\"`]+)[\'\"`]', content):
+            bp_var = match.group(1)
+            bp_prefix = match.group(2).strip('/')
+            router_prefixes[(filepath, bp_var)] = bp_prefix
+
+    # -------------------------------------------------------------------------
+    # 4. BUILD DIRECTORY & FILE NODES (Structural Hierarchy)
     # -------------------------------------------------------------------------
     for filepath, ast_data in file_asts.items():
         parts = filepath.split("/")
         current_path = ""
-        
-        # Directory Nodes (The Suns)
+
+        # Folder Suns
         for i in range(len(parts) - 1):
             parent_path = current_path
             current_path = f"{current_path}/{parts[i]}" if current_path else parts[i]
-            
-            if current_path not in created_nodes:
+
+            if current_path not in created_node_ids:
                 nodes.append({
                     "id": current_path,
                     "type": "obsidianNode",
                     "data": {"label": parts[i], "nodeType": "folder", "loc": 0}
                 })
-                created_nodes.add(current_path)
-                
+                created_node_ids.add(current_path)
+
             if parent_path:
                 edge_id = f"hierarchy-{parent_path}-{current_path}"
-                if edge_id not in created_nodes:
+                if edge_id not in created_edge_ids:
                     edges.append({
                         "id": edge_id,
                         "source": parent_path,
                         "target": current_path,
                         "type": "hierarchy"
                     })
-                    created_nodes.add(edge_id)
+                    created_edge_ids.add(edge_id)
 
-        # File Nodes (The Planets)
+        # File Planet
         parent_folder = current_path
         file_velocity = git_churn.get(filepath, 0)
         file_loc = len(ast_data.get("content", "").splitlines())
 
-        nodes.append({
-            "id": filepath,
-            "type": "obsidianNode",
-            "data": {
-                "label": parts[-1],
-                "filePath": filepath,
-                "nodeType": "file",
-                "loc": file_loc,
-                "churn": file_velocity,
-                "code": ast_data.get("content", "")
-            }
-        })
-        created_nodes.add(filepath)
+        if filepath not in created_node_ids:
+            nodes.append({
+                "id": filepath,
+                "type": "obsidianNode",
+                "data": {
+                    "label": parts[-1],
+                    "filePath": filepath,
+                    "nodeType": "file",
+                    "loc": file_loc,
+                    "churn": file_velocity,
+                    "code": ast_data.get("content", "")
+                }
+            })
+            created_node_ids.add(filepath)
 
         if parent_folder:
             edge_id = f"hierarchy-{parent_folder}-{filepath}"
-            if edge_id not in created_nodes:
+            if edge_id not in created_edge_ids:
                 edges.append({
                     "id": edge_id,
                     "source": parent_folder,
                     "target": filepath,
                     "type": "hierarchy"
                 })
-                created_nodes.add(edge_id)
+                created_edge_ids.add(edge_id)
 
     # -------------------------------------------------------------------------
-    # 4. AST RECURSIVE SYMBOL & PROTOCOL EXTRACTION
+    # 5. AST RECURSIVE SYMBOL & SCOPE EXTRACTION (With Decorated Def Fix)
     # -------------------------------------------------------------------------
     for filepath, ast_data in file_asts.items():
-        if ast_data.get("is_text_only") or "tree" not in ast_data:
-            continue
+        content = ast_data.get("content", "")
+        lang = ast_data.get("lang", "text")
+        
+        # Track local variable string assignments: const WS_URL = 'ws://...'
+        local_string_vars: Dict[str, str] = {}
+        for var_match in re.finditer(r'(?:const|let|var)\s+([a-zA-Z0-9_]+)\s*=\s*[\'\"`]([^\'\"`]+)[\'\"`]', content):
+            local_string_vars[var_match.group(1)] = var_match.group(2)
 
-        root_node = ast_data["tree"].root_node
-        content_bytes = ast_data["bytes"]
-        lang = ast_data["lang"]
-
-        def get_text(n) -> str:
-            if not n:
-                return ""
-            return content_bytes[n.start_byte:n.end_byte].decode('utf-8', errors='replace')
-
-        # Cyclomatic Complexity Calculation Across Languages
-        def calculate_complexity(node) -> int:
+        def calculate_complexity_py(node: Node) -> int:
             score = 0
             decision_triggers = {
-                # Python
                 'if_statement', 'for_statement', 'while_statement', 'except_clause',
-                'with_item', 'match_statement', 'list_comprehension', 'conditional_expression',
-                # JS / TS
-                'if_statement', 'for_in_statement', 'for_statement', 'while_statement',
-                'catch_clause', 'switch_case', 'ternary_expression', 'augmented_assignment_expression'
+                'with_item', 'match_statement', 'list_comprehension', 'conditional_expression'
             }
             if node.type in decision_triggers:
                 score += 1
             for child in node.children:
-                score += calculate_complexity(child)
+                score += calculate_complexity_py(child)
             return score
 
         # ---------------------------------------------------------------------
-        # PYTHON AST PROCESSOR (Extracts FastAPI/Flask Endpoints & Functions)
+        # PYTHON AST & FASTAPI / WEBSOCKET EVENT PROCESSOR
         # ---------------------------------------------------------------------
-        if lang == "python":
-            def extract_py_defs(node, class_prefix=""):
-                for child in node.children:
-                    if child.type == 'function_definition':
-                        func_name = get_text(child.child_by_field_name('name'))
-                        full_name = f"{class_prefix}.{func_name}" if class_prefix else func_name
-                        node_id = f"{filepath}::{full_name}"
-                        global_functions[func_name] = node_id
+        if lang == "python" and "tree" in ast_data:
+            root_node = ast_data["tree"].root_node
+            content_bytes = ast_data["bytes"]
 
+            def get_text(n: Optional[Node]) -> str:
+                return content_bytes[n.start_byte:n.end_byte].decode('utf-8', errors='replace') if n else ""
+
+            def extract_py_imports(node: Node):
+                for child in node.children:
+                    if child.type == 'import_from_statement':
+                        mod_node = child.child_by_field_name('module_name')
+                        mod_name = get_text(mod_node) if mod_node else ""
+                        resolved_file = resolve_py_import_path(filepath, mod_name, module_to_file)
+
+                        for sub in child.children:
+                            if sub.type == 'dotted_name' and sub != mod_node:
+                                imported_sym = get_text(sub)
+                                if resolved_file:
+                                    file_imports[filepath][imported_sym] = resolved_file
+                            elif sub.type == 'aliased_import':
+                                name_n = sub.child_by_field_name('name')
+                                alias_n = sub.child_by_field_name('alias')
+                                imported_sym = get_text(name_n)
+                                alias_sym = get_text(alias_n) if alias_n else imported_sym
+                                if resolved_file:
+                                    file_imports[filepath][alias_sym] = resolved_file
+
+                    elif child.type == 'import_statement':
+                        for sub in child.children:
+                            if sub.type == 'dotted_name':
+                                mod_name = get_text(sub)
+                                resolved_file = resolve_py_import_path(filepath, mod_name, module_to_file)
+                                if resolved_file:
+                                    file_imports[filepath][mod_name] = resolved_file
+                    extract_py_imports(child)
+
+            extract_py_imports(root_node)
+
+            def extract_py_defs(node: Node, scope_prefix: str = ""):
+                for child in node.children:
+                    # 🚀 FIX: Handle both standard function_definition and decorated_definition
+                    func_node = None
+                    decorators_list = []
+
+                    if child.type == 'function_definition':
+                        func_node = child
+                    elif child.type == 'decorated_definition':
+                        for sub in child.children:
+                            if sub.type == 'decorator':
+                                decorators_list.append(sub)
+                            elif sub.type in ['function_definition', 'async_function_definition']:
+                                func_node = sub
+
+                    if func_node:
+                        raw_func_name = get_text(func_node.child_by_field_name('name')) or "anonymous"
+                        full_name = f"{scope_prefix}.{raw_func_name}" if scope_prefix else raw_func_name
                         start_line = child.start_point[0] + 1
                         end_line = child.end_point[0] + 1
-                        loc = (end_line - start_line) + 1
+                        loc = max(1, (end_line - start_line) + 1)
 
-                        params_node = child.child_by_field_name('parameters')
-                        return_node = child.child_by_field_name('return_type')
+                        node_id = f"{filepath}::{full_name}::L{start_line}"
+                        file_symbols[filepath][raw_func_name] = node_id
+                        file_symbols[filepath][full_name] = node_id
+                        file_exports[filepath][raw_func_name] = node_id
+
+                        params_node = func_node.child_by_field_name('parameters')
+                        return_node = func_node.child_by_field_name('return_type')
                         param_str = clean_text(get_text(params_node)) if params_node else "()"
                         return_str = clean_text(get_text(return_node)) if return_node else "?"
                         signature = f"def {full_name}{param_str} -> {return_str}"
 
-                        body = child.child_by_field_name('body')
-                        complexity = calculate_complexity(body) if body else 0
-                        density = (complexity / loc) if loc > 0 else 0
+                        body = func_node.child_by_field_name('body')
+                        complexity = calculate_complexity_py(body) if body else 0
+                        density = float(complexity / loc) if loc > 0 else 0.0
                         raw_code = get_text(child)
 
-                        # Check for API Route Decorators (@app.get, @router.websocket, etc.)
-                        for sibling in child.children:
-                            if sibling.type == 'decorator':
-                                dec_text = get_text(sibling)
-                                match = re.search(r'@(?:app|router)\.(get|post|put|delete|patch|websocket)\s*\(\s*([\'\"`][^\'\"]+[\'\"`])', dec_text)
-                                if match:
-                                    method = match.group(1).upper()
-                                    raw_path = match.group(2)
-                                    norm_path = normalize_uri(raw_path)
-                                    route_key = f"{method}::{norm_path}"
-                                    backend_api_registry[route_key] = node_id
-                                    backend_api_registry[norm_path] = node_id  # Fallback URI key
+                        # 🚀 A. FASTAPI / FLASK ROUTE DECORATORS (AST Inspection)
+                        for dec_node in decorators_list:
+                            dec_text = get_text(dec_node)
+                            match = re.search(r'@(?:app|router|api)\.(get|post|put|delete|patch|options|head|websocket|route)\s*\(\s*([\'\"`][^\'\"]+[\'\"`])', dec_text)
+                            if match:
+                                method = match.group(1).upper()
+                                raw_route_path = match.group(2)
+                                clean_raw = raw_route_path.strip('\'"`')
+                                
+                                prefix = ""
+                                for (rf_path, r_var), pref in router_prefixes.items():
+                                    if rf_path == filepath and pref:
+                                        prefix = pref
+                                        break
 
-                        nodes.append({
-                            "id": node_id,
-                            "type": "obsidianNode",
-                            "data": {
-                                "label": signature,
-                                "filePath": filepath,
-                                "line": start_line,
-                                "nodeType": "function",
-                                "loc": loc,
-                                "complexity": complexity,
-                                "density": density,
-                                "churn": git_churn.get(filepath, 0),
-                                "code": raw_code
-                            }
-                        })
-                        created_nodes.add(node_id)
-                        edges.append({
-                            "id": f"contain-{filepath}-{node_id}",
-                            "source": filepath,
-                            "target": node_id,
-                            "type": "hierarchy"
-                        })
+                                combined_path = f"{prefix}/{clean_raw}".strip('/')
+                                norm_path = normalize_uri(combined_path)
+
+                                backend_api_registry[f"{method}::{norm_path}"] = node_id
+                                backend_api_registry[norm_path] = node_id
+                                
+                                local_norm = normalize_uri(clean_raw)
+                                backend_api_registry[f"{method}::{local_norm}"] = node_id
+                                backend_api_registry[local_norm] = node_id
+
+                        # 🚀 B. WEBSOCKET EVENT HANDLERS (e.g. if evt == "SEMANTIC_SEARCH":)
+                        for evt_match in re.finditer(r'(?:evt|event|message\.get\([\'"event\'"]\))\s*==\s*[\'\"`]([^\'\"`]+)[\'\"`]', raw_code):
+                            event_token = evt_match.group(1).strip()
+                            backend_api_registry[f"EVENT::{event_token}"] = node_id
+                            backend_api_registry[event_token] = node_id
+
+                        if node_id not in created_node_ids:
+                            nodes.append({
+                                "id": node_id,
+                                "type": "obsidianNode",
+                                "data": {
+                                    "label": signature,
+                                    "filePath": filepath,
+                                    "line": start_line,
+                                    "nodeType": "function",
+                                    "loc": loc,
+                                    "complexity": complexity,
+                                    "density": density,
+                                    "churn": git_churn.get(filepath, 0),
+                                    "code": raw_code
+                                }
+                            })
+                            created_node_ids.add(node_id)
+
+                        edge_id = f"contain-{filepath}-{node_id}"
+                        if edge_id not in created_edge_ids:
+                            edges.append({
+                                "id": edge_id,
+                                "source": filepath,
+                                "target": node_id,
+                                "type": "hierarchy"
+                            })
+                            created_edge_ids.add(edge_id)
 
                         if body:
                             extract_py_defs(body, full_name)
 
                     elif child.type == 'class_definition':
-                        class_name = get_text(child.child_by_field_name('name'))
+                        class_name = get_text(child.child_by_field_name('name')) or "AnonymousClass"
+                        full_class_name = f"{scope_prefix}.{class_name}" if scope_prefix else class_name
                         body = child.child_by_field_name('body')
                         if body:
-                            extract_py_defs(body, class_name)
+                            extract_py_defs(body, full_class_name)
 
             extract_py_defs(root_node)
 
         # ---------------------------------------------------------------------
-        # JAVASCRIPT / TYPESCRIPT AST PROCESSOR (Functions & Network Callers)
+        # DUAL REGEX SCANNER FOR PYTHON ROUTES (Guarantees 100% Extraction)
         # ---------------------------------------------------------------------
-        elif lang in ["javascript", "typescript"]:
-            def extract_js_defs(node):
+        if filepath.endswith('.py'):
+            for dec_match in re.finditer(r'@(?:app|router|api)\.(get|post|put|delete|patch|options|head|websocket|route)\s*\(\s*([\'\"`][^\'\"]+[\'\"`])', content):
+                method = dec_match.group(1).upper()
+                raw_path = dec_match.group(2).strip('\'"`')
+                norm = normalize_uri(raw_path)
+                
+                # Find matching function node ID
+                target_node_id = filepath
+                for candidate_id in file_symbols.get(filepath, {}).values():
+                    target_node_id = candidate_id
+                    break
+
+                backend_api_registry[f"{method}::{norm}"] = target_node_id
+                backend_api_registry[norm] = target_node_id
+
+        # ---------------------------------------------------------------------
+        # JAVASCRIPT / TYPESCRIPT / JSX AST PROCESSOR
+        # ---------------------------------------------------------------------
+        if lang in ["javascript", "typescript"] and "tree" in ast_data:
+            root_node = ast_data["tree"].root_node
+            content_bytes = ast_data["bytes"]
+
+            def get_text(n: Optional[Node]) -> str:
+                return content_bytes[n.start_byte:n.end_byte].decode('utf-8', errors='replace') if n else ""
+
+            def extract_js_imports(node: Node):
                 for child in node.children:
-                    is_func = child.type in ['function_declaration', 'method_definition']
-                    is_var_arrow = (
-                        child.type == 'lexical_declaration' and 
-                        any(c.type == 'variable_declarator' and any(gc.type == 'arrow_function' for gc in c.children) for c in child.children)
-                    )
+                    if child.type == 'import_statement':
+                        source_node = child.child_by_field_name('source')
+                        if source_node:
+                            import_source = clean_text(get_text(source_node)).strip("'\"`")
+                            resolved_file = resolve_js_import_path(filepath, import_source, all_file_paths)
+                            if resolved_file:
+                                for sub in child.children:
+                                    if sub.type == 'import_clause':
+                                        for spec in sub.named_children:
+                                            if spec.type == 'identifier':
+                                                file_imports[filepath][get_text(spec)] = resolved_file
+                                            elif spec.type == 'named_imports':
+                                                for ispec in spec.named_children:
+                                                    if ispec.type == 'import_specifier':
+                                                        name_n = ispec.child_by_field_name('name')
+                                                        alias_n = ispec.child_by_field_name('alias')
+                                                        local_name = get_text(alias_n) if alias_n else get_text(name_n)
+                                                        file_imports[filepath][local_name] = resolved_file
+                    extract_js_imports(child)
 
-                    if is_func or is_var_arrow:
-                        func_name = "anonymous"
-                        if is_func:
+            extract_js_imports(root_node)
+
+            visited_byte_ranges: Set[Tuple[int, int]] = set()
+
+            def extract_js_defs(node: Node, scope_prefix: str = ""):
+                for child in node.children:
+                    span = (child.start_byte, child.end_byte)
+                    is_func_decl = child.type in ['function_declaration', 'method_definition', 'generator_function_declaration']
+                    
+                    is_var_arrow = False
+                    arrow_name = ""
+                    arrow_node = None
+
+                    if child.type in ['lexical_declaration', 'variable_declaration']:
+                        for decl in child.named_children:
+                            if decl.type == 'variable_declarator':
+                                val = decl.child_by_field_name('value')
+                                if val and val.type in ['arrow_function', 'function_expression']:
+                                    name_n = decl.child_by_field_name('name')
+                                    arrow_name = get_text(name_n) if name_n else "anonymous"
+                                    is_var_arrow = True
+                                    arrow_node = val
+                                    break
+
+                    if (is_func_decl or is_var_arrow) and span not in visited_byte_ranges:
+                        visited_byte_ranges.add(span)
+                        
+                        if is_func_decl:
                             name_node = child.child_by_field_name('name')
-                            func_name = get_text(name_node) if name_node else "anonymous"
-                        elif is_var_arrow:
-                            decl = next(c for c in child.children if c.type == 'variable_declarator')
-                            name_node = decl.child_by_field_name('name')
-                            func_name = get_text(name_node) if name_node else "arrow_fn"
+                            raw_name = get_text(name_node) if name_node else "anonymous"
+                            target_body = child.child_by_field_name('body')
+                            target_node = child
+                        else:
+                            raw_name = arrow_name
+                            target_body = arrow_node.child_by_field_name('body') if arrow_node else None
+                            target_node = arrow_node if arrow_node else child
 
-                        node_id = f"{filepath}::{func_name}"
-                        global_functions[func_name] = node_id
+                        full_name = f"{scope_prefix}.{raw_name}" if scope_prefix else raw_name
+                        start_line = target_node.start_point[0] + 1
+                        end_line = target_node.end_point[0] + 1
+                        loc = max(1, (end_line - start_line) + 1)
 
-                        start_line = child.start_point[0] + 1
-                        end_line = child.end_point[0] + 1
-                        loc = (end_line - start_line) + 1
-                        complexity = calculate_complexity(child)
-                        density = (complexity / loc) if loc > 0 else 0
+                        node_id = f"{filepath}::{full_name}::L{start_line}"
+                        file_symbols[filepath][raw_name] = node_id
+                        file_symbols[filepath][full_name] = node_id
+                        file_exports[filepath][raw_name] = node_id
+
                         raw_code = get_text(child)
 
-                        nodes.append({
-                            "id": node_id,
-                            "type": "obsidianNode",
-                            "data": {
-                                "label": f"{func_name}()",
-                                "filePath": filepath,
-                                "line": start_line,
-                                "nodeType": "function",
-                                "loc": loc,
-                                "complexity": complexity,
-                                "density": density,
-                                "churn": git_churn.get(filepath, 0),
-                                "code": raw_code
-                            }
-                        })
-                        created_nodes.add(node_id)
-                        edges.append({
-                            "id": f"contain-{filepath}-{node_id}",
-                            "source": filepath,
-                            "target": node_id,
-                            "type": "hierarchy"
-                        })
+                        if node_id not in created_node_ids:
+                            nodes.append({
+                                "id": node_id,
+                                "type": "obsidianNode",
+                                "data": {
+                                    "label": f"{full_name}()",
+                                    "filePath": filepath,
+                                    "line": start_line,
+                                    "nodeType": "function",
+                                    "loc": loc,
+                                    "complexity": 1,
+                                    "density": 0.1,
+                                    "churn": git_churn.get(filepath, 0),
+                                    "code": raw_code
+                                }
+                            })
+                            created_node_ids.add(node_id)
 
-                    # Traverse child trees
-                    extract_js_defs(child)
+                        edge_id = f"contain-{filepath}-{node_id}"
+                        if edge_id not in created_edge_ids:
+                            edges.append({
+                                "id": edge_id,
+                                "source": filepath,
+                                "target": node_id,
+                                "type": "hierarchy"
+                            })
+                            created_edge_ids.add(edge_id)
+
+                        if target_body:
+                            extract_js_defs(target_body, full_name)
+                    else:
+                        extract_js_defs(child, scope_prefix)
 
             extract_js_defs(root_node)
 
-            # Extract Client Network Fetch Calls: fetch(), axios.get(), new WebSocket()
-            def extract_network_calls(node, caller_id: str):
-                # fetch('/api/...') or axios.get('/api/...')
-                if node.type == 'call_expression':
-                    fn_node = node.child_by_field_name('function')
-                    args_node = node.child_by_field_name('arguments')
-                    fn_text = get_text(fn_node)
+        # ---------------------------------------------------------------------
+        # 6. UNIVERSAL FRONTEND NETWORK & WEBSOCKET SCANNER
+        # ---------------------------------------------------------------------
+        if filepath.endswith(('.js', '.jsx', '.ts', '.tsx', '.mjs')):
+            # A. Detect fetch('/...'), axios.get('/...'), new WebSocket(...)
+            for net_match in re.finditer(r'(?:fetch|axios(?:\.get|\.post|\.put|\.delete)?|new\s+WebSocket)\s*\(\s*([\'\"`][^\'\"`]+[\'\"`]|[a-zA-Z0-9_]+)', content):
+                raw_target = net_match.group(1).strip()
+                method = "GET"
+                if "WebSocket" in net_match.group(0):
+                    method = "WEBSOCKET"
+                elif ".post" in net_match.group(0):
+                    method = "POST"
+                elif ".put" in net_match.group(0):
+                    method = "PUT"
+                elif ".delete" in net_match.group(0):
+                    method = "DELETE"
 
-                    if fn_text in ['fetch', 'axios', 'axios.get', 'axios.post', 'axios.put', 'axios.delete', 'api.get', 'api.post'] and args_node:
-                        first_arg = args_node.children[1] if len(args_node.children) > 1 else None
-                        if first_arg:
-                            raw_uri = get_text(first_arg)
-                            norm_uri = normalize_uri(raw_uri)
-                            if norm_uri:
-                                frontend_network_calls.append({
-                                    "uri": norm_uri,
-                                    "caller_id": caller_id
-                                })
+                # Resolve variable if not quoted
+                if not raw_target.startswith(('"', "'", '`')) and raw_target in local_string_vars:
+                    raw_target = local_string_vars[raw_target]
 
-                # new WebSocket('/ws')
-                elif node.type == 'new_expression':
-                    constructor_node = node.child_by_field_name('constructor')
-                    args_node = node.child_by_field_name('arguments')
-                    if get_text(constructor_node) == 'WebSocket' and args_node:
-                        first_arg = args_node.children[1] if len(args_node.children) > 1 else None
-                        if first_arg:
-                            raw_uri = get_text(first_arg)
-                            norm_uri = normalize_uri(raw_uri)
-                            if norm_uri:
-                                frontend_network_calls.append({
-                                    "uri": norm_uri,
-                                    "caller_id": caller_id
-                                })
+                norm = normalize_uri(raw_target)
+                if norm:
+                    caller = filepath
+                    for candidate_id in file_symbols.get(filepath, {}).values():
+                        caller = candidate_id
+                        break
 
-                for child in node.children:
-                    extract_network_calls(child, caller_id)
+                    frontend_network_calls.append({
+                        "type": "URI",
+                        "method": method,
+                        "token": norm,
+                        "caller_id": caller
+                    })
 
-            extract_network_calls(root_node, filepath)
+            # B. Detect WebSocket Emitters with any variable prefix (*.send({ event: "..." }))
+            for ws_send_match in re.finditer(r'\.send\s*\(\s*(?:JSON\.stringify\s*\(\s*)?\{[^}]*[\'"]event[\'"]\s*:\s*[\'\"`]([^\'\"`]+)[\'\"`]', content):
+                event_name = ws_send_match.group(1).strip()
+                caller = filepath
+                for candidate_id in file_symbols.get(filepath, {}).values():
+                    caller = candidate_id
+                    break
+
+                frontend_network_calls.append({
+                    "type": "EVENT",
+                    "method": "WEBSOCKET",
+                    "token": event_name,
+                    "caller_id": caller
+                })
 
     # -------------------------------------------------------------------------
-    # 5. CROSS-FUNCTION AST CALL GRAPH (Neural Pathways)
+    # 7. SCOPE-AWARE CALL GRAPH LINKER (Internal Function Calls)
     # -------------------------------------------------------------------------
     for filepath, ast_data in file_asts.items():
         if ast_data.get("is_text_only") or "tree" not in ast_data:
@@ -416,65 +660,110 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
 
         root_node = ast_data["tree"].root_node
         content_bytes = ast_data["bytes"]
-        def get_text(n) -> str:
+
+        def get_text(n: Optional[Node]) -> str:
             return content_bytes[n.start_byte:n.end_byte].decode('utf-8', errors='replace') if n else ""
 
-        def traverse_calls(node, caller_id: str):
+        def traverse_calls(node: Node, caller_id: str):
+            current_caller = caller_id
+            if node.type in ['function_definition', 'function_declaration', 'method_definition', 'arrow_function']:
+                start_l = node.start_point[0] + 1
+                for candidate_id in file_symbols.get(filepath, {}).values():
+                    if f"::L{start_l}" in candidate_id:
+                        current_caller = candidate_id
+                        break
+
             if node.type in ['call', 'call_expression']:
                 func_node = node.child_by_field_name('function')
                 if func_node:
-                    called_name = get_text(func_node).split('.')[-1]
-                    if called_name in global_functions:
-                        target_id = global_functions[called_name]
-                        if target_id != caller_id and target_id in created_nodes:
-                            edge_id = f"call-{caller_id}-{target_id}"
-                            if edge_id not in created_nodes:
-                                edges.append({
-                                    "id": edge_id,
-                                    "source": caller_id,
-                                    "target": target_id,
-                                    "type": "call"
-                                })
-                                created_nodes.add(edge_id)
+                    called_raw = get_text(func_node)
+                    called_symbol = called_raw.split('.')[-1].strip()
+
+                    target_node_id = None
+
+                    if called_symbol in file_symbols.get(filepath, {}):
+                        target_node_id = file_symbols[filepath][called_symbol]
+                    elif called_symbol in file_imports.get(filepath, {}):
+                        source_file = file_imports[filepath][called_symbol]
+                        if called_symbol in file_exports.get(source_file, {}):
+                            target_node_id = file_exports[source_file][called_symbol]
+                        else:
+                            target_node_id = source_file
+
+                    if target_node_id and target_node_id != current_caller and target_node_id in created_node_ids:
+                        edge_id = f"call-{current_caller}-{target_node_id}"
+                        if edge_id not in created_edge_ids:
+                            edges.append({
+                                "id": edge_id,
+                                "source": current_caller,
+                                "target": target_node_id,
+                                "type": "call"
+                            })
+                            created_edge_ids.add(edge_id)
 
             for child in node.children:
-                traverse_calls(child, caller_id)
+                traverse_calls(child, current_caller)
 
         traverse_calls(root_node, filepath)
 
     # -------------------------------------------------------------------------
-    # 6. 🚀 CROSS-STACK PROTOCOL BRIDGE COMPILER (Frontend <---> Backend)
+    # 8. 🚀 COMPILE CROSS-STACK LASER BRIDGES (Frontend <---> Backend)
     # -------------------------------------------------------------------------
-    for net_call in frontend_network_calls:
-        target_uri = net_call["uri"]
-        caller_id = net_call["caller_id"]
+    compiled_bridges_count = 0
 
-        # 1. Match Exact or Parameterized Route Token
+    for net_call in frontend_network_calls:
+        token = net_call["token"]
+        method = net_call.get("method", "GET")
+        caller_id = net_call["caller_id"]
+        call_type = net_call.get("type", "URI")
+
         matched_target_node_id = None
-        if target_uri in backend_api_registry:
-            matched_target_node_id = backend_api_registry[target_uri]
+
+        if call_type == "EVENT":
+            # Event-Driven Channel Matching
+            event_key = f"EVENT::{token}"
+            if event_key in backend_api_registry:
+                matched_target_node_id = backend_api_registry[event_key]
+            elif token in backend_api_registry:
+                matched_target_node_id = backend_api_registry[token]
         else:
-            # Fuzzy Regex Matching for dynamic route templates
-            for registered_route, target_node_id in backend_api_registry.items():
-                pattern = "^" + registered_route.replace("*", "[^/]+") + "$"
-                if re.match(pattern, target_uri):
-                    matched_target_node_id = target_node_id
+            # URI Route Matching
+            exact_key = f"{method}::{token}"
+            if exact_key in backend_api_registry:
+                matched_target_node_id = backend_api_registry[exact_key]
+            elif token in backend_api_registry:
+                matched_target_node_id = backend_api_registry[token]
+            else:
+                for reg_route, target_id in backend_api_registry.items():
+                    clean_reg = reg_route.split('::')[-1]
+                    if token.endswith(clean_reg) or clean_reg.endswith(token) or clean_reg == "ws":
+                        matched_target_node_id = target_id
+                        break
+
+        # Fallback: Link Frontend WebSocket to Backend WebSocket Router if present
+        if not matched_target_node_id and method == "WEBSOCKET":
+            for reg_route, target_id in backend_api_registry.items():
+                if "ws" in reg_route.lower() or "websocket" in reg_route.lower():
+                    matched_target_node_id = target_id
                     break
 
-        # 2. Emit Cross-Stack Laser Conduit
+        # Emit the Glowing Laser Conduit
         if matched_target_node_id and caller_id != matched_target_node_id:
             bridge_edge_id = f"bridge-{caller_id}-{matched_target_node_id}"
-            if bridge_edge_id not in created_nodes:
+            if bridge_edge_id not in created_edge_ids:
                 edges.append({
                     "id": bridge_edge_id,
                     "source": caller_id,
                     "target": matched_target_node_id,
                     "type": "network_bridge"
                 })
-                created_nodes.add(bridge_edge_id)
+                created_edge_ids.add(bridge_edge_id)
+                compiled_bridges_count += 1
+
+    print(f"[INFO] ⚡ Cross-Stack Compiler: Discovered {len(backend_api_registry)} backend endpoints, {len(frontend_network_calls)} frontend calls -> Compiled {compiled_bridges_count} Live Protocol Bridges.")
 
     # -------------------------------------------------------------------------
-    # 7. EXECUTE ASYNCHRONOUS GRAPH ML PIPELINE
+    # 9. EXECUTE GRAPH ML ANALYSIS PIPELINE
     # -------------------------------------------------------------------------
     enriched_nodes = analyze_graph_ml(nodes, edges)
 

@@ -26,6 +26,7 @@ import StatusBar from './components/layout/StatusBar';
 import TerminalPanel from './components/layout/TerminalPanel';
 import StdinPanel from './components/layout/StdinPanel';
 import CommandPalette from './components/layout/CommandPalette';
+import AgentSupervisorHUD from './components/layout/AgentSupervisorHUD';
 import SplashScreen from './components/layout/SplashScreen'; 
 
 export default function App() {
@@ -53,25 +54,37 @@ export default function App() {
 
   // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
-    workspace.nodes, workspace.edges, workspace.wsRef, workspace.isGraphLoaded, centerView
+    workspace.nodes || [], 
+    workspace.edges || [], 
+    workspace.wsRef, 
+    workspace.isGraphLoaded, 
+    centerView
   );
 
-  // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
+  // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE (Handles String & Object Endpoints) ---
   const adjLists = useMemo(() => {
-    const hierarchyAdj = {}; const callAdjForward = {}; const callAdjBackward = {}; 
-    workspace.edges.forEach(e => {
+    const hierarchyAdj = {}; 
+    const callAdjForward = {}; 
+    const callAdjBackward = {}; 
+
+    (workspace.edges || []).forEach(e => {
+      const srcId = typeof e.source === 'object' ? String(e.source.id) : String(e.source);
+      const tgtId = typeof e.target === 'object' ? String(e.target.id) : String(e.target);
+      const edgeId = e.id || `edge-${srcId}-${tgtId}`;
+
       if (e.type === 'hierarchy') {
-         if(!hierarchyAdj[e.source]) hierarchyAdj[e.source] = [];
-         if(!hierarchyAdj[e.target]) hierarchyAdj[e.target] = [];
-         hierarchyAdj[e.source].push({ id: e.target, edgeId: e.id });
-         hierarchyAdj[e.target].push({ id: e.source, edgeId: e.id });
+        if (!hierarchyAdj[srcId]) hierarchyAdj[srcId] = [];
+        if (!hierarchyAdj[tgtId]) hierarchyAdj[tgtId] = [];
+        hierarchyAdj[srcId].push({ id: tgtId, edgeId });
+        hierarchyAdj[tgtId].push({ id: srcId, edgeId });
       } else {
-         if(!callAdjForward[e.source]) callAdjForward[e.source] = [];
-         if(!callAdjBackward[e.target]) callAdjBackward[e.target] = [];
-         callAdjForward[e.source].push({ id: e.target, edgeId: e.id });
-         callAdjBackward[e.target].push({ id: e.source, edgeId: e.id });
+        if (!callAdjForward[srcId]) callAdjForward[srcId] = [];
+        if (!callAdjBackward[tgtId]) callAdjBackward[tgtId] = [];
+        callAdjForward[srcId].push({ id: tgtId, edgeId });
+        callAdjBackward[tgtId].push({ id: srcId, edgeId });
       }
     });
+
     return { hierarchyAdj, callAdjForward, callAdjBackward };
   }, [workspace.edges]);
 
@@ -83,19 +96,29 @@ export default function App() {
     const activeE = new Set();
     const { hierarchyAdj, callAdjForward, callAdjBackward } = adjLists;
     
-    (hierarchyAdj[hoveredNodeId] || []).forEach(n => { activeN.add(n.id); activeE.add(n.edgeId); });
+    (hierarchyAdj[hoveredNodeId] || []).forEach(n => { 
+      activeN.add(n.id); 
+      activeE.add(n.edgeId); 
+    });
 
     const trace = (startId, adjMap) => {
       const queue = [startId];
       const visited = new Set([startId]);
-      while(queue.length > 0) {
+      while (queue.length > 0) {
         const curr = queue.shift();
         (adjMap[curr] || []).forEach(n => {
-          if (!visited.has(n.id)) { visited.add(n.id); activeN.add(n.id); activeE.add(n.edgeId); queue.push(n.id); }
+          if (!visited.has(n.id)) { 
+            visited.add(n.id); 
+            activeN.add(n.id); 
+            activeE.add(n.edgeId); 
+            queue.push(n.id); 
+          }
         });
       }
     };
-    trace(hoveredNodeId, callAdjForward); trace(hoveredNodeId, callAdjBackward); 
+    
+    trace(hoveredNodeId, callAdjForward); 
+    trace(hoveredNodeId, callAdjBackward); 
     
     return { activeN, activeE };
   }, [hoveredNodeId, adjLists]);
@@ -105,7 +128,8 @@ export default function App() {
     const handleGlobalKeys = (e) => {
       // Command Palette (Ctrl+K / Cmd+K)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { 
-        e.preventDefault(); setIsCommandPaletteOpen(true); 
+        e.preventDefault(); 
+        setIsCommandPaletteOpen(true); 
       }
       // AI Impact Analysis (Alt+I)
       if (e.altKey && e.key.toLowerCase() === 'i' && hoveredNodeId) {
@@ -122,6 +146,7 @@ export default function App() {
         workspace.setBlastRadius(null);
         setFocusIsolationId(null);
         setCspRejection(null);
+        setWarpTargetNodeId(null);
       }
       // Canvas Refactor Undo (Ctrl+Z / Cmd+Z on Spatial Map)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
@@ -153,7 +178,7 @@ export default function App() {
             });
           }
         }
-        // 2. CSP Refactoring Rejection (Circular Imports / Name Collisions)
+        // 2. CSP Refactoring Rejection
         else if (data.event === 'REFACTOR_CSP_VIOLATION') {
           const payload = data.payload || {};
           const pending = pendingRefactorRef.current;
@@ -179,7 +204,7 @@ export default function App() {
 
     ws.addEventListener('message', handleWsEvents);
     return () => ws.removeEventListener('message', handleWsEvents);
-  }, [workspace.wsRef, hoveredNodeId]);
+  }, [workspace.wsRef, hoveredNodeId, workspace]);
 
   // --- FUNCTION-TO-FILE AST TRANSPLANT DISPATCHER ---
   const handleRefactorDrop = useCallback(({ symbolName, sourceFile, destFile, nodeId, originalPos }) => {
@@ -210,14 +235,17 @@ export default function App() {
   const handleWarpToNode = useCallback((nodeId) => {
     setCenterView('spatial');
     setWarpTargetNodeId(nodeId);
-    // Auto-clear trigger after flight trajectory begins
-    setTimeout(() => setWarpTargetNodeId(null), 150);
+    setHoveredNodeId(nodeId);
+
+    setTimeout(() => {
+      setWarpTargetNodeId(null);
+    }, 250);
   }, [setCenterView]);
 
   // --- MEMOIZED DISPATCHERS ---
   const activeCodeStr = useMemo(() => {
-    const fileNode = workspace.nodes.find(n => n.id === workspace.currentFile && n.data?.nodeType === 'file');
-    return fileNode ? fileNode.data.code : "";
+    const fileNode = (workspace.nodes || []).find(n => n.id === workspace.currentFile && n.data?.nodeType === 'file');
+    return fileNode ? (fileNode.data?.code || "") : "";
   }, [workspace.nodes, workspace.currentFile]);
 
   const handleRunCode = useCallback(async () => {
@@ -228,7 +256,9 @@ export default function App() {
       window.pyodide.setStdin({ stdin: () => { const lines = stdin.split('\n'); return lines.length > 0 ? lines.shift() : ""; }});
       await window.pyodide.runPythonAsync(activeCodeStr);
       workspace.setTerminalLogs(prev => [...prev, { text: `Process exited with code 0`, isSystem: true }]);
-    } catch (error) { workspace.setTerminalLogs(prev => [...prev, { text: error.message, isError: true }]); }
+    } catch (error) { 
+      workspace.setTerminalLogs(prev => [...prev, { text: error.message, isError: true }]); 
+    }
   }, [workspace, isCompilerReady, stdin, activeCodeStr]);
 
   const handleSwitchFile = useCallback((filename) => { 
@@ -257,11 +287,11 @@ export default function App() {
   }, [workspace]);
 
   const onDoubleClickNode = useCallback((filePath, line) => {
-    if (filePath !== workspace.currentFile) {
+    if (filePath && filePath !== workspace.currentFile) {
       workspace.setIsFileSyncing(true);
       workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: filePath }));
     }
-    setEditorFocusLine(line);
+    setEditorFocusLine(line || 1);
     setCenterView('editor');
   }, [workspace, setCenterView]);
 
@@ -274,11 +304,11 @@ export default function App() {
     if (isHovering && id) {
       hoverTimerRef.current = setTimeout(() => {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
-          const targetNode = workspace.nodes.find(n => n.id === id);
+          const targetNode = (workspace.nodes || []).find(n => n.id === id);
           if (targetNode?.data?.code) {
             workspace.setAiInsight({
               nodeId: id,
-              summary: "Analyzing AST logic..." 
+              summary: "Analyzing AST topology & dependencies..." 
             });
             workspace.wsRef.current.send(JSON.stringify({ 
               event: 'REQUEST_LLM_SUMMARY', 
@@ -287,20 +317,39 @@ export default function App() {
             }));
           }
         }
-      }, 600);
+      }, 550);
     }
-  }, [workspace.wsRef, workspace.nodes]);
+  }, [workspace.wsRef, workspace.nodes, workspace]);
 
   // --- INIT ROUTING ---
-  useEffect(() => { supabase.auth.getSession().then(({ data: { session } }) => setSession(session)); const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session)); return () => subscription.unsubscribe(); }, []);
-  useEffect(() => { loadPyodideEngine((msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: false }]), (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: true }])).then(() => setIsCompilerReady(true)); }, [workspace]);
+  useEffect(() => { 
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session)); 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session)); 
+    return () => subscription.unsubscribe(); 
+  }, []);
+
+  useEffect(() => { 
+    loadPyodideEngine(
+      (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: false }]), 
+      (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: true }])
+    ).then(() => setIsCompilerReady(true)); 
+  }, [workspace]);
 
   if (!session || !workspace.isGraphLoaded || !isCompilerReady) {
-    return <SplashScreen session={session} isGraphLoaded={workspace.isGraphLoaded} isCompilerReady={isCompilerReady} onLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })} />;
+    return (
+      <SplashScreen 
+        session={session} 
+        isGraphLoaded={workspace.isGraphLoaded} 
+        isCompilerReady={isCompilerReady} 
+        onLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })} 
+      />
+    );
   }
   
   return (
     <div className="w-screen h-screen bg-[#0a0a0a] flex flex-col font-sans text-slate-300 overflow-hidden relative">
+      
+      {/* 🚀 COMMAND PALETTE (Natural Language Omni-Search) */}
       <CommandPalette 
         isOpen={isCommandPaletteOpen} 
         onClose={() => { setIsCommandPaletteOpen(false); setSearchQuery(""); }} 
@@ -309,7 +358,7 @@ export default function App() {
         workspace={workspace} 
         onRunCode={handleRunCode} 
         onOpenSettings={() => setIsSettingsOpen(true)} 
-        onWarpToNode={handleWarpToNode} // 🚀 WIRED: Natural Language Camera Warp
+        onWarpToNode={handleWarpToNode}
       />
       
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSetting={updateSetting} />
@@ -320,14 +369,33 @@ export default function App() {
         <Group orientation="horizontal" className="flex-grow overflow-hidden" autoSaveId="neuron-layout-v12">
           {layout.sidebar && (
             <>
-              <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]"><Sidebar items={workspace.items} currentFile={workspace.currentFile} absTargetDir={workspace.absTargetDir} gitStatuses={workspace.gitStatuses} onSwitchFile={handleSwitchFile} onCreateItem={handleCreateItem} onDeleteFile={handleDeleteFile} onRunFile={handleRunCode} onRenameItem={(item) => { const n = prompt("New name:", item.path); if(n) workspace.wsRef.current?.send(JSON.stringify({ event: 'RENAME_ITEM', old_path: item.path, new_path: n })); }} onMoveItem={(src, dest) => workspace.wsRef.current?.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: src, dest_folder: dest }))} onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))} onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} /></Panel>
-              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center"><div className="w-[1px] h-full bg-[#2b2d31]" /></Separator>
+              <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]">
+                <Sidebar 
+                  items={workspace.items} 
+                  currentFile={workspace.currentFile} 
+                  absTargetDir={workspace.absTargetDir} 
+                  gitStatuses={workspace.gitStatuses} 
+                  onSwitchFile={handleSwitchFile} 
+                  onCreateItem={handleCreateItem} 
+                  onDeleteFile={handleDeleteFile} 
+                  onRunFile={handleRunCode} 
+                  onRenameItem={(item) => { const n = prompt("New name:", item.path); if (n) workspace.wsRef.current?.send(JSON.stringify({ event: 'RENAME_ITEM', old_path: item.path, new_path: n })); }} 
+                  onMoveItem={(src, dest) => workspace.wsRef.current?.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: src, dest_folder: dest }))} 
+                  onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))} 
+                  onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} 
+                />
+              </Panel>
+              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center">
+                <div className="w-[1px] h-full bg-[#2b2d31]" />
+              </Separator>
             </>
           )}
 
           <Panel id="main-canvas" order={2} className="flex flex-col bg-[#0a0a0a]">
             <Group orientation="vertical" autoSaveId="neuron-vertical-v12">
               <Panel id="canvas-area" order={1} className="relative flex flex-col bg-[#0f0f0f]">
+                
+                {/* Center Tab Bar */}
                 <div className="h-9 shrink-0 bg-[#1e1e1e] flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b border-[#333] z-40 relative">
                   
                   <button onClick={() => setCenterView('spatial')} className={`h-full px-4 flex items-center gap-2 text-xs border-r border-[#333] transition-colors shrink-0 ${centerView === 'spatial' ? 'bg-[#0f0f0f] text-blue-400 border-t-2 border-t-blue-500 font-semibold' : 'bg-[#1e1e1e] text-slate-400 hover:bg-[#141414] hover:text-slate-300'}`}>
@@ -336,7 +404,7 @@ export default function App() {
 
                   {/* Dynamic Multi-File Tabs with Git Status */}
                   {(workspace.openFiles || []).map(file => {
-                    const gStat = workspace.gitStatuses[file];
+                    const gStat = (workspace.gitStatuses || {})[file];
                     const isModified = gStat === 'M';
                     const isUntracked = gStat === 'U';
                     
@@ -403,7 +471,7 @@ export default function App() {
                         focusIsolationId={focusIsolationId}
                         blastRadius={workspace.blastRadius}
                         cspRejectionEvent={cspRejection}
-                        warpTargetNodeId={warpTargetNodeId} // 🚀 WIRED: 3D Camera Warp Vector
+                        warpTargetNodeId={warpTargetNodeId}
                         onDragStart={onDragStart}
                         onDragMove={onDragMove}
                         onDragEnd={onDragEnd}
@@ -413,19 +481,21 @@ export default function App() {
                         onNodeDoubleClick={onDoubleClickNode}
                       />
                       
-                      {/* --- FLOATING AI FILE OVERVIEW PANEL --- */}
+                      {/* 🚀 SUPER-MINIMALIST FLOATING AI OVERVIEW PANEL */}
                       {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
-                        <div className="absolute top-4 right-4 w-80 bg-[#141414]/95 border border-[#333] shadow-2xl rounded-lg overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200 z-[100] backdrop-blur-sm pointer-events-none">
-                          <div className="bg-[#1e1e1e] border-b border-[#333] px-3 py-2 flex items-center justify-between">
-                            <span className="text-[#93c5fd] font-mono text-[10px] font-bold tracking-widest uppercase">AI Architectural Overview</span>
-                          </div>
-                          <div className="p-4">
-                            <span className="text-slate-200 font-sans text-sm leading-relaxed block">
+                        <div className="absolute top-4 right-4 max-w-sm bg-[#0e0e0e]/90 border border-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.6)] rounded-xl p-3.5 z-[100] backdrop-blur-md pointer-events-none animate-in fade-in duration-150">
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-semibold text-blue-400 truncate">
+                                {workspace.aiInsight.nodeId.split('::').pop()?.replace('()', '')}
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-500 truncate shrink-0">
+                                {workspace.aiInsight.nodeId.split('::')[0]}
+                              </span>
+                            </div>
+                            <p className="text-slate-300 font-sans text-xs leading-relaxed">
                               {workspace.aiInsight.summary}
-                            </span>
-                            <span className="text-slate-500 font-mono text-[9px] mt-3 block truncate">
-                              Target: {workspace.aiInsight.nodeId.split('::').pop()}
-                            </span>
+                            </p>
                           </div>
                         </div>
                       )}
@@ -462,17 +532,84 @@ export default function App() {
 
                     </div>
                   ) : (
-                    <CodeEditor filename={workspace.currentFile} initialCode={activeCodeStr} settings={settings} focusLine={editorFocusLine} onCodeChange={(value) => { if (workspace.wsRef.current?.readyState === WebSocket.OPEN) { workspace.wsRef.current.send(JSON.stringify({ event: 'CODE_EDIT', filename: workspace.currentFile, node_id: workspace.currentFile, new_code: value })); } }} onClearFocus={() => setEditorFocusLine(null)} />
+                    <CodeEditor 
+                      filename={workspace.currentFile} 
+                      initialCode={activeCodeStr} 
+                      settings={settings} 
+                      focusLine={editorFocusLine} 
+                      onCodeChange={(value) => { 
+                        if (workspace.wsRef.current?.readyState === WebSocket.OPEN) { 
+                          workspace.wsRef.current.send(JSON.stringify({ 
+                            event: 'CODE_EDIT', 
+                            filename: workspace.currentFile, 
+                            node_id: workspace.currentFile, 
+                            new_code: value 
+                          })); 
+                        } 
+                      }} 
+                      onClearFocus={() => setEditorFocusLine(null)} 
+                    />
                   )}
                 </div>
               </Panel>
-              {layout.terminal && ( <><Separator className="h-1 bg-[#2b2d31] hover:bg-blue-500 cursor-row-resize z-50 flex items-center"><div className="h-[1px] w-full bg-[#2b2d31]" /></Separator><Panel id="terminal-area" order={2} defaultSize={250} minSize={15} maxSize={300} className="bg-[#141414]"><TerminalPanel logs={workspace.terminalLogs} sessions={workspace.terminalSessions} activeSessionId={workspace.activeSessionId} absTargetDir={workspace.absTargetDir} onSelectSession={workspace.setActiveSessionId} onCreateSession={workspace.createTerminalSession} onCloseSession={workspace.closeTerminalSession} onSendTerminalCommand={workspace.sendTerminalCommand} onKillProcess={workspace.killTerminalProcess} onClearOutput={() => workspace.setTerminalLogs([])} /></Panel></> )}
+              {layout.terminal && ( 
+                <>
+                  <Separator className="h-1 bg-[#2b2d31] hover:bg-blue-500 cursor-row-resize z-50 flex items-center">
+                    <div className="h-[1px] w-full bg-[#2b2d31]" />
+                  </Separator>
+                  <Panel id="terminal-area" order={2} defaultSize={250} minSize={15} maxSize={300} className="bg-[#141414]">
+                    <TerminalPanel 
+                      logs={workspace.terminalLogs} 
+                      sessions={workspace.terminalSessions} 
+                      activeSessionId={workspace.activeSessionId} 
+                      absTargetDir={workspace.absTargetDir} 
+                      onSelectSession={workspace.setActiveSessionId} 
+                      onCreateSession={workspace.createTerminalSession} 
+                      onCloseSession={workspace.closeTerminalSession} 
+                      onSendTerminalCommand={workspace.sendTerminalCommand} 
+                      onKillProcess={workspace.killTerminalProcess} 
+                      onClearOutput={() => workspace.setTerminalLogs([])} 
+                    />
+                  </Panel>
+                </> 
+              )}
             </Group>
           </Panel>
-          {layout.stdin && ( <><Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center"><div className="w-[1px] h-full bg-[#2b2d31]" /></Separator><Panel id="stdin-panel" order={4} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]"><StdinPanel stdin={stdin} setStdin={setStdin} /></Panel></> )}
+          {layout.stdin && ( 
+            <>
+              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center">
+                <div className="w-[1px] h-full bg-[#2b2d31]" />
+              </Separator>
+              <Panel id="stdin-panel" order={4} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]">
+                <StdinPanel stdin={stdin} setStdin={setStdin} />
+              </Panel>
+            </> 
+          )}
         </Group>
       </div>
-      <StatusBar activeFile={workspace.currentFile} lineCount={(activeCodeStr?.split("\n").length || 0).toString()} wordCount={(activeCodeStr?.trim().split(/\s+/).length || 0).toString()} language={workspace.currentFile?.split('.').pop() === 'js' ? 'JavaScript' : 'Python'} />
+
+      {/* 🚀 HORIZON 3: AI AGENT SUPERVISOR LIVE PR BLAST RADIUS HUD */}
+      <AgentSupervisorHUD 
+        agentBatch={workspace.agentBatch}
+        onRollback={workspace.rollbackAgentBatch}
+        onApprove={workspace.approveAgentBatch}
+        onDismiss={workspace.dismissAgentBatch}
+        onWarpToNode={handleWarpToNode}
+        onSwitchFile={handleSwitchFile}
+      />
+
+      {/* 🚀 BOTTOM STATUS BAR (Live Protocols, Active Nodes, Git Churn, WebSocket Pulse) */}
+      <StatusBar 
+        activeFile={workspace.currentFile} 
+        lineCount={(activeCodeStr?.split("\n").length || 0).toString()} 
+        wordCount={(activeCodeStr?.trim().split(/\s+/).length || 0).toString()} 
+        language={workspace.currentFile?.split('.').pop() === 'js' || workspace.currentFile?.split('.').pop() === 'jsx' ? 'JavaScript' : 'Python'} 
+        nodes={workspace.nodes || []}
+        edges={workspace.edges || []}
+        gitStatuses={workspace.gitStatuses || {}}
+        isWsConnected={workspace.isWsConnected}
+        onCenterSpatialMap={() => setCenterView('spatial')}
+      />
     </div>
   );
 }
