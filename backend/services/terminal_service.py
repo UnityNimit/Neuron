@@ -31,7 +31,7 @@ async def safe_send(websocket: Any, data: dict) -> None:
 # -------------------------------------------------------------------------
 def resolve_shell_command(command: str, shell_type: str, cwd: str) -> Tuple[List[str], Dict[str, str]]:
     """
-    Constructs the exact platform-specific shell arguments and injected environment
+    Constructs platform-specific shell arguments and injected environment
     to capture live stdout, stderr, and dynamic CWD changes.
     """
     env = os.environ.copy()
@@ -48,7 +48,6 @@ def resolve_shell_command(command: str, shell_type: str, cwd: str) -> Tuple[List
             full_cmd = f"{command} & echo __NEURON_CWD__:%cd%"
             args = ["cmd.exe", "/c", full_cmd]
         else:
-            # Check for PowerShell Core (pwsh) or fallback to Windows PowerShell
             ps_exe = "pwsh.exe" if shutil.which("pwsh.exe") else "powershell.exe"
             full_cmd = f'{command}; Write-Output "__NEURON_CWD__:$((Get-Location).Path)"'
             args = [ps_exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", full_cmd]
@@ -91,7 +90,6 @@ async def stream_terminal_command(
 
     args, custom_env = resolve_shell_command(command, shell_type, effective_cwd)
 
-    # Process Isolation Flags
     creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
     start_session = True if sys.platform != "win32" else False
 
@@ -114,16 +112,14 @@ async def stream_terminal_command(
         AppState.PROCESSES[session_id] = process
 
         def read_stream_chunks(stream, is_err: bool):
-            """Reads unbuffered output chunks to ensure prompt lines (e.g. [y/N]?) stream immediately."""
+            """Reads unbuffered output chunks so prompts without newlines stream immediately."""
             try:
                 while True:
-                    # Read in small 256-character chunks so interactive prompts without newlines don't hang
                     chunk = stream.read(256)
                     if not chunk:
                         break
 
                     text = chunk
-                    # Intercept Dynamic CWD Update token
                     if "__NEURON_CWD__:" in text:
                         parts = text.split("__NEURON_CWD__:")
                         text = parts[0]
@@ -156,7 +152,6 @@ async def stream_terminal_command(
         t_out.start()
         t_err.start()
 
-        # Await completion without blocking FastAPI event loop
         return_code = await asyncio.to_thread(process.wait)
 
         t_out.join(timeout=0.2)
@@ -185,7 +180,7 @@ async def stream_terminal_command(
 
 
 # -------------------------------------------------------------------------
-# 4. INTERACTIVE STDIN PIPE & SUBPROCESS TREE TERMINATOR
+# 4. INTERACTIVE STDIN PIPE & PROCESS TREE TERMINATOR
 # -------------------------------------------------------------------------
 def write_terminal_stdin(session_id: str, input_text: str) -> bool:
     """Pipes user keystrokes / answers directly into an active terminal process."""
@@ -202,16 +197,13 @@ def write_terminal_stdin(session_id: str, input_text: str) -> bool:
 
 
 def kill_terminal_process(session_id: str) -> bool:
-    """
-    Terminates the entire process tree cleanly to guarantee zero orphaned background tasks.
-    """
+    """Terminates the entire process tree cleanly without zombie tasks."""
     if session_id in AppState.PROCESSES:
         proc = AppState.PROCESSES[session_id]
         if not proc:
             return False
 
         try:
-            # WINDOWS: Tree-kill using Taskkill
             if sys.platform == "win32":
                 try:
                     os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
@@ -223,7 +215,6 @@ def kill_terminal_process(session_id: str) -> bool:
                     stderr=subprocess.DEVNULL,
                     check=False
                 )
-            # MACOS & LINUX: Kill Process Group
             else:
                 try:
                     pgid = os.getpgid(proc.pid)
@@ -240,30 +231,194 @@ def kill_terminal_process(session_id: str) -> bool:
 
 
 # -------------------------------------------------------------------------
-# 5. SYNCHRONOUS PYTHON SCRIPT EXECUTOR
+# 5. UNIVERSAL POLYGLOT CODE RUNNER (C++, C, Java, Python, JS)
 # -------------------------------------------------------------------------
-def run_python_script_sync(
+def run_code_polyglot_sync(
     file_to_run: str,
     stdin_data: str = "",
     timeout: float = 15.0
 ) -> subprocess.CompletedProcess:
     """
-    Runs a standalone Python script synchronously with unbuffered I/O and timeout guards.
+    Universal Polyglot Compiler & Execution Engine.
+    Compiles and executes C++, C, Java, Python, and JavaScript with stdin piping.
     """
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
     
     target_dir = os.path.abspath(AppState.TARGET_DIR)
+    file_abs = os.path.abspath(file_to_run)
+    file_dir = os.path.dirname(file_abs)
+    ext = os.path.splitext(file_abs)[1].lower()
 
-    return subprocess.run(
-        [sys.executable, file_to_run],
-        cwd=target_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-        timeout=timeout,
-        input=stdin_data
-    )
+    # Helper: Create simulated error response
+    def create_error_result(msg: str) -> subprocess.CompletedProcess:
+        return subprocess.CompletedProcess(
+            args=[file_abs],
+            returncode=1,
+            stdout="",
+            stderr=msg
+        )
+
+    # -------------------------------------------------------------------------
+    # A. PYTHON (.py)
+    # -------------------------------------------------------------------------
+    if ext == ".py":
+        return subprocess.run(
+            [sys.executable, file_abs],
+            cwd=file_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            input=stdin_data
+        )
+
+    # -------------------------------------------------------------------------
+    # B. C++ (.cpp, .cc, .cxx)
+    # -------------------------------------------------------------------------
+    elif ext in [".cpp", ".cc", ".cxx"]:
+        cpp_compiler = shutil.which("g++") or shutil.which("clang++")
+        if not cpp_compiler:
+            return create_error_result(
+                "[ERROR] C++ compiler (g++ / clang++) not found in system PATH.\n"
+                "Please install MinGW-w64 (GCC) or LLVM Clang to compile C++ code."
+            )
+
+        bin_ext = ".exe" if sys.platform == "win32" else ""
+        bin_path = os.path.splitext(file_abs)[0] + f"_bin{bin_ext}"
+
+        # 1. Compile C++ Code with optimizations
+        compile_cmd = [cpp_compiler, "-O2", "-std=c++20", file_abs, "-o", bin_path]
+        comp_res = subprocess.run(compile_cmd, cwd=file_dir, capture_output=True, text=True, errors="replace")
+
+        if comp_res.returncode != 0:
+            return subprocess.CompletedProcess(
+                args=compile_cmd,
+                returncode=comp_res.returncode,
+                stdout="",
+                stderr=f"[C++ Compilation Error]\n{comp_res.stderr}"
+            )
+
+        # 2. Execute Compiled Binary
+        try:
+            run_res = subprocess.run(
+                [bin_path],
+                cwd=file_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                input=stdin_data
+            )
+            return run_res
+        finally:
+            # Clean up compiled binary
+            if os.path.exists(bin_path):
+                try:
+                    os.remove(bin_path)
+                except Exception:
+                    pass
+
+    # -------------------------------------------------------------------------
+    # C. C (.c)
+    # -------------------------------------------------------------------------
+    elif ext == ".c":
+        c_compiler = shutil.which("gcc") or shutil.which("clang")
+        if not c_compiler:
+            return create_error_result(
+                "[ERROR] C compiler (gcc / clang) not found in system PATH.\n"
+                "Please install MinGW-w64 (GCC) or LLVM Clang to compile C code."
+            )
+
+        bin_ext = ".exe" if sys.platform == "win32" else ""
+        bin_path = os.path.splitext(file_abs)[0] + f"_bin{bin_ext}"
+
+        compile_cmd = [c_compiler, "-O2", file_abs, "-o", bin_path]
+        comp_res = subprocess.run(compile_cmd, cwd=file_dir, capture_output=True, text=True, errors="replace")
+
+        if comp_res.returncode != 0:
+            return subprocess.CompletedProcess(
+                args=compile_cmd,
+                returncode=comp_res.returncode,
+                stdout="",
+                stderr=f"[C Compilation Error]\n{comp_res.stderr}"
+            )
+
+        try:
+            return subprocess.run(
+                [bin_path],
+                cwd=file_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                input=stdin_data
+            )
+        finally:
+            if os.path.exists(bin_path):
+                try:
+                    os.remove(bin_path)
+                except Exception:
+                    pass
+
+    # -------------------------------------------------------------------------
+    # D. JAVA (.java)
+    # -------------------------------------------------------------------------
+    elif ext == ".java":
+        java_cmd = shutil.which("java")
+        if not java_cmd:
+            return create_error_result(
+                "[ERROR] Java Runtime (java / JDK) not found in system PATH.\n"
+                "Please install OpenJDK or Oracle JDK to execute Java files."
+            )
+
+        # Java 11+ single-file execution
+        return subprocess.run(
+            [java_cmd, file_abs],
+            cwd=file_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            input=stdin_data
+        )
+
+    # -------------------------------------------------------------------------
+    # E. JAVASCRIPT / NODE (.js, .mjs)
+    # -------------------------------------------------------------------------
+    elif ext in [".js", ".mjs"]:
+        node_cmd = shutil.which("node")
+        if not node_cmd:
+            return create_error_result(
+                "[ERROR] Node.js runtime (node) not found in system PATH."
+            )
+
+        return subprocess.run(
+            [node_cmd, file_abs],
+            cwd=file_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            input=stdin_data
+        )
+
+    # -------------------------------------------------------------------------
+    # F. UNSUPPORTED RUNTIME
+    # -------------------------------------------------------------------------
+    else:
+        return create_error_result(
+            f"[ERROR] Execution runner for '{ext}' is not configured.\n"
+            "Supported languages for direct execution: C++, C, Java, Python, JavaScript."
+        )
+
+
+# Backward-compatible alias for WebSocket Router
+run_python_script_sync = run_code_polyglot_sync

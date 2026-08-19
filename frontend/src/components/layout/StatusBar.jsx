@@ -1,8 +1,7 @@
 // frontend/src/components/layout/StatusBar.jsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
-  AlertTriangle, Bell, Code2, XCircle, CheckCircle2, X, 
-  Zap, GitBranch, Network, Activity, Cpu, Sparkles 
+  Bell, X, GitBranch, Activity, CheckCircle2, Zap 
 } from 'lucide-react';
 
 export default function StatusBar({ 
@@ -15,14 +14,16 @@ export default function StatusBar({
   nodes = [],
   edges = [],
   gitStatuses = {},
-  isWsConnected = true,
-  isCompiling = false,
+  gitBranch = "main",
+  isGitRepo = true,
+  repoName = "",
+  absTargetDir = "",
   onCenterSpatialMap
 }) {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notifRef = useRef(null);
 
-  // Calculate live Cross-Stack Protocol Bridges & Graph Topology
+  // 1. Calculate live Bridges, Nodes & Links
   const bridgeCount = useMemo(() => {
     return (edges || []).filter(e => e.type === 'network_bridge').length;
   }, [edges]);
@@ -30,18 +31,28 @@ export default function StatusBar({
   const totalNodesCount = useMemo(() => (nodes || []).length, [nodes]);
   const totalEdgesCount = useMemo(() => (edges || []).length, [edges]);
 
+  // 2. Git Status & Repo Resolution
   const modifiedGitCount = useMemo(() => {
     return Object.values(gitStatuses || {}).filter(s => s === 'M' || s === 'U').length;
   }, [gitStatuses]);
 
-  // Real-time notification queue
+  const currentRepoName = useMemo(() => {
+    if (repoName) return repoName;
+    if (absTargetDir) return absTargetDir.split(/[/\\]/).pop();
+    return "";
+  }, [repoName, absTargetDir]);
+
+  const hasGit = Boolean(
+    isGitRepo && (currentRepoName || Object.keys(gitStatuses || {}).length > 0 || gitBranch)
+  );
+
+  // 3. Real-time System Notifications
   const [notifications, setNotifications] = useState([
-    { id: 1, type: "success", text: "PixiJS 100K WebGPU Engine active (60 FPS)", time: "Just now" },
-    { id: 2, type: "bridge", text: `${bridgeCount || 1} Cross-Stack API Bridges compiled`, time: "Live" },
+    { id: 1, type: "success", text: "Spatial WebGPU Engine running (60 FPS)", time: "Just now" },
+    { id: 2, type: "bridge", text: `${bridgeCount || 1} Cross-Stack API Bridges active`, time: "Live" },
     { id: 3, type: "info", text: "AC-3 Refactoring Shield armed", time: "Ready" }
   ]);
 
-  // Update notification on bridge updates
   useEffect(() => {
     if (bridgeCount > 0) {
       setNotifications(prev => {
@@ -75,6 +86,13 @@ export default function StatusBar({
     if (!filename) return "Spatial Map";
     const ext = filename.split('.').pop().toLowerCase();
     const map = {
+      'cpp': 'C++',
+      'cc': 'C++',
+      'cxx': 'C++',
+      'hpp': 'C++ Header',
+      'h': 'C Header',
+      'c': 'C',
+      'java': 'Java',
       'py': 'Python',
       'js': 'JavaScript',
       'jsx': 'JavaScript React',
@@ -85,163 +103,148 @@ export default function StatusBar({
       'css': 'CSS',
       'txt': 'Plain Text',
       'md': 'Markdown',
-      'csv': 'CSV'
+      'toml': 'TOML',
+      'yaml': 'YAML',
+      'yml': 'YAML'
     };
     return map[ext] || ext.toUpperCase();
   };
 
   return (
-    <div className="h-6 shrink-0 bg-[#0f0f0f] border-t border-[#262626] text-slate-400 flex items-center justify-between px-3 text-[11px] font-sans select-none z-50">
+    <div className="h-6 shrink-0 bg-[#191a1b] border-t border-[#242628] text-slate-400 flex items-center justify-between px-3 text-[11px] font-mono select-none z-50">
       
       {/* ------------------------------------------------------------------- */}
-      {/* LEFT SECTION: System Status, WebSocket, API Bridges, Diagnostics     */}
+      {/* LEFT SECTION: Pure Typography (Bridges · Nodes · Links · Errors)    */}
       {/* ------------------------------------------------------------------- */}
-      <div className="flex items-center gap-3 h-full overflow-hidden">
+      <div className="flex items-center gap-2 h-full overflow-hidden">
         
-        {/* Neuron Brand & Version */}
-        <div className="flex items-center gap-1 px-1.5 h-full hover:bg-[#1f1f1f] hover:text-slate-200 cursor-pointer transition-colors">
-          <span className="font-bold tracking-wider text-slate-200 font-mono text-[10px]">NEURON</span>
-          <span className="bg-blue-500/20 text-blue-400 font-mono text-[9px] px-1 rounded border border-blue-500/30">v2.4</span>
-        </div>
-
-        {/* Live WebSocket Status Pulse */}
-        <div className="flex items-center gap-1.5 px-1.5 h-full" title={isWsConnected ? "WebSocket Connected (0ms)" : "Reconnecting to Backend..."}>
-          <span className="relative flex h-2 w-2">
-            {isWsConnected && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            )}
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${isWsConnected ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-          </span>
-          <span className={`text-[10px] font-mono ${isWsConnected ? 'text-emerald-400' : 'text-red-400'}`}>
-            {isWsConnected ? 'ONLINE' : 'DISCONNECTED'}
-          </span>
-        </div>
-
-        {/* 🚀 CROSS-STACK PROTOCOL BRIDGE HUD (Electric Cyan) */}
-        <div 
+        {/* Clickable Bridges Text */}
+        <button 
           onClick={onCenterSpatialMap}
-          className="flex items-center gap-1.5 px-2 h-full bg-cyan-950/40 hover:bg-cyan-900/60 border-x border-cyan-800/40 text-cyan-300 font-mono text-[10px] cursor-pointer transition-all shadow-[0_0_12px_rgba(6,182,212,0.15)]"
-          title="Cross-Stack Frontend <--> Backend Laser Conduits Active"
+          className="hover:text-blue-400 transition-colors cursor-pointer"
+          title="Center Spatial Map on Active Bridges"
         >
-          <Zap size={11} className="text-cyan-400 animate-pulse fill-cyan-400/40" />
-          <span className="font-bold">{bridgeCount}</span>
-          <span className="text-[9px] uppercase tracking-wider text-cyan-400/80 hidden sm:inline">Bridges</span>
-        </div>
+          <span>{bridgeCount} bridges</span>
+        </button>
 
-        {/* Graph Celestial Density Metric */}
         {totalNodesCount > 0 && (
-          <div className="hidden lg:flex items-center gap-1 px-1.5 text-[10px] font-mono text-slate-400">
-            <Network size={11} className="text-purple-400" />
-            <span>{totalNodesCount} Nodes</span>
+          <>
             <span className="text-slate-600">·</span>
-            <span>{totalEdgesCount} Links</span>
-          </div>
+            <span className="text-slate-400">
+              {totalNodesCount} nodes · {totalEdgesCount} links
+            </span>
+          </>
         )}
 
-        {/* Errors & Warnings */}
-        <div className="flex items-center gap-2 h-full">
-          <button className="flex items-center gap-1 px-1.5 h-full hover:bg-[#1f1f1f] hover:text-slate-200 transition-colors" title="Diagnostics">
-            <XCircle size={12} className={errorCount > 0 ? "text-red-400" : "text-slate-500"} />
-            <span>{errorCount}</span>
-          </button>
-          <button className="flex items-center gap-1 px-1.5 h-full hover:bg-[#1f1f1f] hover:text-slate-200 transition-colors" title="Warnings">
-            <AlertTriangle size={12} className={warningCount > 0 ? "text-yellow-400" : "text-slate-500"} />
-            <span>{warningCount}</span>
-          </button>
-        </div>
+        {/* Diagnostics */}
+        {(errorCount > 0 || warningCount > 0) && (
+          <>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-400">
+              {errorCount > 0 && <span className="text-red-400 mr-1.5">{errorCount} errors</span>}
+              {warningCount > 0 && <span className="text-amber-400">{warningCount} warnings</span>}
+            </span>
+          </>
+        )}
 
       </div>
 
       {/* ------------------------------------------------------------------- */}
-      {/* RIGHT SECTION: Git Churn, File Metrics, Encoding, Notifications     */}
+      {/* RIGHT SECTION: Git Branch & Repo · Coordinates · File Type · Bell  */}
       {/* ------------------------------------------------------------------- */}
-      <div className="flex items-center gap-1.5 h-full shrink-0">
+      <div className="flex items-center gap-2.5 h-full shrink-0">
         
-        {/* Git Branch & Churn Indicator */}
-        <div className="flex items-center gap-1 px-2 h-full hover:bg-[#1f1f1f] hover:text-slate-200 text-[10px] font-mono text-slate-400 cursor-pointer">
-          <GitBranch size={11} className="text-blue-400" />
-          <span>main</span>
-          {modifiedGitCount > 0 && (
-            <span className="ml-1 bg-yellow-500/20 text-yellow-400 px-1 rounded text-[9px] border border-yellow-500/30">
-              {modifiedGitCount}*
+        {/* 🚀 SMART GIT INDICATOR (Repo / Branch or 'no git') */}
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer">
+          <GitBranch size={11} className={hasGit ? "text-blue-400" : "text-slate-600"} />
+          {hasGit ? (
+            <span>
+              {currentRepoName ? `${currentRepoName} / ` : ''}{gitBranch || 'main'}
+              {modifiedGitCount > 0 && (
+                <span className="text-amber-400 ml-1">({modifiedGitCount}*)</span>
+              )}
             </span>
+          ) : (
+            <span className="text-slate-600">no git</span>
           )}
         </div>
 
-        {/* Active File Coordinates */}
+        {/* Coordinates */}
         {activeFile ? (
           <>
-            <div className="px-2 h-full flex items-center text-slate-300 font-mono text-[10px] hidden md:flex">
+            <span className="text-slate-600 hidden md:inline">·</span>
+            <div className="text-slate-300 text-[10px] hidden md:flex">
               Ln {lineCount}, Col 1 ({wordCount} words)
             </div>
-            <div className="px-1.5 h-full flex items-center text-slate-400 font-mono text-[10px] uppercase hidden sm:flex">
+            <span className="text-slate-600 hidden sm:inline">·</span>
+            <div className="text-slate-400 text-[10px] uppercase hidden sm:flex">
               {encoding}
             </div>
-            <div className="px-2 h-full flex items-center gap-1.5 text-slate-300 font-mono text-[10px] hover:bg-[#1f1f1f] cursor-pointer">
-              <Code2 size={12} className="text-yellow-400" /> 
+            <span className="text-slate-600">·</span>
+            <div className="text-slate-300 text-[10px] hover:text-blue-400 cursor-pointer transition-colors">
               <span>{getFileType(activeFile)}</span>
             </div>
           </>
         ) : (
-          <div className="px-2 h-full flex items-center gap-1.5 text-blue-400 font-mono text-[10px]">
-            <Sparkles size={11} />
-            <span>WebGL Cosmos Active</span>
-          </div>
+          <>
+            <span className="text-slate-600">·</span>
+            <div className="text-slate-400 text-[10px]">
+              <span>Spatial Map</span>
+            </div>
+          </>
         )}
 
-        {/* Pyodide / WASM Engine Status */}
-        <div className="px-2 h-full flex items-center gap-1 text-[10px] font-mono text-emerald-400 hidden xl:flex">
-          <Cpu size={11} />
-          <span>WASM Py3.11</span>
-        </div>
+        <span className="text-slate-600">·</span>
 
         {/* ----------------------------------------------------------------- */}
-        {/* NOTIFICATIONS HUD                                                 */}
+        {/* NOTIFICATIONS SYSTEM (Glassmorphic #191a1b)                        */}
         {/* ----------------------------------------------------------------- */}
         <div className="relative h-full flex items-center" ref={notifRef}>
           <button 
             onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-            className={`px-2 h-full flex items-center justify-center transition-colors relative ${isNotificationsOpen ? 'bg-[#262626] text-slate-200' : 'hover:bg-[#1f1f1f] hover:text-slate-200'}`} 
+            className={`p-1 flex items-center justify-center transition-colors relative cursor-pointer rounded hover:bg-[#242628] ${
+              isNotificationsOpen ? 'text-slate-100 bg-[#242628]' : 'text-slate-400 hover:text-slate-200'
+            }`} 
             title="System Notifications"
           >
-            <Bell size={12} />
+            <Bell size={11} />
             {notifications.length > 0 && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
             )}
           </button>
 
           {/* Notifications Popover Menu */}
           {isNotificationsOpen && (
-            <div className="absolute bottom-full right-0 mb-2 w-84 bg-[#141414]/95 border border-[#333] rounded-xl shadow-2xl overflow-hidden backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150 z-[100]">
-              <div className="px-3 py-2 border-b border-[#262626] flex items-center justify-between bg-[#1a1a1a]">
-                <span className="text-[10px] font-bold text-slate-200 uppercase font-mono tracking-widest flex items-center gap-1.5">
-                  <Activity size={12} className="text-blue-400" /> Neural System Alerts
+            <div className="absolute bottom-full right-0 mb-2 w-80 bg-[#191a1b]/95 border border-[#2e3032] rounded-xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-150 z-[200]">
+              <div className="px-3 py-2 border-b border-[#242628] flex items-center justify-between bg-[#151617]">
+                <span className="text-[10px] font-bold text-slate-200 uppercase tracking-widest flex items-center gap-1.5">
+                  <Activity size={11} className="text-blue-400" /> System Alerts
                 </span>
                 {notifications.length > 0 && (
                   <button 
                     onClick={() => setNotifications([])} 
-                    className="text-[9px] font-mono text-slate-400 hover:text-slate-200 transition-colors uppercase tracking-wider"
+                    className="text-[9px] text-slate-400 hover:text-slate-200 transition-colors uppercase tracking-wider cursor-pointer"
                   >
                     Clear All
                   </button>
                 )}
               </div>
               
-              <div className="max-h-64 overflow-y-auto divide-y divide-[#222]">
+              <div className="max-h-60 overflow-y-auto divide-y divide-[#222426]">
                 {notifications.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-slate-500 text-xs font-mono">
-                    All neural subsystems operating at nominal capacity.
+                  <div className="px-4 py-6 text-center text-slate-500 text-xs">
+                    All subsystems operating nominally.
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <div key={notif.id} className="px-3 py-2.5 hover:bg-[#1c1c1c] transition-colors flex items-start justify-between group">
+                    <div key={notif.id} className="px-3 py-2 hover:bg-[#202224] transition-colors flex items-start justify-between group">
                       <div className="flex items-start gap-2.5">
                         {notif.type === 'success' ? (
-                          <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
+                          <CheckCircle2 size={12} className="text-emerald-400 shrink-0 mt-0.5" />
                         ) : notif.type === 'bridge' ? (
-                          <Zap size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                          <Zap size={12} className="text-blue-400 shrink-0 mt-0.5" />
                         ) : (
-                          <Bell size={13} className="text-blue-400 shrink-0 mt-0.5" />
+                          <Bell size={12} className="text-blue-400 shrink-0 mt-0.5" />
                         )}
                         <div className="flex flex-col gap-0.5">
                           <span className="text-slate-300 text-xs leading-tight font-sans">{notif.text}</span>
@@ -250,7 +253,7 @@ export default function StatusBar({
                       </div>
                       <button 
                         onClick={(e) => clearNotification(notif.id, e)} 
-                        className="opacity-0 group-hover:opacity-100 hover:text-white p-0.5 transition-opacity text-slate-500"
+                        className="opacity-0 group-hover:opacity-100 hover:text-white p-0.5 transition-opacity text-slate-500 cursor-pointer"
                       >
                         <X size={11} />
                       </button>

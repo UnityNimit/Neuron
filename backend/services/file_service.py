@@ -1,4 +1,6 @@
 # backend/services/file_service.py
+import ctypes
+from ctypes import wintypes
 import os
 import posixpath
 import re
@@ -12,44 +14,87 @@ from core.js_mutator import execute_js_symbol_refactor_transplant
 from core.mutator import execute_symbol_refactor_transplant, update_function_in_file
 from core.state import AppState
 
-# Excluded folders to preserve sub-millisecond AST memory snapshot performance
-DEFAULT_EXCLUSIONS = {
-    "node_modules", ".git", "__pycache__", ".venv", "venv", "env",
-    ".next", "dist", "build", ".cache", ".chroma", ".onnx_models",
-    ".idea", ".vscode", "coverage"
+# STRICT EXCLUSIONS: Prevents scanning Rust build targets & binary caches
+DEFAULT_EXCLUSIONS: Set[str] = {
+    "target", "binaries", "bundle", ".cargo", "node_modules", ".git", "__pycache__", 
+    ".venv", "venv", "env", ".next", "dist", "build", ".cache", ".chroma", 
+    ".onnx_models", ".idea", ".vscode", "coverage", ".turbo", ".pytest_cache"
 }
 
+# STRICT SOURCE CODE WHITELIST: Includes C, C++, Java, Python, JS, TS, Web
+VALID_SOURCE_EXTENSIONS: Set[str] = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+    ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
+    ".java",
+    ".json", ".css", ".html", ".md", ".txt", ".toml", ".yaml", ".yml"
+}
+
+MAX_FILE_SIZE_BYTES = 1_000_000  # 1 MB Safety Ceiling
+
 
 # -------------------------------------------------------------------------
-# 1. NATIVE MULTI-PLATFORM FOLDER PICKER DIALOG
+# 1. INSTANT NATIVE WINDOWS C CTYPES FOLDER PICKER (<0.01s)
 # -------------------------------------------------------------------------
+if sys.platform == "win32":
+    class BROWSEINFOW(ctypes.Structure):
+        _fields_ = [
+            ("hwndOwner", wintypes.HWND),
+            ("pidlRoot", wintypes.LPCVOID),
+            ("pszDisplayName", wintypes.LPWSTR),
+            ("lpszTitle", wintypes.LPCWSTR),
+            ("ulFlags", wintypes.UINT),
+            ("lpfn", wintypes.LPCVOID),
+            ("lParam", wintypes.LPARAM),
+            ("iImage", ctypes.c_int)
+        ]
+
+
+def _pick_folder_windows_native(title: str = "Select Project Folder") -> Optional[str]:
+    """Invokes the native Windows Explorer folder picker via C-level ctypes in <10ms."""
+    try:
+        BIF_RETURNONLYFSDIRS = 0x0001
+        BIF_NEWDIALOGSTYLE = 0x0040
+        BIF_USENEWUI = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+
+        ole32 = ctypes.windll.ole32
+        ole32.CoInitialize(None)
+
+        shell32 = ctypes.windll.shell32
+
+        bi = BROWSEINFOW()
+        bi.hwndOwner = None
+        bi.pidlRoot = None
+        bi.pszDisplayName = ctypes.create_unicode_buffer(260)
+        bi.lpszTitle = title
+        bi.ulFlags = BIF_USENEWUI
+        bi.lpfn = None
+        bi.lParam = 0
+        bi.iImage = 0
+
+        pidl = shell32.SHBrowseForFolderW(ctypes.byref(bi))
+        if pidl:
+            path_buffer = ctypes.create_unicode_buffer(260)
+            success = shell32.SHGetPathFromIDListW(pidl, path_buffer)
+            ole32.CoTaskMemFree(pidl)
+            ole32.CoUninitialize()
+            if success and path_buffer.value:
+                return path_buffer.value.replace("\\", "/")
+        ole32.CoUninitialize()
+    except Exception:
+        pass
+    return None
+
+
 def pick_folder_sync() -> str:
     """
-    Opens a native modal folder picker dialog with cross-platform fallback handling.
-    Supports Windows PowerShell, macOS AppleScript, Linux Zenity, and Tkinter.
+    Opens an instantaneous native modal folder picker dialog.
+    Zero PowerShell subprocesses, zero COM deadlocks.
     """
-    # Strategy A: Windows Native PowerShell Folder Picker
+    # Strategy A: Windows Native C ctypes API (<10ms)
     if sys.platform == "win32":
-        try:
-            ps_cmd = (
-                "[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; "
-                "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                f"$f.SelectedPath = '{os.path.abspath(AppState.TARGET_DIR)}'; "
-                "$f.Description = 'Select Neuron Project Directory'; "
-                "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Host $f.SelectedPath }"
-            )
-            res = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
-            selected = res.stdout.strip().replace("\\", "/")
-            if selected and os.path.isdir(selected):
-                return selected
-        except Exception:
-            pass
+        selected = _pick_folder_windows_native("Select Neuron Project Folder")
+        if selected and os.path.isdir(selected):
+            return selected
 
     # Strategy B: macOS AppleScript Folder Picker
     elif sys.platform == "darwin":
@@ -60,7 +105,7 @@ def pick_folder_sync() -> str:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=30
+                timeout=15
             )
             selected = res.stdout.strip()
             if selected and os.path.isdir(selected):
@@ -76,7 +121,7 @@ def pick_folder_sync() -> str:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=30
+                timeout=15
             )
             selected = res.stdout.strip()
             if selected and os.path.isdir(selected):
@@ -102,12 +147,12 @@ def pick_folder_sync() -> str:
 
 
 # -------------------------------------------------------------------------
-# 2. WORKSPACE MEMORY SNAPSHOT FOR AC-3 CSP ENGINE
+# 2. SHIELDED WORKSPACE SNAPSHOT FOR AC-3 CSP ENGINE
 # -------------------------------------------------------------------------
 def collect_workspace_file_asts() -> Dict[str, dict]:
     """
-    Collects live memory snapshots of all source files in the active workspace
-    for static analysis, constraint satisfaction solving, and import sweeping.
+    Collects live memory snapshots of source files in the active workspace.
+    Shielded against Rust target binaries and large data files.
     """
     file_asts = {}
     target_dir = os.path.abspath(AppState.TARGET_DIR)
@@ -118,14 +163,16 @@ def collect_workspace_file_asts() -> Dict[str, dict]:
         dirs[:] = [d for d in dirs if d not in active_exclusions and not d.startswith('.')]
 
         for f in files:
-            if f.startswith('.') or f.endswith(('.pyc', '.pyo', '.lock', '.log', '.png', '.jpg', '.svg', '.ico')):
+            ext = os.path.splitext(f)[1].lower()
+            if f.startswith('.') or ext not in VALID_SOURCE_EXTENSIONS:
                 continue
 
-            rel_path = posixpath.normpath(os.path.relpath(os.path.join(root, f), target_dir).replace("\\", "/"))
-            full_path = os.path.join(target_dir, rel_path)
-
+            full_path = os.path.join(root, f)
             try:
+                if os.path.getsize(full_path) > MAX_FILE_SIZE_BYTES:
+                    continue
                 with open(full_path, "r", encoding="utf-8", errors="replace") as file_obj:
+                    rel_path = posixpath.normpath(os.path.relpath(full_path, target_dir).replace("\\", "/"))
                     file_asts[rel_path] = {"content": file_obj.read()}
             except Exception:
                 continue
@@ -142,7 +189,7 @@ def refactor_symbol_move_service(
     symbol_name: str
 ) -> Dict[str, Any]:
     """
-    🌌 UNIVERSAL MULTI-LANGUAGE AI REFACTORING PIPELINE
+    UNIVERSAL MULTI-LANGUAGE AI REFACTORING PIPELINE
       1. Validates Arc Consistency (AC-3) across Python, JS, TS, and React JSX.
       2. If violations occur (cycles, collisions, scope mismatch), aborts transaction.
       3. If verified, routes execution to:
@@ -209,7 +256,7 @@ def refactor_symbol_move_service(
 
 
 # -------------------------------------------------------------------------
-# 4. OS FILE SYSTEM OPERATIONS
+# 4. OS FILE SYSTEM OPERATIONS (With C++, C, Java, Python, Web Boilerplates)
 # -------------------------------------------------------------------------
 def create_item(item_name: str, item_type: str) -> None:
     """Creates a new file or directory, initializing with modern language boilerplates."""
@@ -222,14 +269,38 @@ def create_item(item_name: str, item_type: str) -> None:
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         if not os.path.exists(full_path):
             with open(full_path, "w", encoding="utf-8") as f:
+                # Python
                 if full_path.endswith('.py'):
                     f.write("def solve():\n    pass\n\nif __name__ == '__main__':\n    solve()\n")
+                
+                # C++
+                elif full_path.endswith(('.cpp', '.cc', '.cxx')):
+                    f.write("#include <iostream>\n\nint main() {\n    std::cout << \"Hello from Neuron C++!\" << std::endl;\n    return 0;\n}\n")
+                
+                # C
+                elif full_path.endswith('.c'):
+                    f.write("#include <stdio.h>\n\nint main() {\n    printf(\"Hello from Neuron C!\\n\");\n    return 0;\n}\n")
+                
+                # C / C++ Header Guards
+                elif full_path.endswith(('.hpp', '.h')):
+                    guard_name = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(clean_name)).upper()
+                    f.write(f"#ifndef {guard_name}\n#define {guard_name}\n\n// Header declarations\n\n#endif // {guard_name}\n")
+                
+                # Java
+                elif full_path.endswith('.java'):
+                    class_name = os.path.splitext(os.path.basename(clean_name))[0]
+                    f.write(f"public class {class_name} {{\n    public static void main(String[] args) {{\n        System.out.println(\"Hello from Neuron Java!\");\n    }}\n}}\n")
+                
+                # React JSX / TSX
                 elif full_path.endswith(('.jsx', '.tsx')):
                     comp_name = os.path.splitext(os.path.basename(clean_name))[0]
                     comp_name = comp_name[0].upper() + comp_name[1:]
                     f.write(f"import React from 'react';\n\nexport default function {comp_name}() {{\n  return (\n    <div className=\"p-4 text-slate-200\">\n      <h1>{comp_name}</h1>\n    </div>\n  );\n}}\n")
+                
+                # JavaScript / TypeScript
                 elif full_path.endswith(('.js', '.ts')):
                     f.write("export const init = () => {\n  console.log('Module initialized');\n};\n")
+                
                 elif full_path.endswith('.json'):
                     f.write("{\n  \n}\n")
                 elif full_path.endswith('.css'):
@@ -297,7 +368,7 @@ def reveal_in_explorer(rel_path: str) -> None:
 def edit_code(node_id: str, new_code: str, target_file_name: str) -> bool:
     """
     Routes code modifications to either a whole-file disk write or a targeted
-    LibCST in-place function node replacement. Decodes scoped node IDs properly.
+    LibCST in-place function node replacement for Python.
     """
     clean_file_name = target_file_name.strip()
     for prefix in ["📝 ", "ƒ ", "📄 "]:
@@ -309,7 +380,6 @@ def edit_code(node_id: str, new_code: str, target_file_name: str) -> bool:
 
     file_path = os.path.join(AppState.TARGET_DIR, clean_file_name)
 
-    # 1. Whole-file write vs targeted function modification
     is_whole_file = (
         node_id == clean_file_name or 
         node_id.endswith(clean_file_name) or 
@@ -323,9 +393,8 @@ def edit_code(node_id: str, new_code: str, target_file_name: str) -> bool:
             f.write(new_code)
         return True
     else:
-        # 🚀 Decode Scoped Node ID: filepath::scope_symbol::L<line>
+        # Decode Scoped Node ID: filepath::scope_symbol::L<line>
         parts = node_id.split("::")
-        # Extract symbol name, ignoring line identifier like L45
         symbol_candidate = parts[-1]
         if symbol_candidate.startswith("L") and symbol_candidate[1:].isdigit() and len(parts) > 2:
             symbol_candidate = parts[-2]

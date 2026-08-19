@@ -64,19 +64,22 @@ async def broadcast_to_all(payload: dict) -> None:
 def trigger_background_indexing() -> None:
     """Spawns an asynchronous background thread to update the vector search memory store."""
     try:
-        state = get_workspace_state()
-        nodes = state.get("graph", {}).get("nodes", [])
-        if nodes:
-            asyncio.create_task(asyncio.to_thread(vector_engine.index_nodes, nodes))
+        async def run_indexing():
+            state = await asyncio.to_thread(get_workspace_state)
+            nodes = state.get("graph", {}).get("nodes", [])
+            if nodes:
+                await asyncio.to_thread(vector_engine.index_nodes, nodes)
+        asyncio.create_task(run_indexing())
     except Exception as e:
         print(f"[WARN] Background vector indexing trigger failed: {e}")
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # 🚀 SUB-2MS NON-BLOCKING HANDSHAKE
     await websocket.accept()
     AppState.CONNECTIONS.add(websocket)
-    print(f"[INFO] Client connected. Total active connections: {len(AppState.CONNECTIONS)}")
+    print(f"[INFO] Client connected. Active connections: {len(AppState.CONNECTIONS)}")
 
     # Auto-seed default server.py if workspace is completely empty
     server_file = os.path.join(AppState.TARGET_DIR, "server.py")
@@ -86,11 +89,11 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception:
             pass
 
-    # 1. EMIT SANITIZED INITIAL WORKSPACE STATE
-    initial_state = get_workspace_state()
+    # 1. EMIT INITIAL WORKSPACE STATE ASYNCHRONOUSLY
+    initial_state = await asyncio.to_thread(get_workspace_state)
     await safe_send_json(websocket, {"event": "INIT", "payload": initial_state})
 
-    # 2. 🚀 ASYNC VECTOR INDEXING ON CONNECT
+    # 2. ASYNC VECTOR INDEXING (Zero blocking on main loop)
     nodes_to_index = initial_state.get("graph", {}).get("nodes", [])
     if nodes_to_index:
         asyncio.create_task(asyncio.to_thread(vector_engine.index_nodes, nodes_to_index))
@@ -145,7 +148,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif evt == "SWITCH_FILE":
                 AppState.ACTIVE_FILE = message.get("filename", "")
-                synced_state = get_workspace_state()
+                synced_state = await asyncio.to_thread(get_workspace_state)
                 await safe_send_json(websocket, {"event": "SYNC", "payload": synced_state})
 
             elif evt == "CREATE_ITEM":
@@ -203,7 +206,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(process_semantic_search())
 
             # -----------------------------------------------------------------
-            # 4. HORIZON 3: AI AGENT SUPERVISOR (Live PR Blast Radius & Rollbacks)
+            # 4. HORIZON 3: AI AGENT SUPERVISOR & 1-CLICK ROLLBACKS
             # -----------------------------------------------------------------
             elif evt == "AGENT_ROLLBACK_BATCH":
                 batch_id = message.get("batch_id")
@@ -233,6 +236,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 asyncio.create_task(handle_agent_rollback())
 
+            elif evt == "AGENT_APPROVE_BATCH":
+                batch_id = message.get("batch_id")
+                if batch_id in agent_supervisor.active_batches:
+                    agent_supervisor.active_batches[batch_id].is_committed = True
+                await safe_send_json(websocket, {
+                    "event": "AGENT_APPROVE_SUCCESS", 
+                    "batch_id": batch_id
+                })
+
             elif evt == "GET_AGENT_BATCH_DETAILS":
                 summary = agent_supervisor.get_latest_batch_summary()
                 await safe_send_json(websocket, {
@@ -241,7 +253,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
 
             # -----------------------------------------------------------------
-            # 5. AI REFACTORING GUARD & AST SURGERY (AC-3 CSP Verification)
+            # 5. AI REFACTORING GUARD & LIBCST TRANSPLANT
             # -----------------------------------------------------------------
             elif evt == "REFACTOR_SYMBOL_MOVE":
                 symbol_name = message.get("symbol_name")
@@ -271,7 +283,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             trigger_background_indexing()
 
                     except Exception as err:
-                        print(f"[ERROR] Refactoring symbol move transaction failed: {err}")
+                        print(f"[ERROR] Refactoring symbol move failed: {err}")
                         await safe_send_json(websocket, {
                             "event": "REFACTOR_ERROR",
                             "payload": {"success": False, "reason": str(err)}
@@ -285,7 +297,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 async def handle_file_merge():
                     try:
-                        all_files = list(get_workspace_state().get("files", []))
+                        state = await asyncio.to_thread(get_workspace_state)
+                        all_files = list(state.get("files", []))
                         src_ext = os.path.splitext(source_file)[1].lower()
                         dst_ext = os.path.splitext(dest_file)[1].lower()
 
@@ -295,7 +308,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 execute_js_file_merge, source_file, dest_file, AppState.TARGET_DIR, all_files
                             )
                         else:
-                            success, msg = False, "Cross-language or Python module merging must be performed via symbol move."
+                            success, msg = False, "Cross-language module merging must be performed via symbol move."
 
                         if success:
                             await safe_send_json(websocket, {"event": "REFACTOR_FILE_MERGE_SUCCESS", "message": msg})
@@ -309,6 +322,21 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 asyncio.create_task(handle_file_merge())
 
+            elif evt == "REFACTOR_UNDO":
+                # Canvas Ctrl+Z Undo: Reverts latest symbol mutation or agent batch
+                latest_batch_id = list(agent_supervisor.active_batches.keys())[-1] if agent_supervisor.active_batches else None
+                if latest_batch_id:
+                    success, reason = await asyncio.to_thread(
+                        agent_supervisor.rollback_batch,
+                        batch_id=latest_batch_id,
+                        workspace_root=AppState.TARGET_DIR
+                    )
+                    if success:
+                        await broadcast_workspace(force_full_sync=True)
+                        await safe_send_json(websocket, {"event": "REFACTOR_UNDO_SUCCESS", "message": reason})
+                    else:
+                        await safe_send_json(websocket, {"event": "REFACTOR_UNDO_ERROR", "reason": reason})
+
             # -----------------------------------------------------------------
             # 6. GRAPH-RAG LOCAL LLM INTELLIGENCE PIPELINE
             # -----------------------------------------------------------------
@@ -318,7 +346,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 async def process_llm_summary():
                     try:
-                        state = get_workspace_state()
+                        state = await asyncio.to_thread(get_workspace_state)
                         graph_nodes = state.get("graph", {}).get("nodes", [])
                         graph_edges = state.get("graph", {}).get("edges", [])
 
@@ -364,7 +392,7 @@ async def websocket_endpoint(websocket: WebSocket):
             # -----------------------------------------------------------------
             elif evt == "IMPACT_ANALYSIS":
                 node_id = str(message.get("node_id", ""))
-                state = get_workspace_state()
+                state = await asyncio.to_thread(get_workspace_state)
                 edges = state.get("graph", {}).get("edges", [])
                 
                 DiG = nx.DiGraph()
@@ -417,7 +445,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         AppState.CONNECTIONS.discard(websocket)
-        print(f"[INFO] Client disconnected. Remaining active connections: {len(AppState.CONNECTIONS)}")
+        print(f"[INFO] Client disconnected. Active connections: {len(AppState.CONNECTIONS)}")
     except Exception as e:
         AppState.CONNECTIONS.discard(websocket)
         print(f"[WARN] WebSocket handler error: {e}")

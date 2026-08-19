@@ -319,7 +319,7 @@ def ac3_validate_refactor(
     file_asts: Dict[str, dict]
 ) -> CSPValidationResult:
     """
-    🛡️ VISUAL REFACTORING SHIELD (AC-3 SOLVER)
+     VISUAL REFACTORING SHIELD (AC-3 SOLVER)
     Validates function/symbol migrations against:
       1. Domain Invariants (Files exist, compatible languages)
       2. Scope Invariants (Symbol exists, destination collision-free)

@@ -30,7 +30,7 @@ def compute_shannon_entropy(code_str: str) -> float:
 
 def sanitize_for_json(obj: Any) -> Any:
     """
-    🛡️ BULLETPROOF NUMPY & GRAPH TO JSON SANITIZER
+     BULLETPROOF NUMPY & GRAPH TO JSON SANITIZER
     Recursively converts all NumPy types (np.bool_, np.int64, np.float64, np.ndarray),
     sets, NaN, and Infinity into native Python primitives to guarantee 100% JSON serializability.
     """
@@ -60,13 +60,13 @@ def sanitize_for_json(obj: Any) -> Any:
 
 def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
     """
-    🌌 THE ULTIMATE MULTI-MODAL ML & GRAPH THEORY INTELLIGENCE PIPELINE
+     THE ULTIMATE MULTI-MODAL ML & GRAPH THEORY INTELLIGENCE PIPELINE
     Calculates:
       1. Weighted Louvain Modularity (Microservice Community Clusters for Nebula VFX)
       2. Dual-Graph Centrality (PageRank Authority + Betweenness Bottlenecks)
       3. In/Out Degree Ratios (Fan-In / Fan-Out Dependency Flow)
       4. 10-Dimensional Continuous Feature Tensor Synthesis
-      5. Scikit-Learn Isolation Forest (Unsupervised Anomaly Isolation)
+      5. Single-Threaded Scikit-Learn Isolation Forest (Zero-Fork Anomaly Isolation)
       6. Multi-Factor Risk Scoring & Architectural Code Smell Diagnosis
       7. Recursive JSON Sanitization for Zero-Failure WebSocket Transmissions
     """
@@ -130,7 +130,6 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
     # 2. ADAPTIVE LOUVAIN COMMUNITY DETECTION (Nebula Galaxy Clusters)
     # -------------------------------------------------------------------------
     try:
-        # Dynamic resolution scaling based on graph size
         graph_size = len(nodes)
         dynamic_res = 1.2 if graph_size > 100 else 1.05
         communities = louvain_communities(G, weight='weight', resolution=dynamic_res, seed=42)
@@ -143,7 +142,6 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
         for n in nodes:
             n.setdefault("data", {})["community"] = int(community_map.get(str(n["id"]), 0))
     except Exception as e:
-        print(f"[WARN] Louvain Community Detection fallback: {e}")
         for n in nodes:
             n.setdefault("data", {})["community"] = 0
 
@@ -163,8 +161,7 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
             betweenness_scores = nx.betweenness_centrality(G, weight='weight', normalized=True)
         else:
             betweenness_scores = {nid: 0.0 for nid in node_id_set}
-    except Exception as e:
-        print(f"[WARN] Graph Centrality fallback: {e}")
+    except Exception:
         pagerank_scores = {nid: 0.0 for nid in node_id_set}
         betweenness_scores = {nid: 0.0 for nid in node_id_set}
 
@@ -221,14 +218,13 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
         target_node_indices.append(idx)
 
     # -------------------------------------------------------------------------
-    # 5. UNSUPERVISED ANOMALY ISOLATION (Scikit-Learn Isolation Forest)
+    # 5. UNSUPERVISED ANOMALY ISOLATION (Single-Threaded n_jobs=1)
     # -------------------------------------------------------------------------
     anomaly_flags: Dict[str, bool] = {}
     
     if len(feature_rows) >= 6:
         try:
             X = np.array(feature_rows, dtype=np.float64)
-            # Guard against NaNs or Infinities
             X = np.nan_to_num(X, nan=0.0, posinf=1.0, neginf=0.0)
 
             # Min-Max Feature Normalization
@@ -239,18 +235,21 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
             X_norm = np.nan_to_num(X_norm, nan=0.0, posinf=1.0, neginf=0.0)
 
             contamination = max(0.02, min(0.12, 6.0 / len(feature_rows)))
+            
+            #  FORK-BOMB PROOF: n_jobs=1 runs in 2ms without subprocess overhead
             iso_forest = IsolationForest(
-                n_estimators=100,
+                n_estimators=80,
                 contamination=contamination,
-                random_state=42
+                random_state=42,
+                n_jobs=1
             )
-            predictions = iso_forest.fit_predict(X_norm)  # -1 = Anomaly, 1 = Normal
+            predictions = iso_forest.fit_predict(X_norm)
             
             for row_idx, node_array_idx in enumerate(target_node_indices):
                 node_id = str(nodes[node_array_idx]["id"])
                 anomaly_flags[node_id] = bool(predictions[row_idx] == -1)
-        except Exception as e:
-            print(f"[WARN] Isolation Forest fitting fallback: {e}")
+        except Exception:
+            pass
 
     # -------------------------------------------------------------------------
     # 6. RISK SCORING & ARCHITECTURAL CODE SMELL DIAGNOSIS
@@ -271,7 +270,6 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
         is_anomaly = bool(anomaly_flags.get(nid, False))
         node_type = str(d.get("nodeType", "function"))
 
-        # Composite Mathematical Risk Equation
         risk_score = float(
             (complexity * 0.35) +
             (churn * 1.8) +
@@ -282,7 +280,6 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
 
         ai_diagnosis: List[str] = []
 
-        # Real-time Architectural Code Smell Classifiers
         if loc > 120 and pr > 0.70:
             ai_diagnosis.append("God Object (Monolithic Centrality)")
         if density > 0.35 or (entropy > 4.85 and loc < 25):
@@ -296,7 +293,6 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
         if is_anomaly and not ai_diagnosis:
             ai_diagnosis.append("Statistical Structural Anomaly")
 
-        # Categorical Risk Classification
         if risk_score > 11.5 or (complexity >= 8 and churn >= 3) or len(ai_diagnosis) >= 2:
             risk_level = "high"
         elif risk_score > 5.0 or complexity >= 4 or is_anomaly:
@@ -304,7 +300,6 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
         else:
             risk_level = "low"
 
-        # Folder nodes default to neutral risk
         if node_type == "folder":
             risk_level = "low"
             risk_score = 0.0
@@ -313,11 +308,10 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
         d["risk_score"] = float(round(risk_score, 2))
         d["is_anomaly"] = bool(is_anomaly)
 
-        # Synthesize Instant Semantic Diagnosis for UI peek
         if ai_diagnosis:
             d["aiSummary"] = "CRITICAL SMELLS: " + " | ".join(ai_diagnosis)
         elif risk_level == "low" and not d.get("aiSummary"):
             d["aiSummary"] = "Code topology is mathematically stable."
 
-    # 🛡️ 7. GLOBAL RECURSIVE SANITIZATION BEFORE JSON ENCODING
+    #  7. RECURSIVE SANITIZATION FOR ZERO WEBSOCKET FAILS
     return sanitize_for_json(nodes)

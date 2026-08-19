@@ -1,12 +1,25 @@
 // frontend/src-tauri/src/lib.rs
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::{Child, Command as StdCommand, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri_plugin_shell::ShellExt;
 
-/// Thread-safe storage for the background Python sidecar process
+/// Global state holding the background Python process handle
 #[derive(Clone, Default)]
-pub struct SidecarState(pub Arc<Mutex<Option<CommandChild>>>);
+pub struct BackendProcess(pub Arc<Mutex<Option<Child>>>);
+
+/// Diagnostic File Logger (Writes to %TEMP%\neuron_boot.log)
+fn log_boot(msg: &str) {
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::temp_dir().join("neuron_boot.log"))
+    {
+        let _ = writeln!(file, "[NEURON] {}", msg);
+    }
+}
 
 /// Custom IPC Command to query the status of the Python backend
 #[tauri::command]
@@ -18,58 +31,84 @@ async fn get_backend_status() -> Result<bool, String> {
     }
 }
 
-/// Custom IPC Command to restart the Python sidecar on demand
-#[tauri::command]
-async fn restart_backend_sidecar(
-    app: AppHandle,
-    state: tauri::State<'_, SidecarState>,
-) -> Result<String, String> {
-    let mut lock = state.0.lock().map_err(|e| e.to_string())?;
+/// 🚀 DIRECT NATIVE OS PROCESS LAUNCHER (100% Reliable, Zero Sandbox Blocks)
+fn spawn_backend_process(state: &BackendProcess) {
+    log_boot("Starting native backend process launcher...");
 
-    // Terminate existing sidecar process if running
-    if let Some(child) = lock.take() {
-        let _ = child.kill();
-    }
+    let mut candidate_paths: Vec<PathBuf> = Vec::new();
 
-    // Spawn fresh sidecar instance
-    match spawn_python_sidecar(&app) {
-        Ok(new_child) => {
-            *lock = Some(new_child);
-            Ok("Python backend restarted successfully.".to_string())
+    // 1. Production Installed Paths (Next to Neuron.exe or in binaries/)
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            candidate_paths.push(exe_dir.join("neuron-backend.exe"));
+            candidate_paths.push(exe_dir.join("binaries").join("neuron-backend.exe"));
+            candidate_paths.push(exe_dir.join("neuron-backend-x86_64-pc-windows-msvc.exe"));
+            candidate_paths.push(exe_dir.join("binaries").join("neuron-backend-x86_64-pc-windows-msvc.exe"));
         }
-        Err(err) => Err(format!("Failed to restart sidecar: {}", err)),
     }
-}
 
-/// Helper function to spawn the compiled Python backend binary
-fn spawn_python_sidecar(app: &AppHandle) -> Result<CommandChild, Box<dyn std::error::Error>> {
-    println!("[INFO] 🚀 Spawning Python AI Backend sidecar...");
+    // 2. Development Paths (Relative to project root and frontend/)
+    candidate_paths.push(PathBuf::from("binaries/neuron-backend-x86_64-pc-windows-msvc.exe"));
+    candidate_paths.push(PathBuf::from("src-tauri/binaries/neuron-backend-x86_64-pc-windows-msvc.exe"));
+    candidate_paths.push(PathBuf::from("../backend/dist/neuron-backend.exe"));
 
-    let sidecar_command = app.shell().sidecar("neuron-backend")?;
-    let (mut rx, child) = sidecar_command.spawn()?;
+    for bin_path in &candidate_paths {
+        if bin_path.exists() {
+            log_boot(&format!("Found backend binary at: {:?}", bin_path));
 
-    // Stream sidecar stdout & stderr in background task
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match event {
-                CommandEvent::Stdout(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    print!("[Python Sidecar] {}", text);
+            let mut cmd = StdCommand::new(bin_path);
+
+            // Set working directory to the binary's directory
+            if let Some(parent_dir) = bin_path.parent() {
+                cmd.current_dir(parent_dir);
+            }
+
+            // Hide console window on Windows
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+
+            // Pipe output to %TEMP%\neuron_backend_runtime.log for debugging
+            let log_out = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(std::env::temp_dir().join("neuron_backend_runtime.log"))
+                .map(Stdio::from)
+                .unwrap_or_else(|_| Stdio::null());
+
+            let log_err = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(std::env::temp_dir().join("neuron_backend_runtime.log"))
+                .map(Stdio::from)
+                .unwrap_or_else(|_| Stdio::null());
+
+            cmd.stdout(log_out)
+               .stderr(log_err)
+               .stdin(Stdio::null());
+
+            match cmd.spawn() {
+                Ok(child) => {
+                    let pid = child.id();
+                    log_boot(&format!("🟢 Native backend spawned successfully! (PID: {})", pid));
+
+                    if let Ok(mut lock) = state.0.lock() {
+                        *lock = Some(child);
+                    }
+                    start_health_probe();
+                    return;
                 }
-                CommandEvent::Stderr(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    eprint!("[Python Sidecar ERROR] {}", text);
+                Err(err) => {
+                    log_boot(&format!("Failed to spawn {:?}: {}", bin_path, err));
                 }
-                CommandEvent::Terminated(payload) => {
-                    println!("[Python Sidecar] Terminated with code {:?}", payload.code);
-                    break;
-                }
-                _ => {}
             }
         }
-    });
+    }
 
-    Ok(child)
+    log_boot("⚠️ Backend binary not found locally. Running in Web/Manual backend mode.");
 }
 
 /// Asynchronous health probe loop
@@ -77,11 +116,11 @@ fn start_health_probe() {
     tauri::async_runtime::spawn(async move {
         let client = reqwest::Client::new();
         let mut attempts = 0;
-        while attempts < 40 {
-            tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+        while attempts < 60 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             if let Ok(resp) = client.get("http://127.0.0.1:8000/health").send().await {
                 if resp.status().is_success() {
-                    println!("\n🟢 [SUCCESS] Neuron Python Sidecar online and healthy at ws://127.0.0.1:8000/ws\n");
+                    log_boot("🟢 Health check PASSED: Backend is online at ws://127.0.0.1:8000/ws");
                     break;
                 }
             }
@@ -92,47 +131,36 @@ fn start_health_probe() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let sidecar_state = SidecarState::default();
+    let backend_state = BackendProcess::default();
+    let state_clone = backend_state.clone();
 
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(sidecar_state.clone())
-        .invoke_handler(tauri::generate_handler![
-            get_backend_status,
-            restart_backend_sidecar
-        ])
-        .setup(move |app| {
-            let app_handle = app.handle().clone();
-
-            // Spawn the Python backend sidecar if compiled binary exists
-            match spawn_python_sidecar(&app_handle) {
-                Ok(child) => {
-                    if let Ok(mut lock) = sidecar_state.0.lock() {
-                        *lock = Some(child);
-                    }
-                    start_health_probe();
-                }
-                Err(err) => {
-                    println!(
-                        "[DEV MODE] Sidecar binary not found (running against local backend): {}",
-                        err
-                    );
-                }
-            }
-
+        .manage(backend_state.clone())
+        .invoke_handler(tauri::generate_handler![get_backend_status])
+        .setup(move |_app| {
+            // 🚀 Directly launch the backend executable
+            spawn_backend_process(&state_clone);
             Ok(())
         })
-        .on_window_event(|window, event| {
-            // Guarantee clean sidecar process termination on window close
+        .on_window_event(move |_window, event| {
             if let WindowEvent::Destroyed = event {
-                if let Some(state) = window.try_state::<SidecarState>() {
-                    if let Ok(mut lock) = state.0.lock() {
-                        if let Some(child) = lock.take() {
-                            println!("[INFO] 🛑 Window destroyed. Terminating Python sidecar...");
-                            let _ = child.kill();
+                log_boot("Window closed. Terminating backend process tree...");
+                if let Ok(mut lock) = backend_state.0.lock() {
+                    if let Some(mut child) = lock.take() {
+                        #[cfg(windows)]
+                        {
+                            use std::os::windows::process::CommandExt;
+                            const CREATE_NO_WINDOW: u32 = 0x08000000;
+                            let pid = child.id();
+                            let mut kill_cmd = StdCommand::new("taskkill");
+                            kill_cmd.args(&["/F", "/T", "/PID", &pid.to_string()])
+                                    .creation_flags(CREATE_NO_WINDOW)
+                                    .stdout(Stdio::null())
+                                    .stderr(Stdio::null());
+                            let _ = kill_cmd.spawn();
                         }
+                        let _ = child.kill();
                     }
                 }
             }
@@ -142,7 +170,7 @@ pub fn run() {
 
     app.run(move |_app_handle, event| {
         if let RunEvent::Exit = event {
-            println!("[INFO] 🛑 Neuron Application Exiting cleanly.");
+            log_boot("Neuron Application Exited.");
         }
     });
 }

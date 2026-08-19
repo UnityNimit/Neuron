@@ -1,1 +1,61 @@
 @import "tailwindcss";
+
+/* =========================================================================
+   NEURON SPATIAL IDE - GLOBAL HARDWARE VIEWPORT RESET
+   ========================================================================= */
+
+/* 1. Lock Viewport & Eliminate All Page-Level Scrolling */
+html,
+body,
+#root {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #0a0a0a;
+  color: #cbd5e1;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+  -webkit-overscroll-behavior: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* 2. Prevent Ghost Dragging on Media Assets */
+img,
+a {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* 3. Global Sleek Dark Scrollbars (Panels, Terminal, Editors) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f0f0f;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+}
+
+/* 4. Monaco Editor & PixiJS Canvas Hardware Optimization */
+.monaco-editor,
+.monaco-editor .overflow-guard {
+  border-radius: 0px !important;
+}
+
+canvas {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}

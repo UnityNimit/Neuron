@@ -17,9 +17,21 @@
     "core:window:allow-start-dragging",
     "core:webview:default",
     "shell:default",
-    "shell:allow-execute",
-    "shell:allow-spawn",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        { "name": "binaries/neuron-backend", "sidecar": true },
+        { "name": "neuron-backend", "sidecar": true }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "binaries/neuron-backend", "sidecar": true },
+        { "name": "neuron-backend", "sidecar": true }
+      ]
+    },
     "process:default",
     "opener:default"
   ]

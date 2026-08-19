@@ -7,7 +7,7 @@ from typing import AsyncGenerator, Dict, List, Optional
 import httpx
 
 # -------------------------------------------------------------------------
-# 1. 🚀 IN-MEMORY HASH CACHE (0ms Retrieval for Unmodified Code)
+# 1. IN-MEMORY HASH CACHE (0ms Retrieval for Unmodified Code)
 # -------------------------------------------------------------------------
 SUMMARY_CACHE: Dict[str, str] = {}
 
@@ -99,7 +99,7 @@ async def fetch_ast_summary(
     context_str = "".join(connected_snippets) if connected_snippets else ""
     cache_key = compute_code_hash(code_string, context_str)
 
-    # 🚀 $0\text{ms}$ CACHE HIT
+    # $0\text{ms}$ CACHE HIT
     if cache_key in SUMMARY_CACHE:
         return SUMMARY_CACHE[cache_key]
 
@@ -138,7 +138,7 @@ async def fetch_ast_summary(
     except Exception as e:
         print(f"[DEBUG] LLM Inference fallback: {e}")
 
-    # 🛡️ DETERMINISTIC STATIC HEURISTIC FALLBACK
+    # DETERMINISTIC STATIC HEURISTIC FALLBACK
     fallback = generate_heuristic_summary(code_string, node_id, risk_level)
     SUMMARY_CACHE[cache_key] = fallback
     return fallback

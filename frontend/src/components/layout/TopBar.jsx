@@ -1,15 +1,11 @@
 // src/components/layout/TopBar.jsx
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Play, Layout, Search, Settings, Minus, Square, 
-  Copy, X, Terminal, Sparkles, FolderOpen, Plus, 
-  HelpCircle, Code2, Sliders, Check 
+  Minus, Square, Copy, X, Check 
 } from 'lucide-react';
 
 export default function TopBar({ 
-  onRun, 
   onOpenFolder, 
-  onCreateFile, 
   layout = {}, 
   setLayout, 
   onOpenCommandPalette, 
@@ -98,7 +94,6 @@ export default function TopBar({
     alert(`NEURON IDE - KEYBOARD SHORTCUTS REFERENCE
 
 [ FILE COMMANDS ]
-New File             Ctrl+N
 Open Folder          Ctrl+K Ctrl+O
 Save / Sync          Ctrl+S
 Preferences          Ctrl+,
@@ -127,7 +122,6 @@ Open Node in Editor  Double Click Node`);
 
   // --- FILE MENU ---
   const fileDropdownItems = [
-    { label: "New File...", action: () => { const n = prompt("Enter new file name:"); if (n && onCreateFile) onCreateFile(n, 'file'); }, shortcut: "Ctrl+N" },
     { label: "Open Folder...", action: onOpenFolder, shortcut: "Ctrl+K Ctrl+O" },
     { separator: true },
     { label: "Save", action: () => console.log("Auto-Sync Active"), shortcut: "Ctrl+S" },
@@ -174,32 +168,41 @@ Open Node in Editor  Double Click Node`);
     return helpDropdownItems;
   };
 
+  // 🚀 AESTHETIC PARITY WITH EXPLORER CONTEXT MENU
   const renderDropdown = (item) => (
-    <div className={`absolute top-full ${item === 'Layout' ? 'left-0' : 'left-0'} mt-1 w-64 bg-[#1e1e1e] border border-[#333] rounded-xl shadow-2xl py-1.5 z-[200] backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-100`}>
+    <div 
+      className="absolute top-full left-0 mt-1 w-56 bg-[#191a1b]/95 border border-[#2e3032] shadow-2xl rounded-xl py-1.5 text-xs text-slate-300 font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none z-[200]"
+    >
       {getDropdownItems(item).map((opt, idx) => (
         opt.separator ? (
-          <div key={idx} className="h-[1px] bg-[#2d2d2d] my-1.5 mx-2" />
+          <div key={idx} className="my-1 border-t border-[#242628]" />
         ) : (
           <button 
             key={idx} 
             onClick={(e) => { 
               e.stopPropagation(); 
               opt.action(); 
-              if (!opt.toggle) setActiveMenu(null); 
+              if (opt.toggle === undefined) setActiveMenu(null); 
             }} 
-            className="w-full text-left px-3.5 py-1.5 hover:bg-blue-600/20 hover:text-white text-[#cccccc] text-xs font-mono flex items-center justify-between transition-colors group"
+            className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left group"
           >
-            <div className="flex items-center gap-2">
-              {opt.toggle !== undefined ? (
-                <span className={`w-3.5 flex items-center justify-center font-bold ${opt.toggle ? 'text-blue-400' : 'opacity-0'}`}>
-                  <Check size={12} />
+            {/* Flush Left Label (No Left Indentation Gap) */}
+            <span className="text-slate-300 group-hover:text-white">{opt.label}</span>
+
+            {/* Right Indicators (Shortcuts & Checkmarks) */}
+            <div className="flex items-center gap-2 shrink-0">
+              {opt.shortcut && (
+                <span className="text-[10px] text-slate-500 group-hover:text-slate-300 font-mono">
+                  {opt.shortcut}
                 </span>
-              ) : (
-                <span className="w-3.5" />
               )}
-              <span className="group-hover:text-white">{opt.label}</span>
+              {opt.toggle !== undefined && (
+                <Check 
+                  size={12} 
+                  className={opt.toggle ? "text-blue-400 font-bold" : "opacity-0"} 
+                />
+              )}
             </div>
-            {opt.shortcut && <span className="text-[10px] text-slate-500 tracking-wider font-mono">{opt.shortcut}</span>}
           </button>
         )
       ))}
@@ -209,31 +212,30 @@ Open Node in Editor  Double Click Node`);
   return (
     <div 
       data-tauri-drag-region
-      className="h-[38px] shrink-0 bg-[#121212] border-b border-[#242424] flex items-center justify-between px-3 text-[12px] text-slate-300 font-sans select-none z-[150] relative"
+      className="h-[42px] shrink-0 bg-[#121212] border-b border-[#222] flex items-center justify-between pl-3 pr-0 text-[12px] text-slate-300 font-sans select-none z-[150] relative"
     >
       {/* ----------------------------------------------------------------- */}
-      {/* LEFT: Logo & Dropdown Menus                                       */}
+      {/* LEFT: Flat Logo & Dropdown Menus                                  */}
       {/* ----------------------------------------------------------------- */}
       <div className="flex items-center gap-3 pointer-events-auto" data-tauri-drag-region>
         
-        {/* App Logo */}
-        <div className="flex items-center gap-1.5 pr-1 cursor-pointer" onClick={onOpenSettings} title="Neuron IDE">
+        {/* Flat Matte Logo (No Text, No Glow) */}
+        <div className="flex items-center pr-1 cursor-pointer" onClick={onOpenSettings} title="Neuron IDE">
           <img 
             src="/logo.png" 
-            alt="Logo" 
-            className="h-4.5 w-4.5 object-contain" 
+            alt="Neuron" 
+            className="h-5 w-5 object-contain opacity-95" 
             onError={(e) => { e.target.style.display = 'none'; }}
           />
-          <span className="font-bold font-mono tracking-widest text-[11px] text-slate-200 hidden sm:inline">NEURON</span>
         </div>
 
         {/* Desktop Menu Bar */}
-        <div className="flex items-center text-[#cccccc] text-xs" ref={menuRef}>
+        <div className="flex items-center text-[#cccccc] text-xs font-mono" ref={menuRef}>
           {menuItems.map((item) => (
             <div key={item} className="relative">
               <button 
                 onClick={() => setActiveMenu(activeMenu === item ? null : item)}
-                className={`px-2.5 py-1 rounded-md transition-colors ${
+                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
                   activeMenu === item ? 'bg-[#262626] text-white font-medium' : 'hover:text-white hover:bg-[#1e1e1e]'
                 }`}
               >
@@ -247,95 +249,43 @@ Open Node in Editor  Double Click Node`);
       </div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* CENTER: Omni-Search Bar (Interactive Window Drag Region)         */}
+      {/* CENTER: Pure Drag Area (Zero UI Clutter)                          */}
       {/* ----------------------------------------------------------------- */}
-      <div className="flex-1 max-w-sm mx-4 hidden md:flex items-center pointer-events-auto" data-tauri-drag-region>
-        <button 
-          onClick={onOpenCommandPalette}
-          className="w-full h-6.5 px-2.5 flex items-center justify-between text-[11px] font-mono text-slate-400 bg-[#181818] hover:bg-[#202020] hover:text-slate-200 border border-[#2b2d31] rounded-lg transition-all shadow-inner group"
-        >
-          <div className="flex items-center gap-2 truncate">
-            <Search size={11} className="text-blue-400 group-hover:text-blue-300" />
-            <span className="truncate">Omni-Search (symbols, files, AI)...</span>
-          </div>
-          <kbd className="px-1.5 py-0.5 text-[9px] bg-[#242424] border border-[#333] rounded text-slate-400 font-mono">
-            Ctrl+K
-          </kbd>
-        </button>
-      </div>
+      <div className="flex-1 h-full" data-tauri-drag-region />
 
       {/* ----------------------------------------------------------------- */}
-      {/* RIGHT: Actions, Panel Toggles & Custom Window Controls            */}
+      {/* RIGHT: Seamless Full-Height Native Window Controls                */}
       {/* ----------------------------------------------------------------- */}
-      <div className="flex items-center gap-1.5 pointer-events-auto">
-        
-        {/* Quick Action: Run Code */}
-        {onRun && (
+      {isTauri && (
+        <div className="flex items-center h-full pointer-events-auto">
+          {/* Minimize */}
           <button 
-            onClick={onRun}
-            className="h-6 px-2.5 bg-emerald-600/90 hover:bg-emerald-500 text-white font-mono text-[11px] font-semibold rounded-md transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(16,185,129,0.25)] border border-emerald-500/40"
-            title="Run Active Script (F5)"
+            onClick={handleMinimize}
+            className="w-11 h-full flex items-center justify-center hover:bg-[#262626] text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+            title="Minimize"
           >
-            <Play size={10} fill="currentColor" />
-            <span className="hidden sm:inline">Run</span>
+            <Minus size={13} />
           </button>
-        )}
 
-        {/* Quick Action: Toggle Layout */}
-        <button 
-          onClick={() => toggleLayout('sidebar')}
-          className={`h-6 w-6 flex items-center justify-center rounded-md border transition-colors ${
-            layout.sidebar ? 'bg-blue-600/20 border-blue-500/40 text-blue-300' : 'bg-[#181818] border-[#2c2c2c] text-slate-400 hover:text-slate-200 hover:bg-[#222]'
-          }`}
-          title="Toggle Sidebar (Ctrl+B)"
-        >
-          <Layout size={12} />
-        </button>
-
-        {/* Quick Action: Preferences */}
-        {onOpenSettings && (
+          {/* Maximize / Restore */}
           <button 
-            onClick={onOpenSettings}
-            className="h-6 w-6 flex items-center justify-center rounded-md bg-[#181818] hover:bg-[#222] text-slate-400 hover:text-slate-200 border border-[#2c2c2c] transition-colors"
-            title="Preferences (Ctrl+,)"
+            onClick={handleToggleMaximize}
+            className="w-11 h-full flex items-center justify-center hover:bg-[#262626] text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+            title={isMaximized ? "Restore" : "Maximize"}
           >
-            <Settings size={12} />
+            {isMaximized ? <Copy size={11} className="rotate-180" /> : <Square size={11} />}
           </button>
-        )}
 
-        {/* 🚀 CUSTOM NATIVE DESKTOP WINDOW CONTROLS (Zero Wasted Height) */}
-        {isTauri && (
-          <div className="flex items-center ml-2 pl-2 border-l border-[#282828] h-5 gap-0.5">
-            {/* Minimize */}
-            <button 
-              onClick={handleMinimize}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#262626] text-slate-400 hover:text-slate-100 transition-colors"
-              title="Minimize Window"
-            >
-              <Minus size={12} />
-            </button>
-
-            {/* Maximize / Restore */}
-            <button 
-              onClick={handleToggleMaximize}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#262626] text-slate-400 hover:text-slate-100 transition-colors"
-              title={isMaximized ? "Restore Window" : "Maximize Window"}
-            >
-              {isMaximized ? <Copy size={10} className="rotate-180" /> : <Square size={10} />}
-            </button>
-
-            {/* Close */}
-            <button 
-              onClick={handleClose}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-600 text-slate-400 hover:text-white transition-colors"
-              title="Close Application"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        )}
-
-      </div>
+          {/* Close */}
+          <button 
+            onClick={handleClose}
+            className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] text-slate-400 hover:text-white transition-colors cursor-pointer"
+            title="Close"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

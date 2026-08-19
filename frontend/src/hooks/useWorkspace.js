@@ -1,14 +1,37 @@
 // frontend/src/hooks/useWorkspace.js
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNodesState, useEdgesState } from '@xyflow/react';
 
 // Dynamic WebSocket URL Resolver
 const getWebSocketUrl = () => {
   if (typeof window === 'undefined') return 'ws://127.0.0.1:8000/ws';
+
+  // 1. Explicit environment variable override
+  if (import.meta?.env?.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+
+  // 2. Tauri Desktop App: ALWAYS connect directly to local loopback IPv4
+  const isTauri = Boolean(
+    window.__TAURI_INTERNALS__ || 
+    window.__TAURI__ || 
+    window.location.hostname === 'tauri.localhost' || 
+    window.location.protocol === 'tauri:'
+  );
+
+  if (isTauri) {
+    return 'ws://127.0.0.1:8000/ws';
+  }
+
+  // 3. Local Web Dev Mode (localhost:5173 or 127.0.0.1)
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'ws://127.0.0.1:8000/ws';
+  }
+
+  // 4. Remote Web Production
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname || '127.0.0.1';
-  const port = window.location.port === '3000' || window.location.port === '5173' ? '8000' : (window.location.port || '8000');
-  return `${protocol}//${host}:${port}/ws`;
+  return `${protocol}//${host}:8000/ws`;
 };
 
 // Coordinate Sanity Guard
@@ -52,6 +75,7 @@ export function useWorkspace(session) {
   
   const wsRef = useRef(null);
   const currentFileRef = useRef(currentFile);
+  const lastTargetDirRef = useRef("");
   const reconnectAttemptsRef = useRef(0);
   const pingTimestampRef = useRef(Date.now());
   
@@ -116,16 +140,30 @@ export function useWorkspace(session) {
             // 1. FULL WORKSPACE INITIALIZATION / SYNC
             else if (data.event === 'INIT' || data.event === 'SYNC') {
               const payload = data.payload || {};
+              const newTargetDir = payload.target_dir_abs || "";
+              const isDirSwitch = lastTargetDirRef.current && lastTargetDirRef.current !== newTargetDir;
+              lastTargetDirRef.current = newTargetDir;
+
               setItems(payload.items || []);
               setFiles(payload.files || []);
               
               const newActive = payload.active_file || "";
-              if (newActive) {
-                setCurrentFile(newActive);
-                setOpenFiles(prev => (prev.includes(newActive) ? prev : [...prev, newActive]));
-              }
+              setCurrentFile(newActive);
 
-              setAbsTargetDir(payload.target_dir_abs || "");
+              // 🚀 PURGE GHOST TABS ON WORKSPACE FOLDER SWITCH
+              setOpenFiles(prev => {
+                if (isDirSwitch || prev.length === 0) {
+                  return newActive ? [newActive] : [];
+                }
+                const validSet = new Set(payload.files || []);
+                const filtered = prev.filter(f => validSet.has(f));
+                if (newActive && !filtered.includes(newActive)) {
+                  return [...filtered, newActive];
+                }
+                return filtered.length > 0 ? filtered : (newActive ? [newActive] : []);
+              });
+
+              setAbsTargetDir(newTargetDir);
               setGitStatuses(payload.git_statuses || {});
 
               if (payload.agent_batch) {
@@ -135,9 +173,10 @@ export function useWorkspace(session) {
                 }
               }
               
+              // 🚀 SYNC TERMINAL CWD TO THE OPENED PROJECT FOLDER
               setTerminalSessions(prev => prev.map(s => ({
                 ...s, 
-                cwd: s.cwd || payload.target_dir_abs || "" 
+                cwd: newTargetDir || s.cwd 
               })));
               
               const rawNodes = payload.graph?.nodes || [];
@@ -168,7 +207,7 @@ export function useWorkspace(session) {
               setIsFileSyncing(false); 
             }
 
-            // 2. 🚀 INCREMENTAL LIVE GRAPH HOT-PATCHING (Zero Canvas Reload)
+            // 2. INCREMENTAL LIVE GRAPH HOT-PATCHING
             else if (data.event === 'GRAPH_DELTA') {
               const { 
                 nodes_upsert = [], 
@@ -187,14 +226,9 @@ export function useWorkspace(session) {
                 }
               }
 
-              // Hot-patch Nodes (Preserving existing particle coordinates & velocities)
               setNodes(prevNodes => {
                 const nodeMap = new Map(prevNodes.map(n => [n.id, n]));
-
-                // Remove deleted nodes
                 nodes_remove.forEach(id => nodeMap.delete(id));
-
-                // Upsert updated/added nodes
                 nodes_upsert.forEach((newNode, idx) => {
                   const existing = nodeMap.get(newNode.id);
                   const fallbackX = (Math.cos(idx) * (40 + idx * 6));
@@ -213,11 +247,9 @@ export function useWorkspace(session) {
                     }
                   });
                 });
-
                 return Array.from(nodeMap.values());
               });
 
-              // Hot-patch Edges
               setEdges(prevEdges => {
                 const edgeMap = new Map(prevEdges.map(e => [e.id, e]));
                 edges_remove.forEach(id => edgeMap.delete(id));
@@ -300,7 +332,7 @@ export function useWorkspace(session) {
           setIsWsConnected(false);
           clearInterval(heartbeatTimer);
           
-          const delay = Math.min(10000, 1000 * Math.pow(1.5, reconnectAttemptsRef.current++));
+          const delay = Math.min(6000, 500 * Math.pow(1.4, reconnectAttemptsRef.current++));
           reconnectTimer = setTimeout(connectWebSocket, delay);
         };
 
@@ -351,7 +383,7 @@ export function useWorkspace(session) {
     }
   }, []);
 
-  // 🚀 HORIZON 3: AI AGENT SUPERVISOR ACTIONS
+  // AI Agent Supervisor Actions
   const rollbackAgentBatch = useCallback((batchId) => {
     if (wsRef.current?.readyState === WebSocket.OPEN && batchId) {
       wsRef.current.send(JSON.stringify({
@@ -371,7 +403,7 @@ export function useWorkspace(session) {
     setBlastRadius(null);
   }, []);
 
-  // Multi-Session Terminal Actions
+  // 🚀 Terminal Actions with Active Folder CWD
   const createTerminalSession = useCallback((shellType = 'powershell') => {
     const nextNum = terminalSessions.filter(s => s.shellType === shellType).length + 1;
     const nameMap = { powershell: 'PowerShell', cmd: 'CMD', bash: 'Bash', zsh: 'Zsh' };
@@ -383,7 +415,7 @@ export function useWorkspace(session) {
         id: newId, 
         name: `${nameMap[shellType] || 'Terminal'} ${nextNum}`, 
         shellType, 
-        cwd: absTargetDir, 
+        cwd: absTargetDir || lastTargetDirRef.current, 
         isRunning: false, 
         history: [] 
       }
@@ -407,7 +439,7 @@ export function useWorkspace(session) {
         session_id: sessionId, 
         shell_type: targetSession.shellType || 'powershell', 
         command: command, 
-        cwd: targetSession.cwd || absTargetDir 
+        cwd: targetSession.cwd || absTargetDir || lastTargetDirRef.current
       }));
     }
   }, [terminalSessions, absTargetDir]);

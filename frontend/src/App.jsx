@@ -1,10 +1,15 @@
 // src/App.jsx
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
-import { FileCode2, Network, Loader2, X, Play, Layout, AlertOctagon } from 'lucide-react';
+import { FileCode2, Network, Loader2, X, Play, AlertOctagon } from 'lucide-react';
 
 // Authentication & Core Services
-import { supabase } from './supabaseClient';
+import { 
+  supabase, 
+  isTauriApp, 
+  getLocalDesktopSession, 
+  signInWithGoogleOAuth 
+} from './supabaseClient';
 import { loadPyodideEngine } from './services/pyodideService';
 
 // Hooks & State
@@ -61,7 +66,61 @@ export default function App() {
     centerView
   );
 
-  // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE (Handles String & Object Endpoints) ---
+  // --- 🛡️ PERMANENT DESKTOP & WEB AUTH RESOLVER ---
+  useEffect(() => {
+    let isMounted = true;
+
+    const initAuth = async () => {
+      // 🚀 DESKTOP NATIVE APP MODE: Instant local session (Zero external redirects)
+      if (isTauriApp()) {
+        const saved = localStorage.getItem('neuron_desktop_session');
+        const desktopSession = saved ? JSON.parse(saved) : getLocalDesktopSession();
+        localStorage.setItem('neuron_desktop_session', JSON.stringify(desktopSession));
+        if (isMounted) setSession(desktopSession);
+        return;
+      }
+
+      // 🌐 WEB BROWSER MODE: Supabase Session with fail-safe fallback
+      try {
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (isMounted && existingSession) {
+          setSession(existingSession);
+        }
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+          if (isMounted && currentSession) {
+            setSession(currentSession);
+          }
+        });
+        return () => subscription.unsubscribe();
+      } catch (err) {
+        if (isMounted) setSession(getLocalDesktopSession());
+      }
+    };
+
+    initAuth();
+    return () => { isMounted = false; };
+  }, []);
+
+  const handleLogin = useCallback(async () => {
+    if (isTauriApp()) {
+      const desktopSession = getLocalDesktopSession();
+      localStorage.setItem('neuron_desktop_session', JSON.stringify(desktopSession));
+      setSession(desktopSession);
+      return;
+    }
+
+    try {
+      const { data, error } = await signInWithGoogleOAuth();
+      if (error) throw error;
+      if (data?.session) setSession(data.session);
+    } catch (err) {
+      console.warn("[AUTH] Fallback to local developer session:", err);
+      setSession(getLocalDesktopSession());
+    }
+  }, []);
+
+  // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
   const adjLists = useMemo(() => {
     const hierarchyAdj = {}; 
     const callAdjForward = {}; 
@@ -123,32 +182,27 @@ export default function App() {
     return { activeN, activeE };
   }, [hoveredNodeId, adjLists]);
 
-  // --- NATIVE HARDWARE KEYBINDS (0ms Latency) ---
+  // --- NATIVE HARDWARE KEYBINDS ---
   useEffect(() => {
     const handleGlobalKeys = (e) => {
-      // Command Palette (Ctrl+K / Cmd+K)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { 
         e.preventDefault(); 
         setIsCommandPaletteOpen(true); 
       }
-      // AI Impact Analysis (Alt+I)
       if (e.altKey && e.key.toLowerCase() === 'i' && hoveredNodeId) {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
           workspace.wsRef.current.send(JSON.stringify({ event: 'IMPACT_ANALYSIS', node_id: hoveredNodeId }));
         }
       }
-      // Focus Isolation (F)
       if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         if (hoveredNodeId) setFocusIsolationId(hoveredNodeId);
       }
-      // Clear Map & Alerts (Escape)
       if (e.key === 'Escape') {
         workspace.setBlastRadius(null);
         setFocusIsolationId(null);
         setCspRejection(null);
         setWarpTargetNodeId(null);
       }
-      // Canvas Refactor Undo (Ctrl+Z / Cmd+Z on Spatial Map)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         if (centerView === 'spatial' && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
           e.preventDefault();
@@ -160,7 +214,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleGlobalKeys);
   }, [hoveredNodeId, workspace, centerView]);
 
-  // --- WEBSOCKET EVENT LISTENER: AI & REFACTORING TRANSACTIONS ---
+  // --- WEBSOCKET EVENT LISTENER ---
   useEffect(() => {
     const ws = workspace.wsRef.current;
     if (!ws) return;
@@ -169,7 +223,6 @@ export default function App() {
       try {
         const data = JSON.parse(event.data);
         
-        // 1. LLM Summary Response
         if (data.event === 'LLM_SUMMARY_READY') {
           if (hoveredNodeId === data.node_id) {
             workspace.setAiInsight({
@@ -178,7 +231,6 @@ export default function App() {
             });
           }
         }
-        // 2. CSP Refactoring Rejection
         else if (data.event === 'REFACTOR_CSP_VIOLATION') {
           const payload = data.payload || {};
           const pending = pendingRefactorRef.current;
@@ -194,7 +246,6 @@ export default function App() {
             originalPos: pending?.originalPos
           });
         }
-        // 3. CSP Refactoring Success
         else if (data.event === 'REFACTOR_SUCCESS' || data.event === 'REFACTOR_FILE_MERGE_SUCCESS') {
           setCspRejection(null);
           pendingRefactorRef.current = null;
@@ -220,7 +271,7 @@ export default function App() {
     }
   }, [workspace.wsRef]);
 
-  // --- FILE-TO-FILE FUSION (MERGE) DISPATCHER ---
+  // --- FILE-TO-FILE FUSION DISPATCHER ---
   const handleFileMergeDrop = useCallback(({ sourceFile, destFile }) => {
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
       workspace.wsRef.current.send(JSON.stringify({
@@ -231,7 +282,7 @@ export default function App() {
     }
   }, [workspace.wsRef]);
 
-  // --- 🚀 HORIZON 2: 3D CAMERA WARP DISPATCHER ---
+  // --- 🚀 3D CAMERA WARP DISPATCHER ---
   const handleWarpToNode = useCallback((nodeId) => {
     setCenterView('spatial');
     setWarpTargetNodeId(nodeId);
@@ -242,22 +293,45 @@ export default function App() {
     }, 250);
   }, [setCenterView]);
 
-  // --- MEMOIZED DISPATCHERS ---
+  // --- MEMOIZED CODE STR ---
   const activeCodeStr = useMemo(() => {
     const fileNode = (workspace.nodes || []).find(n => n.id === workspace.currentFile && n.data?.nodeType === 'file');
     return fileNode ? (fileNode.data?.code || "") : "";
   }, [workspace.nodes, workspace.currentFile]);
 
+  // 🚀 UNIVERSAL POLYGLOT CODE RUNNER (C++, C, Java, Python, JS)
   const handleRunCode = useCallback(async () => {
     workspace.setActiveSessionId('output');
-    if (!isCompilerReady || !window.pyodide) return;
-    workspace.setTerminalLogs([{ text: `Executing ${workspace.currentFile}...`, isSystem: true }]);
-    try {
-      window.pyodide.setStdin({ stdin: () => { const lines = stdin.split('\n'); return lines.length > 0 ? lines.shift() : ""; }});
-      await window.pyodide.runPythonAsync(activeCodeStr);
-      workspace.setTerminalLogs(prev => [...prev, { text: `Process exited with code 0`, isSystem: true }]);
-    } catch (error) { 
-      workspace.setTerminalLogs(prev => [...prev, { text: error.message, isError: true }]); 
+    const activeExt = workspace.currentFile?.split('.').pop()?.toLowerCase();
+
+    // 1. Primary: Run via Backend Compiler Engine (C++, C, Java, Python, Node) with STDIN
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.setTerminalLogs(prev => [
+        ...prev, 
+        { text: `Compiling & executing ${workspace.currentFile}...`, isSystem: true }
+      ]);
+      workspace.wsRef.current.send(JSON.stringify({
+        event: 'RUN_CODE',
+        stdin: stdin
+      }));
+      return;
+    }
+
+    // 2. Web browser fallback for Python via Pyodide WASM
+    if (activeExt === 'py' && isCompilerReady && window.pyodide) {
+      workspace.setTerminalLogs([{ text: `Executing ${workspace.currentFile} in browser WASM...`, isSystem: true }]);
+      try {
+        window.pyodide.setStdin({ 
+          stdin: () => { 
+            const lines = stdin.split('\n'); 
+            return lines.length > 0 ? lines.shift() : ""; 
+          }
+        });
+        await window.pyodide.runPythonAsync(activeCodeStr);
+        workspace.setTerminalLogs(prev => [...prev, { text: `Process exited with code 0`, isSystem: true }]);
+      } catch (error) { 
+        workspace.setTerminalLogs(prev => [...prev, { text: error.message, isError: true }]); 
+      }
     }
   }, [workspace, isCompilerReady, stdin, activeCodeStr]);
 
@@ -295,7 +369,7 @@ export default function App() {
     setCenterView('editor');
   }, [workspace, setCenterView]);
 
-  // STABLE WEBGPU HOVER ROUTER WITH AI DEBOUNCE
+  // STABLE WEBGPU HOVER ROUTER
   const handleNodeHover = useCallback((isHovering, id) => {
     setHoveredNodeId(isHovering ? id : null);
     
@@ -321,13 +395,7 @@ export default function App() {
     }
   }, [workspace.wsRef, workspace.nodes, workspace]);
 
-  // --- INIT ROUTING ---
-  useEffect(() => { 
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session)); 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session)); 
-    return () => subscription.unsubscribe(); 
-  }, []);
-
+  // --- INIT PYODIDE ENGINE ---
   useEffect(() => { 
     loadPyodideEngine(
       (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: false }]), 
@@ -341,15 +409,15 @@ export default function App() {
         session={session} 
         isGraphLoaded={workspace.isGraphLoaded} 
         isCompilerReady={isCompilerReady} 
-        onLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })} 
+        onLogin={handleLogin} 
       />
     );
   }
   
   return (
-    <div className="w-screen h-screen bg-[#0a0a0a] flex flex-col font-sans text-slate-300 overflow-hidden relative">
+    <div className="w-screen h-screen bg-[#121314] flex flex-col font-sans text-slate-300 overflow-hidden relative select-none overscroll-none">
       
-      {/* 🚀 COMMAND PALETTE (Natural Language Omni-Search) */}
+      {/* Omni-Search Command Palette */}
       <CommandPalette 
         isOpen={isCommandPaletteOpen} 
         onClose={() => { setIsCommandPaletteOpen(false); setSearchQuery(""); }} 
@@ -362,14 +430,23 @@ export default function App() {
       />
       
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSetting={updateSetting} />
-      <TopBar onRun={handleRunCode} onOpenFolder={handleOpenFolder} onCreateFile={() => { const name = prompt("Enter new file name:"); if (name) handleCreateItem(name, 'file'); }} onOpenSettings={() => setIsSettingsOpen(true)} onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} layout={layout} setLayout={setLayout} />
+      
+      {/* Clean Custom TopBar (Logo/Menus on Left, Window Controls on Right) */}
+      <TopBar 
+        onOpenFolder={handleOpenFolder} 
+        onCreateFile={() => { const name = prompt("Enter new file name:"); if (name) handleCreateItem(name, 'file'); }} 
+        onOpenSettings={() => setIsSettingsOpen(true)} 
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} 
+        layout={layout} 
+        setLayout={setLayout} 
+      />
       
       <div className="flex flex-row flex-grow overflow-hidden">
         <ActivityBar layout={layout} setLayout={setLayout} onOpenSettings={() => setIsSettingsOpen(true)} onLogout={() => supabase.auth.signOut()} />
         <Group orientation="horizontal" className="flex-grow overflow-hidden" autoSaveId="neuron-layout-v12">
           {layout.sidebar && (
             <>
-              <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]">
+              <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#191a1b]">
                 <Sidebar 
                   items={workspace.items} 
                   currentFile={workspace.currentFile} 
@@ -385,48 +462,68 @@ export default function App() {
                   onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} 
                 />
               </Panel>
-              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center">
-                <div className="w-[1px] h-full bg-[#2b2d31]" />
-              </Separator>
+              {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (Sidebar) */}
+              <Separator className="w-[1px] bg-[#242628] hover:bg-blue-500 cursor-col-resize z-50 flex justify-center transition-colors outline-none" />
             </>
           )}
 
-          <Panel id="main-canvas" order={2} className="flex flex-col bg-[#0a0a0a]">
+          <Panel id="main-canvas" order={2} className="flex flex-col bg-[#121314]">
             <Group orientation="vertical" autoSaveId="neuron-vertical-v12">
-              <Panel id="canvas-area" order={1} className="relative flex flex-col bg-[#0f0f0f]">
+              <Panel id="canvas-area" order={1} className="relative flex flex-col bg-[#121314]">
                 
-                {/* Center Tab Bar */}
-                <div className="h-9 shrink-0 bg-[#1e1e1e] flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b border-[#333] z-40 relative">
+                {/* ----------------------------------------------------------- */}
+                {/* CENTER TAB STRIP (#191a1b & Blue Accent)                    */}
+                {/* ----------------------------------------------------------- */}
+                <div className="h-8 shrink-0 bg-[#191a1b] flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b border-[#242628] z-40 relative select-none">
                   
-                  <button onClick={() => setCenterView('spatial')} className={`h-full px-4 flex items-center gap-2 text-xs border-r border-[#333] transition-colors shrink-0 ${centerView === 'spatial' ? 'bg-[#0f0f0f] text-blue-400 border-t-2 border-t-blue-500 font-semibold' : 'bg-[#1e1e1e] text-slate-400 hover:bg-[#141414] hover:text-slate-300'}`}>
-                    <Network size={14} /> Spatial Map
+                  {/* Spatial Map Tab */}
+                  <button 
+                    onClick={() => setCenterView('spatial')} 
+                    className={`h-full px-3 flex items-center gap-1.5 text-xs font-mono border-r border-[#242628] transition-colors shrink-0 cursor-pointer ${
+                      centerView === 'spatial' 
+                        ? 'bg-[#121314] text-blue-400 border-t-2 border-t-blue-500 font-semibold' 
+                        : 'bg-[#191a1b] text-slate-400 hover:bg-[#202224] hover:text-slate-200'
+                    }`}
+                  >
+                    <Network size={13} /> <span>Spatial Map</span>
                   </button>
 
-                  {/* Dynamic Multi-File Tabs with Git Status */}
+                  {/* Dynamic Multi-File Tabs (Blue Accent) */}
                   {(workspace.openFiles || []).map(file => {
                     const gStat = (workspace.gitStatuses || {})[file];
                     const isModified = gStat === 'M';
                     const isUntracked = gStat === 'U';
+                    const isActive = centerView === 'editor' && workspace.currentFile === file;
                     
                     return (
                       <div 
                         key={file} 
                         onClick={() => { setCenterView('editor'); handleSwitchFile(file); }} 
-                        className={`h-full px-3 flex items-center gap-2 text-xs border-r border-[#333] transition-colors cursor-pointer shrink-0 group ${centerView === 'editor' && workspace.currentFile === file ? 'bg-[#0a0a0a] border-t-2 border-t-yellow-500 font-semibold' : 'bg-[#1e1e1e] hover:bg-[#141414]'}`}
+                        className={`h-full px-3 flex items-center gap-2 text-xs font-mono border-r border-[#242628] transition-colors cursor-pointer shrink-0 group ${
+                          isActive 
+                            ? 'bg-[#121314] text-white border-t-2 border-t-blue-500 font-semibold' 
+                            : 'bg-[#191a1b] text-slate-400 hover:bg-[#202224] hover:text-slate-200'
+                        }`}
                       >
-                        <FileCode2 size={14} className={isModified ? "text-yellow-600" : isUntracked ? "text-green-600" : "text-slate-400"} /> 
+                        <FileCode2 size={13} className={isModified ? "text-blue-400" : isUntracked ? "text-emerald-400" : "text-slate-500"} /> 
                         
-                        <span className={`${isModified ? "text-yellow-500" : isUntracked ? "text-green-500" : centerView === 'editor' && workspace.currentFile === file ? "text-yellow-400" : "text-slate-300"}`}>
+                        <span className={isActive ? "text-white" : isModified ? "text-blue-300" : isUntracked ? "text-emerald-300" : "text-slate-400"}>
                           {file.split('/').pop()}
                         </span>
                         
                         {gStat && (
-                          <span className={`text-[10px] ml-1 font-bold ${isModified ? "text-yellow-600" : "text-green-600"}`}>
+                          <span className={`text-[9px] px-1 py-0.2 rounded font-bold ${
+                            isModified 
+                              ? "text-blue-300 bg-blue-950/40 border border-blue-800/40" 
+                              : "text-emerald-300 bg-emerald-950/40 border border-emerald-800/40"
+                          }`}>
                             {gStat}
                           </span>
                         )}
 
-                        {workspace.isFileSyncing && workspace.currentFile === file && <Loader2 size={12} className="text-yellow-500 animate-spin ml-1" />}
+                        {workspace.isFileSyncing && workspace.currentFile === file && (
+                          <Loader2 size={11} className="text-blue-400 animate-spin" />
+                        )}
                         
                         <button 
                           onClick={(e) => { 
@@ -434,34 +531,28 @@ export default function App() {
                             if (workspace.closeFile) workspace.closeFile(file); 
                             if ((workspace.openFiles || []).length === 1) setCenterView('spatial'); 
                           }} 
-                          className="opacity-0 group-hover:opacity-100 hover:bg-[#333] rounded p-0.5 ml-1 transition-opacity text-slate-400 hover:text-slate-200"
+                          className="opacity-0 group-hover:opacity-100 hover:bg-[#282a2d] rounded p-0.5 ml-0.5 transition-opacity text-slate-400 hover:text-slate-200"
                         >
-                          <X size={12} />
+                          <X size={11} />
                         </button>
                       </div>
                     );
                   })}
 
-                  {/* Right Action Bar */}
-                  <div className="ml-auto flex items-center gap-2 pr-3 shrink-0">
-                    <button 
-                      onClick={() => setLayout(prev => ({ ...prev, sidebar: !prev.sidebar }))}
-                      className="flex items-center justify-center w-7 h-7 rounded-md bg-[#1e1e1e] text-slate-400 border border-[#333] hover:text-slate-200 hover:bg-[#2a2d31] transition-colors"
-                      title="Toggle Sidebar"
-                    >
-                      <Layout size={14} />
-                    </button>
+                  {/* 🚀 HOLLOW WHITE TRIANGLE RUN BUTTON (Zero text, smooth vector corners) */}
+                  <div className="ml-auto flex items-center pr-2.5 shrink-0">
                     <button 
                       onClick={handleRunCode} 
-                      className="flex items-center justify-center w-7 h-7 bg-green-600/90 hover:bg-green-500 text-white rounded-md transition-colors shadow-md border border-green-700/50"
-                      title="Run Code"
+                      className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-white/10 text-white/80 hover:text-white transition-all cursor-pointer"
+                      title="Run Active File (F5)"
                     >
-                      <Play size={15} fill="currentColor" className="ml-0.5" />
+                      <Play size={13} strokeWidth={1.8} />
                     </button>
                   </div>
+
                 </div>
 
-                <div className="flex-grow relative overflow-hidden bg-[#050505]">
+                <div className="flex-grow relative overflow-hidden bg-[#121314]">
                   {centerView === 'spatial' ? (
                     <div className="relative w-full h-full">
                       {/* 🌌 THE WEBGPU SPATIAL ENGINE 🌌 */}
@@ -483,7 +574,7 @@ export default function App() {
                       
                       {/* 🚀 SUPER-MINIMALIST FLOATING AI OVERVIEW PANEL */}
                       {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
-                        <div className="absolute top-4 right-4 max-w-sm bg-[#0e0e0e]/90 border border-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.6)] rounded-xl p-3.5 z-[100] backdrop-blur-md pointer-events-none animate-in fade-in duration-150">
+                        <div className="absolute top-4 right-4 max-w-sm bg-[#141516]/95 border border-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.6)] rounded-xl p-3.5 z-[100] backdrop-blur-md pointer-events-none animate-in fade-in duration-150">
                           <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-mono text-xs font-semibold text-blue-400 truncate">
@@ -554,10 +645,9 @@ export default function App() {
               </Panel>
               {layout.terminal && ( 
                 <>
-                  <Separator className="h-1 bg-[#2b2d31] hover:bg-blue-500 cursor-row-resize z-50 flex items-center">
-                    <div className="h-[1px] w-full bg-[#2b2d31]" />
-                  </Separator>
-                  <Panel id="terminal-area" order={2} defaultSize={250} minSize={15} maxSize={300} className="bg-[#141414]">
+                  {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (Terminal) */}
+                  <Separator className="h-[1px] bg-[#242628] hover:bg-blue-500 cursor-row-resize z-50 flex items-center transition-colors outline-none" />
+                  <Panel id="terminal-area" order={2} defaultSize={250} minSize={15} maxSize={300} className="bg-[#191a1b]">
                     <TerminalPanel 
                       logs={workspace.terminalLogs} 
                       sessions={workspace.terminalSessions} 
@@ -577,10 +667,9 @@ export default function App() {
           </Panel>
           {layout.stdin && ( 
             <>
-              <Separator className="w-2 bg-transparent hover:bg-blue-500 cursor-col-resize z-50 flex justify-center">
-                <div className="w-[1px] h-full bg-[#2b2d31]" />
-              </Separator>
-              <Panel id="stdin-panel" order={4} defaultSize={200} minSize={100} maxSize={500} className="bg-[#141414]">
+              {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (STDIN) */}
+              <Separator className="w-[1px] bg-[#242628] hover:bg-blue-500 cursor-col-resize z-50 flex justify-center transition-colors outline-none" />
+              <Panel id="stdin-panel" order={4} defaultSize={200} minSize={100} maxSize={500} className="bg-[#191a1b]">
                 <StdinPanel stdin={stdin} setStdin={setStdin} />
               </Panel>
             </> 
@@ -598,7 +687,7 @@ export default function App() {
         onSwitchFile={handleSwitchFile}
       />
 
-      {/* 🚀 BOTTOM STATUS BAR (Live Protocols, Active Nodes, Git Churn, WebSocket Pulse) */}
+      {/* 🚀 BOTTOM STATUS BAR (#191a1b Secondary Theme) */}
       <StatusBar 
         activeFile={workspace.currentFile} 
         lineCount={(activeCodeStr?.split("\n").length || 0).toString()} 
@@ -607,7 +696,6 @@ export default function App() {
         nodes={workspace.nodes || []}
         edges={workspace.edges || []}
         gitStatuses={workspace.gitStatuses || {}}
-        isWsConnected={workspace.isWsConnected}
         onCenterSpatialMap={() => setCenterView('spatial')}
       />
     </div>

@@ -83,7 +83,7 @@ export default function PixiSpatialEngine({
       
       await app.init({
         resizeTo: containerRef.current,
-        backgroundColor: 0x0a0a0a,
+        backgroundColor: 0x121314,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
         antialias: false,

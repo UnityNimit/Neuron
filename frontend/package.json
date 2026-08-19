@@ -27,6 +27,7 @@
     "d3-polygon": "^3.0.1",
     "lottie-react": "^2.4.1",
     "lucide-react": "^1.31.0",
+    "monaco-editor": "^0.56.0",
     "pixi-viewport": "^6.0.3",
     "pixi.js": "^8.19.0",
     "pyodide": "^314.0.3",

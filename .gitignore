@@ -1,52 +1,122 @@
-# ========================================
-# Neuron
-# ========================================
+# =========================================================================
+# NEURON MONOREPO - MASTER GITIGNORE MANIFEST
+# =========================================================================
 
-# 1. Python & Backend (FastAPI, ML, AI)
+# -------------------------------------------------------------------------
+# 1. PYTHON BACKEND & PYINSTALLER ARTIFACTS
+# -------------------------------------------------------------------------
 venv/
 env/
+.venv/
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
 *.egg-info/
+.eggs/
 
-# 2. Node.js & Frontend (React, Vite)
+# PyInstaller Build & Dist Folders
+backend/build/
+backend/dist/
+build/
+dist/
+*.spec
+*.manifest
+
+# -------------------------------------------------------------------------
+# 2. NODE.JS, REACT & FRONTEND BUILDS (IDE + Website)
+# -------------------------------------------------------------------------
 node_modules/
 frontend/dist/
+Neuron-Website/dist/
 dist-ssr/
+.turbo/
+.next/
 *.local
-
-# 3. Environment Variables & Security (NEVER COMMIT)
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-
-# 4. Databases (SQLite)
-*.db
-*.sqlite3
-
-# 5. Machine Learning & Data (No heavy model files)
-*.pkl
-*.joblib
-*.csv
-*.dat
-
-# 6. Logs
-logs/
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# 7. OS & IDEs (VS Code, Mac, Windows)
+# -------------------------------------------------------------------------
+# 3. TAURI 2.0 & RUST NATIVE DESKTOP BUILDS
+# -------------------------------------------------------------------------
+# Rust Cargo Target Caches (1.5+ GB of intermediate compiler files)
+frontend/src-tauri/target/
+src-tauri/target/
+target/
+**/*.rs.bk
+
+# Generated Native Binaries & Bundle Installers
+frontend/src-tauri/binaries/*
+!frontend/src-tauri/binaries/.gitkeep
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+*.exe
+*.msi
+*.dmg
+*.app
+*.AppImage
+*.deb
+
+# Native C/C++ & Windows Object Dumps
+*.pdb
+*.rlib
+*.rmeta
+*.obj
+*.o
+*.dll
+*.so
+*.dylib
+*.exp
+*.lib
+
+# -------------------------------------------------------------------------
+# 4. VECTOR SEARCH, ML MODELS & LOCAL CACHES
+# -------------------------------------------------------------------------
+.chroma/
+.cache/
+.onnx_models/
+onnx_models/
+*.onnx
+*.tar.gz
+*.pkl
+*.joblib
+*.dat
+
+# -------------------------------------------------------------------------
+# 5. ENVIRONMENT VARIABLES & CREDENTIALS (NEVER COMMIT)
+# -------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# -------------------------------------------------------------------------
+# 6. DATABASES & RUNTIME LOGS
+# -------------------------------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+logs/
+*.log
+neuron_debug.log
+neuron_boot.log
+neuron_backend_stdout.log
+neuron_backend_stderr.log
+neuron_backend_runtime.log
+
+# -------------------------------------------------------------------------
+# 7. OS & IDE ARTIFACTS
+# -------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+desktop.ini
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.suo
 *.ntvs*
