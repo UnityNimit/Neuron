@@ -52,6 +52,11 @@ export default function App() {
   // --- 🚀 HORIZON 2: CAMERA WARP TARGET STATE ---
   const [warpTargetNodeId, setWarpTargetNodeId] = useState(null);
 
+  // --- VS CODE-STYLE DIRTY/UNSAVED FILES TRACKER ---
+  const [dirtyFiles, setDirtyFiles] = useState(new Set());
+  const currentCodeBufferRef = useRef({});
+  const autoSaveTimerRef = useRef(null);
+
   // --- AI & REFACTORING TRANSACTION REFS ---
   const hoverTimerRef = useRef(null);
   const pendingRefactorRef = useRef(null);
@@ -120,6 +125,73 @@ export default function App() {
     }
   }, []);
 
+  // --- RECENT WORKSPACES RECORDER ---
+  useEffect(() => {
+    if (workspace.absTargetDir) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('neuron_recent_projects') || '[]');
+        const updated = [workspace.absTargetDir, ...saved.filter(p => p !== workspace.absTargetDir)].slice(0, 10);
+        localStorage.setItem('neuron_recent_projects', JSON.stringify(updated));
+      } catch (e) {}
+    }
+  }, [workspace.absTargetDir]);
+
+  const handleOpenRecentWorkspace = useCallback((folderPath) => {
+    if (folderPath && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.setIsFileSyncing(true);
+      workspace.wsRef.current.send(JSON.stringify({
+        event: 'OPEN_FOLDER_DIALOG',
+        target_dir: folderPath
+      }));
+    }
+  }, [workspace]);
+
+  // --- 🚀 ATOMIC SAVE & AUTO-SAVE CONTROLLER ---
+  const activeCodeStr = useMemo(() => {
+    const fileNode = (workspace.nodes || []).find(n => n.id === workspace.currentFile && n.data?.nodeType === 'file');
+    return fileNode ? (fileNode.data?.code || "") : "";
+  }, [workspace.nodes, workspace.currentFile]);
+
+  const handleSaveFile = useCallback((fileToSave, codeContent) => {
+    const target = fileToSave || workspace.currentFile;
+    const content = codeContent !== undefined 
+      ? codeContent 
+      : (currentCodeBufferRef.current[target] ?? activeCodeStr);
+    
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN && target) {
+      workspace.wsRef.current.send(JSON.stringify({
+        event: 'SAVE_FILE',
+        filename: target,
+        content: content
+      }));
+
+      // Clear dirty indicator
+      setDirtyFiles(prev => {
+        const next = new Set(prev);
+        next.delete(target);
+        return next;
+      });
+    }
+  }, [workspace.currentFile, workspace.wsRef, activeCodeStr]);
+
+  const handleCodeChange = useCallback((newCode) => {
+    if (!workspace.currentFile) return;
+    currentCodeBufferRef.current[workspace.currentFile] = newCode;
+    
+    const isAutoSaveActive = settings?.autoSave ?? true;
+
+    if (isAutoSaveActive) {
+      // Auto-save on debounced idle
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(() => {
+        handleSaveFile(workspace.currentFile, newCode);
+      }, 550);
+    } else {
+      // Manual Save Mode: Mark file as dirty (●)
+      setDirtyFiles(prev => new Set(prev).add(workspace.currentFile));
+    }
+  }, [workspace.currentFile, settings?.autoSave, handleSaveFile]);
+
   // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
   const adjLists = useMemo(() => {
     const hierarchyAdj = {}; 
@@ -182,27 +254,37 @@ export default function App() {
     return { activeN, activeE };
   }, [hoveredNodeId, adjLists]);
 
-  // --- NATIVE HARDWARE KEYBINDS ---
+  // --- NATIVE HARDWARE KEYBINDS (Ctrl+S, Ctrl+K, Alt+I, F, Escape) ---
   useEffect(() => {
     const handleGlobalKeys = (e) => {
+      // 🚀 Save Active File (Ctrl+S / Cmd+S)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { 
+        e.preventDefault(); 
+        handleSaveFile(); 
+      }
+      // Command Palette (Ctrl+K / Cmd+K)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { 
         e.preventDefault(); 
         setIsCommandPaletteOpen(true); 
       }
+      // AI Impact Analysis (Alt+I)
       if (e.altKey && e.key.toLowerCase() === 'i' && hoveredNodeId) {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
           workspace.wsRef.current.send(JSON.stringify({ event: 'IMPACT_ANALYSIS', node_id: hoveredNodeId }));
         }
       }
+      // Focus Isolation (F)
       if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         if (hoveredNodeId) setFocusIsolationId(hoveredNodeId);
       }
+      // Clear Map & Alerts (Escape)
       if (e.key === 'Escape') {
         workspace.setBlastRadius(null);
         setFocusIsolationId(null);
         setCspRejection(null);
         setWarpTargetNodeId(null);
       }
+      // Canvas Refactor Undo (Ctrl+Z / Cmd+Z on Spatial Map)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         if (centerView === 'spatial' && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
           e.preventDefault();
@@ -212,7 +294,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
-  }, [hoveredNodeId, workspace, centerView]);
+  }, [hoveredNodeId, workspace, centerView, handleSaveFile]);
 
   // --- WEBSOCKET EVENT LISTENER ---
   useEffect(() => {
@@ -223,7 +305,14 @@ export default function App() {
       try {
         const data = JSON.parse(event.data);
         
-        if (data.event === 'LLM_SUMMARY_READY') {
+        if (data.event === 'SAVE_FILE_SUCCESS') {
+          setDirtyFiles(prev => {
+            const next = new Set(prev);
+            if (data.filename) next.delete(data.filename);
+            return next;
+          });
+        }
+        else if (data.event === 'LLM_SUMMARY_READY') {
           if (hoveredNodeId === data.node_id) {
             workspace.setAiInsight({
               nodeId: data.node_id,
@@ -293,18 +382,12 @@ export default function App() {
     }, 250);
   }, [setCenterView]);
 
-  // --- MEMOIZED CODE STR ---
-  const activeCodeStr = useMemo(() => {
-    const fileNode = (workspace.nodes || []).find(n => n.id === workspace.currentFile && n.data?.nodeType === 'file');
-    return fileNode ? (fileNode.data?.code || "") : "";
-  }, [workspace.nodes, workspace.currentFile]);
-
   // 🚀 UNIVERSAL POLYGLOT CODE RUNNER (C++, C, Java, Python, JS)
   const handleRunCode = useCallback(async () => {
     workspace.setActiveSessionId('output');
     const activeExt = workspace.currentFile?.split('.').pop()?.toLowerCase();
 
-    // 1. Primary: Run via Backend Compiler Engine (C++, C, Java, Python, Node) with STDIN
+    // 1. Primary: Run via Backend Compiler Engine with STDIN
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
       workspace.setTerminalLogs(prev => [
         ...prev, 
@@ -312,6 +395,7 @@ export default function App() {
       ]);
       workspace.wsRef.current.send(JSON.stringify({
         event: 'RUN_CODE',
+        filename: workspace.currentFile,
         stdin: stdin
       }));
       return;
@@ -431,9 +515,13 @@ export default function App() {
       
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSetting={updateSetting} />
       
-      {/* Clean Custom TopBar (Logo/Menus on Left, Window Controls on Right) */}
+      {/* 🚀 Sleek Custom TopBar (With Active Save, Auto Save & Open Recent) */}
       <TopBar 
         onOpenFolder={handleOpenFolder} 
+        onOpenRecent={handleOpenRecentWorkspace}
+        onSave={() => handleSaveFile()}
+        autoSave={settings?.autoSave ?? true}
+        onToggleAutoSave={() => updateSetting('autoSave', !(settings?.autoSave ?? true))}
         onCreateFile={() => { const name = prompt("Enter new file name:"); if (name) handleCreateItem(name, 'file'); }} 
         onOpenSettings={() => setIsSettingsOpen(true)} 
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} 
@@ -456,7 +544,17 @@ export default function App() {
                   onCreateItem={handleCreateItem} 
                   onDeleteFile={handleDeleteFile} 
                   onRunFile={handleRunCode} 
-                  onRenameItem={(item) => { const n = prompt("New name:", item.path); if (n) workspace.wsRef.current?.send(JSON.stringify({ event: 'RENAME_ITEM', old_path: item.path, new_path: n })); }} 
+                  onRenameItem={(item) => { 
+                    const oldPath = item.old_path || item.path;
+                    const newPath = item.new_path || item.newPath;
+                    if (oldPath && newPath && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+                      workspace.wsRef.current.send(JSON.stringify({ 
+                        event: 'RENAME_ITEM', 
+                        old_path: oldPath, 
+                        new_path: newPath 
+                      }));
+                    }
+                  }} 
                   onMoveItem={(src, dest) => workspace.wsRef.current?.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: src, dest_folder: dest }))} 
                   onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))} 
                   onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} 
@@ -488,12 +586,13 @@ export default function App() {
                     <Network size={13} /> <span>Spatial Map</span>
                   </button>
 
-                  {/* Dynamic Multi-File Tabs (Blue Accent) */}
+                  {/* Dynamic Multi-File Tabs (With VS Code Dirty Dot Indicator ●) */}
                   {(workspace.openFiles || []).map(file => {
                     const gStat = (workspace.gitStatuses || {})[file];
                     const isModified = gStat === 'M';
                     const isUntracked = gStat === 'U';
                     const isActive = centerView === 'editor' && workspace.currentFile === file;
+                    const isDirty = dirtyFiles.has(file);
                     
                     return (
                       <div 
@@ -525,21 +624,35 @@ export default function App() {
                           <Loader2 size={11} className="text-blue-400 animate-spin" />
                         )}
                         
+                        {/* 🚀 VS CODE-STYLE CLOSE BUTTON OR DIRTY CIRCLE (●) */}
                         <button 
                           onClick={(e) => { 
                             e.stopPropagation(); 
                             if (workspace.closeFile) workspace.closeFile(file); 
                             if ((workspace.openFiles || []).length === 1) setCenterView('spatial'); 
+                            setDirtyFiles(prev => {
+                              const next = new Set(prev);
+                              next.delete(file);
+                              return next;
+                            });
                           }} 
-                          className="opacity-0 group-hover:opacity-100 hover:bg-[#282a2d] rounded p-0.5 ml-0.5 transition-opacity text-slate-400 hover:text-slate-200"
+                          className="rounded p-0.5 ml-0.5 transition-all text-slate-400 hover:text-slate-200 flex items-center justify-center relative w-4 h-4"
+                          title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
                         >
-                          <X size={11} />
+                          {isDirty ? (
+                            <>
+                              <span className="w-2 h-2 rounded-full bg-slate-300 group-hover:opacity-0 transition-opacity" />
+                              <X size={11} className="opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 m-auto" />
+                            </>
+                          ) : (
+                            <X size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                          )}
                         </button>
                       </div>
                     );
                   })}
 
-                  {/* 🚀 HOLLOW WHITE TRIANGLE RUN BUTTON (Zero text, smooth vector corners) */}
+                  {/* 🚀 HOLLOW WHITE TRIANGLE RUN BUTTON (F5) */}
                   <div className="ml-auto flex items-center pr-2.5 shrink-0">
                     <button 
                       onClick={handleRunCode} 
@@ -628,16 +741,8 @@ export default function App() {
                       initialCode={activeCodeStr} 
                       settings={settings} 
                       focusLine={editorFocusLine} 
-                      onCodeChange={(value) => { 
-                        if (workspace.wsRef.current?.readyState === WebSocket.OPEN) { 
-                          workspace.wsRef.current.send(JSON.stringify({ 
-                            event: 'CODE_EDIT', 
-                            filename: workspace.currentFile, 
-                            node_id: workspace.currentFile, 
-                            new_code: value 
-                          })); 
-                        } 
-                      }} 
+                      onCodeChange={handleCodeChange}
+                      onSave={() => handleSaveFile()}
                       onClearFocus={() => setEditorFocusLine(null)} 
                     />
                   )}
@@ -692,10 +797,14 @@ export default function App() {
         activeFile={workspace.currentFile} 
         lineCount={(activeCodeStr?.split("\n").length || 0).toString()} 
         wordCount={(activeCodeStr?.trim().split(/\s+/).length || 0).toString()} 
-        language={workspace.currentFile?.split('.').pop() === 'js' || workspace.currentFile?.split('.').pop() === 'jsx' ? 'JavaScript' : 'Python'} 
+        language={workspace.currentFile?.split('.').pop() || 'plaintext'} 
         nodes={workspace.nodes || []}
         edges={workspace.edges || []}
         gitStatuses={workspace.gitStatuses || {}}
+        gitBranch={workspace.gitBranch || "main"}
+        isGitRepo={workspace.isGitRepo ?? true}
+        repoName={workspace.repoName || ""}
+        absTargetDir={workspace.absTargetDir || ""}
         onCenterSpatialMap={() => setCenterView('spatial')}
       />
     </div>

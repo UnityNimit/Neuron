@@ -76,7 +76,7 @@ def trigger_background_indexing() -> None:
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # 🚀 SUB-2MS NON-BLOCKING HANDSHAKE
+    # SUB-2MS NON-BLOCKING HANDSHAKE
     await websocket.accept()
     AppState.CONNECTIONS.add(websocket)
     print(f"[INFO] Client connected. Active connections: {len(AppState.CONNECTIONS)}")
@@ -174,6 +174,36 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "REVEAL_IN_EXPLORER":
                 reveal_in_explorer(message.get("path", AppState.TARGET_DIR))
 
+            # 🚀 DIRECT WHOLE-FILE ATOMIC SAVE (VS Code Standard)
+            elif evt == "SAVE_FILE":
+                target_file = message.get("filename", AppState.ACTIVE_FILE)
+                new_content = message.get("content", "")
+
+                async def handle_save_file():
+                    try:
+                        clean_path = target_file.replace("\\", "/").lstrip("/")
+                        full_path = os.path.abspath(os.path.join(AppState.TARGET_DIR, clean_path))
+                        
+                        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                        with open(full_path, "w", encoding="utf-8") as f:
+                            f.write(new_content)
+
+                        await safe_send_json(websocket, {
+                            "event": "SAVE_FILE_SUCCESS",
+                            "filename": target_file
+                        })
+                        await broadcast_workspace(force_full_sync=False)
+                        trigger_background_indexing()
+                    except Exception as err:
+                        print(f"[ERROR] Failed saving {target_file}: {err}")
+                        await safe_send_json(websocket, {
+                            "event": "SAVE_FILE_ERROR",
+                            "filename": target_file,
+                            "reason": str(err)
+                        })
+
+                asyncio.create_task(handle_save_file())
+
             elif evt == "CODE_EDIT":
                 target_file = message.get("filename", AppState.ACTIVE_FILE)
                 node_id = message.get("node_id", target_file)
@@ -186,7 +216,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 pos = message.get("position", {})
 
             # -----------------------------------------------------------------
-            # 3. 🚀 NATURAL LANGUAGE SEMANTIC VECTOR SEARCH (ChromaDB + TF-IDF)
+            # 3. NATURAL LANGUAGE SEMANTIC VECTOR SEARCH (TF-IDF + Lexical)
             # -----------------------------------------------------------------
             elif evt == "SEMANTIC_SEARCH":
                 query_str = message.get("query", "")
@@ -323,7 +353,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(handle_file_merge())
 
             elif evt == "REFACTOR_UNDO":
-                # Canvas Ctrl+Z Undo: Reverts latest symbol mutation or agent batch
                 latest_batch_id = list(agent_supervisor.active_batches.keys())[-1] if agent_supervisor.active_batches else None
                 if latest_batch_id:
                     success, reason = await asyncio.to_thread(
@@ -415,13 +444,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
 
             # -----------------------------------------------------------------
-            # 8. SUBPROCESS CODE EXECUTION
+            # 8. SUBPROCESS CODE EXECUTION (Universal Polyglot Runner)
             # -----------------------------------------------------------------
             elif evt == "RUN_CODE":
-                file_to_run = os.path.join(AppState.TARGET_DIR, AppState.ACTIVE_FILE)
+                target_file = message.get("filename", AppState.ACTIVE_FILE)
+                clean_path = target_file.replace("\\", "/").lstrip("/")
+                file_to_run = os.path.abspath(os.path.join(AppState.TARGET_DIR, clean_path))
+
                 await safe_send_json(websocket, {
                     "event": "TERMINAL_OUTPUT", 
-                    "payload": f"Executing {AppState.ACTIVE_FILE}...\n"
+                    "payload": f"Executing {clean_path}...\n"
                 })
                 try:
                     res = await asyncio.to_thread(

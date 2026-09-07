@@ -231,7 +231,7 @@ def kill_terminal_process(session_id: str) -> bool:
 
 
 # -------------------------------------------------------------------------
-# 5. UNIVERSAL POLYGLOT CODE RUNNER (C++, C, Java, Python, JS)
+# 5. UNIVERSAL POLYGLOT CODE RUNNER (Subfolder & Multi-Language Engine)
 # -------------------------------------------------------------------------
 def run_code_polyglot_sync(
     file_to_run: str,
@@ -240,18 +240,39 @@ def run_code_polyglot_sync(
 ) -> subprocess.CompletedProcess:
     """
     Universal Polyglot Compiler & Execution Engine.
-    Compiles and executes C++, C, Java, Python, and JavaScript with stdin piping.
+    Handles files in arbitrary subfolders with full PYTHONPATH, Header, and Classpath resolution.
     """
+    target_dir = os.path.abspath(AppState.TARGET_DIR)
+    
+    # 🚀 1. ABSOLUTE & SUBFOLDER PATH NORMALIZATION
+    clean_file_path = file_to_run.replace("\\", "/").lstrip("/")
+    if os.path.isabs(file_to_run) and os.path.exists(file_to_run):
+        file_abs = os.path.abspath(file_to_run)
+    else:
+        file_abs = os.path.abspath(os.path.join(target_dir, clean_file_path))
+
+    if not os.path.exists(file_abs):
+        return subprocess.CompletedProcess(
+            args=[file_to_run],
+            returncode=1,
+            stdout="",
+            stderr=f"[ERROR] Source file does not exist on disk:\n{file_abs}\nWorkspace Root: {target_dir}"
+        )
+
+    file_dir = os.path.dirname(file_abs)
+    ext = os.path.splitext(file_abs)[1].lower()
+
+    # 🚀 2. INJECT ROOT & SUBFOLDER INTO RUNTIME ENVIRONMENTS
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
     
-    target_dir = os.path.abspath(AppState.TARGET_DIR)
-    file_abs = os.path.abspath(file_to_run)
-    file_dir = os.path.dirname(file_abs)
-    ext = os.path.splitext(file_abs)[1].lower()
+    # Python Import Path: Includes Workspace Root + Subfolder Directory
+    pythonpath_entries = [target_dir, file_dir]
+    if "PYTHONPATH" in env:
+        pythonpath_entries.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
 
-    # Helper: Create simulated error response
     def create_error_result(msg: str) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(
             args=[file_abs],
@@ -284,14 +305,23 @@ def run_code_polyglot_sync(
         if not cpp_compiler:
             return create_error_result(
                 "[ERROR] C++ compiler (g++ / clang++) not found in system PATH.\n"
-                "Please install MinGW-w64 (GCC) or LLVM Clang to compile C++ code."
+                "Please install MinGW-w64 (GCC) or LLVM Clang to compile C++ files."
             )
 
         bin_ext = ".exe" if sys.platform == "win32" else ""
-        bin_path = os.path.splitext(file_abs)[0] + f"_bin{bin_ext}"
+        bin_path = os.path.splitext(file_abs)[0] + f"_neuron_bin{bin_ext}"
 
-        # 1. Compile C++ Code with optimizations
-        compile_cmd = [cpp_compiler, "-O2", "-std=c++20", file_abs, "-o", bin_path]
+        # Compile with -I for Root and Subfolder headers
+        compile_cmd = [
+            cpp_compiler, 
+            "-O2", 
+            "-std=c++20", 
+            f"-I{target_dir}", 
+            f"-I{file_dir}", 
+            file_abs, 
+            "-o", 
+            bin_path
+        ]
         comp_res = subprocess.run(compile_cmd, cwd=file_dir, capture_output=True, text=True, errors="replace")
 
         if comp_res.returncode != 0:
@@ -302,9 +332,8 @@ def run_code_polyglot_sync(
                 stderr=f"[C++ Compilation Error]\n{comp_res.stderr}"
             )
 
-        # 2. Execute Compiled Binary
         try:
-            run_res = subprocess.run(
+            return subprocess.run(
                 [bin_path],
                 cwd=file_dir,
                 capture_output=True,
@@ -314,9 +343,7 @@ def run_code_polyglot_sync(
                 timeout=timeout,
                 input=stdin_data
             )
-            return run_res
         finally:
-            # Clean up compiled binary
             if os.path.exists(bin_path):
                 try:
                     os.remove(bin_path)
@@ -331,13 +358,21 @@ def run_code_polyglot_sync(
         if not c_compiler:
             return create_error_result(
                 "[ERROR] C compiler (gcc / clang) not found in system PATH.\n"
-                "Please install MinGW-w64 (GCC) or LLVM Clang to compile C code."
+                "Please install MinGW-w64 (GCC) or LLVM Clang to compile C files."
             )
 
         bin_ext = ".exe" if sys.platform == "win32" else ""
-        bin_path = os.path.splitext(file_abs)[0] + f"_bin{bin_ext}"
+        bin_path = os.path.splitext(file_abs)[0] + f"_neuron_bin{bin_ext}"
 
-        compile_cmd = [c_compiler, "-O2", file_abs, "-o", bin_path]
+        compile_cmd = [
+            c_compiler, 
+            "-O2", 
+            f"-I{target_dir}", 
+            f"-I{file_dir}", 
+            file_abs, 
+            "-o", 
+            bin_path
+        ]
         comp_res = subprocess.run(compile_cmd, cwd=file_dir, capture_output=True, text=True, errors="replace")
 
         if comp_res.returncode != 0:
@@ -377,9 +412,10 @@ def run_code_polyglot_sync(
                 "Please install OpenJDK or Oracle JDK to execute Java files."
             )
 
-        # Java 11+ single-file execution
+        # Inject Classpath for Root and Subfolder package resolution
+        classpath = f"{target_dir}{os.pathsep}{file_dir}"
         return subprocess.run(
-            [java_cmd, file_abs],
+            [java_cmd, "-cp", classpath, file_abs],
             cwd=file_dir,
             capture_output=True,
             text=True,
@@ -399,6 +435,12 @@ def run_code_polyglot_sync(
                 "[ERROR] Node.js runtime (node) not found in system PATH."
             )
 
+        node_env = env.copy()
+        node_paths = [os.path.join(target_dir, "node_modules"), target_dir, file_dir]
+        if "NODE_PATH" in node_env:
+            node_paths.append(node_env["NODE_PATH"])
+        node_env["NODE_PATH"] = os.pathsep.join(node_paths)
+
         return subprocess.run(
             [node_cmd, file_abs],
             cwd=file_dir,
@@ -406,6 +448,7 @@ def run_code_polyglot_sync(
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=node_env,
             timeout=timeout,
             input=stdin_data
         )
@@ -415,8 +458,8 @@ def run_code_polyglot_sync(
     # -------------------------------------------------------------------------
     else:
         return create_error_result(
-            f"[ERROR] Execution runner for '{ext}' is not configured.\n"
-            "Supported languages for direct execution: C++, C, Java, Python, JavaScript."
+            f"[ERROR] Direct execution runner for '{ext}' is not configured.\n"
+            "Supported languages: Python (.py), C++ (.cpp), C (.c), Java (.java), Node.js (.js)."
         )
 
 
