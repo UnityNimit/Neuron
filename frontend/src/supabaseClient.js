@@ -46,26 +46,39 @@ export const getLocalDesktopSession = () => ({
 });
 
 // -------------------------------------------------------------------------
-// 4. UNIVERSAL OAUTH SIGN-IN DISPATCHER
+// 4. EXTERNAL DEFAULT BROWSER LAUNCHER
 // -------------------------------------------------------------------------
-export const signInWithGoogleOAuth = async () => {
-  // If running in native desktop mode (.exe), bypass dead localhost redirect
+export const openExternalBrowser = async (url) => {
   if (isTauriApp()) {
     try {
-      // Store local session in localStorage
-      const localSession = getLocalDesktopSession();
-      localStorage.setItem('neuron_desktop_session', JSON.stringify(localSession));
-      return { data: { session: localSession }, error: null };
-    } catch (e) {
-      return { data: { session: getLocalDesktopSession() }, error: null };
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      await openUrl(url);
+      return;
+    } catch (err) {
+      console.warn("[AUTH] Tauri plugin-opener error, falling back:", err);
     }
   }
-
-  // Web Browser Flow
-  return await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: window.location.origin
-    }
-  });
+  window.open(url, '_blank', 'noopener,noreferrer');
 };
+
+// -------------------------------------------------------------------------
+// 5. UNIVERSAL GOOGLE SIGN-IN DISPATCHER
+// -------------------------------------------------------------------------
+export const triggerGoogleLogin = async () => {
+  // Opens the default browser directly to the Neuron Sidecar auth engine.
+  // The sidecar generates cryptographic PKCE pairs, redirects to Google account selection,
+  // exchanges the auth code directly with Supabase, and broadcasts session sync to the IDE.
+  await openExternalBrowser('http://127.0.0.1:8000/auth');
+};
+
+export const triggerLogout = async () => {
+  try {
+    await fetch('http://127.0.0.1:8000/auth/logout', { method: 'POST' });
+  } catch (e) {}
+
+  try {
+    await supabase.auth.signOut();
+  } catch (e) {}
+};
+
+export const signInWithGoogleOAuth = triggerGoogleLogin;

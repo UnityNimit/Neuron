@@ -22,6 +22,11 @@ export function usePersistentState() {
     return localStorage.getItem('neuron-stdin') || "";
   });
 
+  // 4. Persistent Active Sidebar View ('explorer' | 'git')
+  const [activeSidebarView, setActiveSidebarView] = useState(() => {
+    return localStorage.getItem('neuron-sidebar-view') || 'explorer';
+  });
+
   // Auto-save whenever these change
   useEffect(() => {
     localStorage.setItem('neuron-layout-toggles', JSON.stringify(layout));
@@ -35,8 +40,13 @@ export function usePersistentState() {
     localStorage.setItem('neuron-stdin', stdin);
   }, [stdin]);
 
+  useEffect(() => {
+    localStorage.setItem('neuron-sidebar-view', activeSidebarView);
+  }, [activeSidebarView]);
+
   return { 
     layout, setLayout, 
+    activeSidebarView, setActiveSidebarView,
     centerView, setCenterView, 
     stdin, setStdin 
   };

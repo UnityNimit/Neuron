@@ -104,6 +104,15 @@ export default function TopBar({
     }
   };
 
+  const handleQuitCompletely = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('quit_neuron_completely');
+    } catch (e) {
+      window.close();
+    }
+  };
+
   // -------------------------------------------------------------------------
   // 3. MENU DROPDOWN & KEYBOARD SHORTCUTS
   // -------------------------------------------------------------------------
@@ -170,7 +179,8 @@ Open Node in Editor  Double Click Node`);
     { separator: true },
     { label: "Preferences", action: onOpenSettings, shortcut: "Ctrl+," },
     { separator: true },
-    { label: "Exit Application", action: handleClose }
+    { label: "Close to Tray", action: handleClose },
+    { label: "Quit Neuron Completely", action: handleQuitCompletely }
   ], [onOpenFolder, onSave, onToggleAutoSave, autoSave, onOpenSettings, recentProjects]);
 
   // --- EDIT MENU ---
@@ -212,7 +222,7 @@ Open Node in Editor  Double Click Node`);
   return (
     <div 
       data-tauri-drag-region
-      className="h-[42px] shrink-0 bg-[#121212] border-b border-[#222] flex items-center justify-between pl-3 pr-0 text-[12px] text-slate-300 font-sans select-none z-[150] relative"
+      className="h-[42px] shrink-0 bg-[#121212] border-b border-[#242628] flex items-center justify-between pl-3 pr-0 text-[12px] text-slate-300 font-sans select-none z-[150] relative"
     >
       {/* ----------------------------------------------------------------- */}
       {/* LEFT: Flat Logo & Dropdown Menus                                  */}
@@ -350,9 +360,13 @@ Open Node in Editor  Double Click Node`);
       </div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* CENTER: Pure Drag Area (Zero UI Clutter)                          */}
+      {/* CENTER: Pure Drag Area (Double-click to toggle maximize)          */}
       {/* ----------------------------------------------------------------- */}
-      <div className="flex-1 h-full" data-tauri-drag-region />
+      <div 
+        className="flex-1 h-full" 
+        data-tauri-drag-region 
+        onDoubleClick={handleToggleMaximize} 
+      />
 
       {/* ----------------------------------------------------------------- */}
       {/* RIGHT: Seamless Full-Height Native Window Controls                */}

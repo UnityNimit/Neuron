@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import threading
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.state import AppState
@@ -115,7 +116,7 @@ async def stream_terminal_command(
             """Reads unbuffered output chunks so prompts without newlines stream immediately."""
             try:
                 while True:
-                    chunk = stream.read(256)
+                    chunk = stream.read(2048)
                     if not chunk:
                         break
 
@@ -177,6 +178,11 @@ async def stream_terminal_command(
             "event": "TERMINAL_STREAM_END",
             "session_id": session_id
         })
+        try:
+            from services.workspace_service import broadcast_workspace
+            asyncio.create_task(broadcast_workspace(force_full_sync=False))
+        except Exception:
+            pass
 
 
 # -------------------------------------------------------------------------
@@ -231,62 +237,268 @@ def kill_terminal_process(session_id: str) -> bool:
 
 
 # -------------------------------------------------------------------------
-# 5. UNIVERSAL POLYGLOT CODE RUNNER (Subfolder & Multi-Language Engine)
+# 5. EXECUTABLE & COMPILER LOCATORS (PyInstaller Frozen-Proof)
+# -------------------------------------------------------------------------
+def is_valid_executable(path: Optional[str]) -> bool:
+    """Checks if path exists, is a file, and is NOT PyInstaller's frozen neuron-backend."""
+    if not path or not os.path.isfile(path):
+        return False
+    base = os.path.basename(path).lower()
+    if "neuron-backend" in base:
+        return False
+    if getattr(sys, "frozen", False) and os.path.abspath(path) == os.path.abspath(sys.executable):
+        return False
+    return True
+
+
+def find_python_interpreter(target_dir: str, file_dir: str) -> Optional[str]:
+    """
+    Locates the best available Python interpreter on the host system.
+    Prioritizes project virtual environments, then system PATH, then standard OS install paths.
+    Guarantees that PyInstaller's frozen neuron-backend executable is NEVER selected.
+    """
+    # 1. Project-level virtual environments
+    check_dirs = [file_dir, target_dir]
+    curr = file_dir
+    while curr and curr != target_dir:
+        parent = os.path.dirname(curr)
+        if parent == curr:
+            break
+        if parent not in check_dirs:
+            check_dirs.append(parent)
+        curr = parent
+
+    venv_names = [".venv", "venv", "env", ".env"]
+    for d in check_dirs:
+        for v in venv_names:
+            venv_path = os.path.join(d, v)
+            if os.path.isdir(venv_path):
+                if sys.platform == "win32":
+                    candidates = [
+                        os.path.join(venv_path, "Scripts", "python.exe"),
+                        os.path.join(venv_path, "python.exe"),
+                    ]
+                else:
+                    candidates = [
+                        os.path.join(venv_path, "bin", "python"),
+                        os.path.join(venv_path, "bin", "python3"),
+                    ]
+                for c in candidates:
+                    if is_valid_executable(c):
+                        return os.path.abspath(c)
+
+    # 2. System PATH lookup (python, py launcher, python3)
+    for name in ["python", "py", "python3"]:
+        found = shutil.which(name)
+        if is_valid_executable(found):
+            return os.path.abspath(found)
+
+    # 3. Windows well-known installation paths
+    if sys.platform == "win32":
+        # LocalAppData Programs Python (e.g. C:\Users\<user>\AppData\Local\Programs\Python\Python311\python.exe)
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            programs_py = os.path.join(local_app_data, "Programs", "Python")
+            if os.path.isdir(programs_py):
+                try:
+                    for entry in sorted(os.listdir(programs_py), reverse=True):
+                        cand = os.path.join(programs_py, entry, "python.exe")
+                        if is_valid_executable(cand):
+                            return os.path.abspath(cand)
+                except Exception:
+                    pass
+
+        # Root Python directories (C:\Python*, D:\Python*)
+        for drive in ["C:\\", "D:\\"]:
+            try:
+                if os.path.exists(drive):
+                    for entry in sorted(os.listdir(drive), reverse=True):
+                        if entry.lower().startswith("python"):
+                            cand = os.path.join(drive, entry, "python.exe")
+                            if is_valid_executable(cand):
+                                return os.path.abspath(cand)
+            except Exception:
+                pass
+
+        # Program Files Python directories
+        for pf_var in ["ProgramFiles", "ProgramFiles(x86)"]:
+            pf = os.environ.get(pf_var, "")
+            if pf and os.path.isdir(pf):
+                pf_py = os.path.join(pf, "Python")
+                if os.path.isdir(pf_py):
+                    try:
+                        for entry in sorted(os.listdir(pf_py), reverse=True):
+                            cand = os.path.join(pf_py, entry, "python.exe")
+                            if is_valid_executable(cand):
+                                return os.path.abspath(cand)
+                    except Exception:
+                        pass
+
+    # 4. Local non-frozen development fallback
+    if not getattr(sys, "frozen", False) and is_valid_executable(sys.executable):
+        base = os.path.basename(sys.executable).lower()
+        if base.startswith("python"):
+            return os.path.abspath(sys.executable)
+
+    return None
+
+
+def find_cpp_compiler() -> Optional[str]:
+    """Finds g++, clang++, or cl in PATH or well-known Windows locations."""
+    for name in ["g++", "clang++"]:
+        found = shutil.which(name)
+        if found and os.path.exists(found):
+            return os.path.abspath(found)
+
+    if sys.platform == "win32":
+        candidates = [
+            r"C:\msys64\ucrt64\bin\g++.exe",
+            r"C:\msys64\mingw64\bin\g++.exe",
+            r"C:\msys64\clang64\bin\clang++.exe",
+            r"C:\msys64\usr\bin\g++.exe",
+            r"C:\MinGW\bin\g++.exe",
+            r"C:\TDM-GCC-64\bin\g++.exe",
+            r"C:\w64devkit\bin\g++.exe",
+            r"C:\Program Files\LLVM\bin\clang++.exe",
+            r"C:\Program Files (x86)\Dev-Cpp\MinGW64\bin\g++.exe",
+            r"C:\Strawberry\c\bin\g++.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\w64devkit\bin\g++.exe"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+
+    return None
+
+
+def find_c_compiler() -> Optional[str]:
+    """Finds gcc or clang in PATH or well-known Windows locations."""
+    for name in ["gcc", "clang"]:
+        found = shutil.which(name)
+        if found and os.path.exists(found):
+            return os.path.abspath(found)
+
+    if sys.platform == "win32":
+        candidates = [
+            r"C:\msys64\ucrt64\bin\gcc.exe",
+            r"C:\msys64\mingw64\bin\gcc.exe",
+            r"C:\msys64\clang64\bin\clang.exe",
+            r"C:\msys64\usr\bin\gcc.exe",
+            r"C:\MinGW\bin\gcc.exe",
+            r"C:\TDM-GCC-64\bin\gcc.exe",
+            r"C:\w64devkit\bin\gcc.exe",
+            r"C:\Program Files\LLVM\bin\clang.exe",
+            r"C:\Program Files (x86)\Dev-Cpp\MinGW64\bin\gcc.exe",
+            r"C:\Strawberry\c\bin\gcc.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\w64devkit\bin\gcc.exe"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+
+    return None
+
+
+def find_shell_interpreter() -> Optional[str]:
+    """Finds bash or sh in PATH or Git for Windows install locations."""
+    for name in ["bash", "sh"]:
+        found = shutil.which(name)
+        if found and os.path.exists(found):
+            return os.path.abspath(found)
+
+    if sys.platform == "win32":
+        candidates = [
+            r"C:\Program Files\Git\bin\bash.exe",
+            r"C:\Program Files (x86)\Git\bin\bash.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Git\bin\bash.exe"),
+            r"C:\msys64\usr\bin\bash.exe",
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+
+    return None
+
+
+# -------------------------------------------------------------------------
+# 6. UNIVERSAL POLYGLOT CODE RUNNER (Subfolder & Multi-Language Engine)
 # -------------------------------------------------------------------------
 def run_code_polyglot_sync(
     file_to_run: str,
     stdin_data: str = "",
-    timeout: float = 15.0
+    timeout: float = 30.0
 ) -> subprocess.CompletedProcess:
     """
     Universal Polyglot Compiler & Execution Engine.
-    Handles files in arbitrary subfolders with full PYTHONPATH, Header, and Classpath resolution.
+    Handles files across arbitrary projects and subfolders with full PYTHONPATH,
+    header includes, classpath, and shell script emulation.
+    Supports Python, C++, C, BAT, CMD, PowerShell, Bash, JavaScript, TypeScript, Java, Rust, Go.
     """
     target_dir = os.path.abspath(AppState.TARGET_DIR)
     
-    # 🚀 1. ABSOLUTE & SUBFOLDER PATH NORMALIZATION
-    clean_file_path = file_to_run.replace("\\", "/").lstrip("/")
+    # 🚀 1. ABSOLUTE & SUBFOLDER PATH RESOLUTION
     if os.path.isabs(file_to_run) and os.path.exists(file_to_run):
         file_abs = os.path.abspath(file_to_run)
     else:
-        file_abs = os.path.abspath(os.path.join(target_dir, clean_file_path))
-
-    if not os.path.exists(file_abs):
-        return subprocess.CompletedProcess(
-            args=[file_to_run],
-            returncode=1,
-            stdout="",
-            stderr=f"[ERROR] Source file does not exist on disk:\n{file_abs}\nWorkspace Root: {target_dir}"
-        )
-
-    file_dir = os.path.dirname(file_abs)
-    ext = os.path.splitext(file_abs)[1].lower()
-
-    # 🚀 2. INJECT ROOT & SUBFOLDER INTO RUNTIME ENVIRONMENTS
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUNBUFFERED"] = "1"
-    
-    # Python Import Path: Includes Workspace Root + Subfolder Directory
-    pythonpath_entries = [target_dir, file_dir]
-    if "PYTHONPATH" in env:
-        pythonpath_entries.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+        clean_file_path = file_to_run.replace("\\", "/").lstrip("/")
+        candidates = [
+            os.path.abspath(os.path.join(target_dir, clean_file_path)),
+            os.path.abspath(os.path.join(target_dir, file_to_run)),
+            os.path.abspath(file_to_run)
+        ]
+        file_abs = None
+        for cand in candidates:
+            if os.path.exists(cand):
+                file_abs = cand
+                break
+        if not file_abs:
+            file_abs = candidates[0]
 
     def create_error_result(msg: str) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(
-            args=[file_abs],
+            args=[file_to_run],
             returncode=1,
             stdout="",
             stderr=msg
         )
 
+    if not os.path.exists(file_abs):
+        return create_error_result(
+            f"[ERROR] Source file does not exist on disk:\n{file_abs}\nWorkspace Root: {target_dir}"
+        )
+
+    file_dir = os.path.dirname(file_abs)
+    ext = os.path.splitext(file_abs)[1].lower()
+
+    # 🚀 2. INJECT ROOT & SUBFOLDER INTO CLEAN RUNTIME ENVIRONMENTS
+    env = os.environ.copy()
+    # Strip PyInstaller frozen artifacts to prevent runtime contamination
+    env.pop("PYTHONHOME", None)
+    env.pop("_MEIPASS2", None)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUNBUFFERED"] = "1"
+    
+    # Python Import Path: Includes Workspace Root + Subfolder Directory
+    pythonpath_entries = [target_dir, file_dir]
+    if "PYTHONPATH" in env and env["PYTHONPATH"]:
+        for p in env["PYTHONPATH"].split(os.pathsep):
+            if "_MEI" not in p and p not in pythonpath_entries:
+                pythonpath_entries.append(p)
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
     # -------------------------------------------------------------------------
-    # A. PYTHON (.py)
+    # A. PYTHON (.py, .pyw)
     # -------------------------------------------------------------------------
-    if ext == ".py":
+    if ext in [".py", ".pyw"]:
+        py_exe = find_python_interpreter(target_dir, file_dir)
+        if not py_exe:
+            return create_error_result(
+                "[ERROR] Python interpreter not found on system.\n"
+                "Please install Python from https://www.python.org/ or ensure 'python' is added to system PATH."
+            )
+
         return subprocess.run(
-            [sys.executable, file_abs],
+            [py_exe, "-u", file_abs],
             cwd=file_dir,
             capture_output=True,
             text=True,
@@ -298,20 +510,21 @@ def run_code_polyglot_sync(
         )
 
     # -------------------------------------------------------------------------
-    # B. C++ (.cpp, .cc, .cxx)
+    # B. C++ (.cpp, .cc, .cxx, .c++)
     # -------------------------------------------------------------------------
-    elif ext in [".cpp", ".cc", ".cxx"]:
-        cpp_compiler = shutil.which("g++") or shutil.which("clang++")
+    elif ext in [".cpp", ".cc", ".cxx", ".c++"]:
+        cpp_compiler = find_cpp_compiler()
         if not cpp_compiler:
             return create_error_result(
-                "[ERROR] C++ compiler (g++ / clang++) not found in system PATH.\n"
+                "[ERROR] C++ compiler (g++ / clang++) not found in system PATH or MSYS2/MinGW.\n"
                 "Please install MinGW-w64 (GCC) or LLVM Clang to compile C++ files."
             )
 
+        run_uid = uuid.uuid4().hex[:8]
         bin_ext = ".exe" if sys.platform == "win32" else ""
-        bin_path = os.path.splitext(file_abs)[0] + f"_neuron_bin{bin_ext}"
+        bin_path = os.path.splitext(file_abs)[0] + f"_neuron_bin_{run_uid}{bin_ext}"
 
-        # Compile with -I for Root and Subfolder headers
+        is_gnu = "g++" in os.path.basename(cpp_compiler).lower()
         compile_cmd = [
             cpp_compiler, 
             "-O2", 
@@ -322,7 +535,25 @@ def run_code_polyglot_sync(
             "-o", 
             bin_path
         ]
-        comp_res = subprocess.run(compile_cmd, cwd=file_dir, capture_output=True, text=True, errors="replace")
+        if is_gnu:
+            compile_cmd.extend(["-static-libgcc", "-static-libstdc++"])
+
+        try:
+            comp_res = subprocess.run(
+                compile_cmd, 
+                cwd=file_dir, 
+                capture_output=True, 
+                text=True, 
+                errors="replace",
+                timeout=20.0
+            )
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(
+                args=compile_cmd,
+                returncode=124,
+                stdout="",
+                stderr="[C++ Compilation Timeout] Compiler exceeded 20s limit.\n"
+            )
 
         if comp_res.returncode != 0:
             return subprocess.CompletedProcess(
@@ -332,6 +563,10 @@ def run_code_polyglot_sync(
                 stderr=f"[C++ Compilation Error]\n{comp_res.stderr}"
             )
 
+        run_env = env.copy()
+        compiler_bin_dir = os.path.dirname(cpp_compiler)
+        run_env["PATH"] = f"{compiler_bin_dir}{os.pathsep}{run_env.get('PATH', '')}"
+
         try:
             return subprocess.run(
                 [bin_path],
@@ -340,6 +575,7 @@ def run_code_polyglot_sync(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=run_env,
                 timeout=timeout,
                 input=stdin_data
             )
@@ -354,16 +590,18 @@ def run_code_polyglot_sync(
     # C. C (.c)
     # -------------------------------------------------------------------------
     elif ext == ".c":
-        c_compiler = shutil.which("gcc") or shutil.which("clang")
+        c_compiler = find_c_compiler()
         if not c_compiler:
             return create_error_result(
-                "[ERROR] C compiler (gcc / clang) not found in system PATH.\n"
+                "[ERROR] C compiler (gcc / clang) not found in system PATH or MSYS2/MinGW.\n"
                 "Please install MinGW-w64 (GCC) or LLVM Clang to compile C files."
             )
 
+        run_uid = uuid.uuid4().hex[:8]
         bin_ext = ".exe" if sys.platform == "win32" else ""
-        bin_path = os.path.splitext(file_abs)[0] + f"_neuron_bin{bin_ext}"
+        bin_path = os.path.splitext(file_abs)[0] + f"_neuron_bin_{run_uid}{bin_ext}"
 
+        is_gnu = "gcc" in os.path.basename(c_compiler).lower()
         compile_cmd = [
             c_compiler, 
             "-O2", 
@@ -373,7 +611,25 @@ def run_code_polyglot_sync(
             "-o", 
             bin_path
         ]
-        comp_res = subprocess.run(compile_cmd, cwd=file_dir, capture_output=True, text=True, errors="replace")
+        if is_gnu:
+            compile_cmd.append("-static-libgcc")
+
+        try:
+            comp_res = subprocess.run(
+                compile_cmd, 
+                cwd=file_dir, 
+                capture_output=True, 
+                text=True, 
+                errors="replace",
+                timeout=20.0
+            )
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(
+                args=compile_cmd,
+                returncode=124,
+                stdout="",
+                stderr="[C Compilation Timeout] Compiler exceeded 20s limit.\n"
+            )
 
         if comp_res.returncode != 0:
             return subprocess.CompletedProcess(
@@ -383,6 +639,10 @@ def run_code_polyglot_sync(
                 stderr=f"[C Compilation Error]\n{comp_res.stderr}"
             )
 
+        run_env = env.copy()
+        compiler_bin_dir = os.path.dirname(c_compiler)
+        run_env["PATH"] = f"{compiler_bin_dir}{os.pathsep}{run_env.get('PATH', '')}"
+
         try:
             return subprocess.run(
                 [bin_path],
@@ -391,6 +651,7 @@ def run_code_polyglot_sync(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=run_env,
                 timeout=timeout,
                 input=stdin_data
             )
@@ -402,37 +663,73 @@ def run_code_polyglot_sync(
                     pass
 
     # -------------------------------------------------------------------------
-    # D. JAVA (.java)
+    # D. WINDOWS BATCH / COMMAND SCRIPTS (.bat, .cmd)
     # -------------------------------------------------------------------------
-    elif ext == ".java":
-        java_cmd = shutil.which("java")
-        if not java_cmd:
+    elif ext in [".bat", ".cmd"]:
+        if sys.platform == "win32":
+            return subprocess.run(
+                ["cmd.exe", "/c", file_abs],
+                cwd=file_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                timeout=timeout,
+                input=stdin_data
+            )
+        else:
             return create_error_result(
-                "[ERROR] Java Runtime (java / JDK) not found in system PATH.\n"
-                "Please install OpenJDK or Oracle JDK to execute Java files."
+                "[ERROR] Windows Batch scripts (.bat, .cmd) can only be executed on Windows systems."
             )
 
-        # Inject Classpath for Root and Subfolder package resolution
-        classpath = f"{target_dir}{os.pathsep}{file_dir}"
+    # -------------------------------------------------------------------------
+    # E. POWERSHELL SCRIPTS (.ps1)
+    # -------------------------------------------------------------------------
+    elif ext == ".ps1":
+        ps_cmd = shutil.which("pwsh") or shutil.which("powershell") or "powershell.exe"
         return subprocess.run(
-            [java_cmd, "-cp", classpath, file_abs],
+            [ps_cmd, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", file_abs],
             cwd=file_dir,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=env,
             timeout=timeout,
             input=stdin_data
         )
 
     # -------------------------------------------------------------------------
-    # E. JAVASCRIPT / NODE (.js, .mjs)
+    # F. BASH / SHELL SCRIPTS (.sh, .bash, .zsh)
     # -------------------------------------------------------------------------
-    elif ext in [".js", ".mjs"]:
-        node_cmd = shutil.which("node")
+    elif ext in [".sh", ".bash", ".zsh"]:
+        bash_cmd = find_shell_interpreter()
+        if not bash_cmd:
+            return create_error_result(
+                "[ERROR] Shell interpreter (bash / sh) not found.\n"
+                "On Windows, ensure Git for Windows (Git Bash) is installed."
+            )
+        return subprocess.run(
+            [bash_cmd, file_abs],
+            cwd=file_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            input=stdin_data
+        )
+
+    # -------------------------------------------------------------------------
+    # G. JAVASCRIPT (.js, .mjs, .cjs)
+    # -------------------------------------------------------------------------
+    elif ext in [".js", ".mjs", ".cjs"]:
+        node_cmd = shutil.which("node") or shutil.which("bun") or shutil.which("deno")
         if not node_cmd:
             return create_error_result(
-                "[ERROR] Node.js runtime (node) not found in system PATH."
+                "[ERROR] JavaScript runtime (node / bun / deno) not found in system PATH."
             )
 
         node_env = env.copy()
@@ -454,12 +751,174 @@ def run_code_polyglot_sync(
         )
 
     # -------------------------------------------------------------------------
-    # F. UNSUPPORTED RUNTIME
+    # H. TYPESCRIPT (.ts, .mts, .cts)
+    # -------------------------------------------------------------------------
+    elif ext in [".ts", ".mts", ".cts"]:
+        ts_runner = shutil.which("bun") or shutil.which("tsx") or shutil.which("ts-node") or shutil.which("deno")
+        if ts_runner:
+            if "deno" in os.path.basename(ts_runner).lower():
+                cmd = [ts_runner, "run", "-A", file_abs]
+            else:
+                cmd = [ts_runner, file_abs]
+            return subprocess.run(
+                cmd,
+                cwd=file_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                timeout=timeout,
+                input=stdin_data
+            )
+        
+        # Check npx fallback
+        npx_cmd = shutil.which("npx")
+        if npx_cmd:
+            return subprocess.run(
+                [npx_cmd, "tsx", file_abs],
+                cwd=file_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                timeout=timeout,
+                input=stdin_data
+            )
+
+        return create_error_result(
+            "[ERROR] TypeScript runner (bun / tsx / ts-node / deno) not found in system PATH.\n"
+            "Run 'npm install -g tsx' to execute TypeScript files directly."
+        )
+
+    # -------------------------------------------------------------------------
+    # I. JAVA (.java)
+    # -------------------------------------------------------------------------
+    elif ext == ".java":
+        java_cmd = shutil.which("java")
+        if not java_cmd and sys.platform == "win32":
+            java_home = os.environ.get("JAVA_HOME")
+            if java_home and os.path.exists(os.path.join(java_home, "bin", "java.exe")):
+                java_cmd = os.path.join(java_home, "bin", "java.exe")
+
+        if not java_cmd:
+            return create_error_result(
+                "[ERROR] Java Runtime (java / JDK) not found in system PATH or JAVA_HOME.\n"
+                "Please install OpenJDK or Oracle JDK to execute Java files."
+            )
+
+        classpath = f"{target_dir}{os.pathsep}{file_dir}"
+        return subprocess.run(
+            [java_cmd, "-cp", classpath, file_abs],
+            cwd=file_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            input=stdin_data
+        )
+
+    # -------------------------------------------------------------------------
+    # J. RUST (.rs)
+    # -------------------------------------------------------------------------
+    elif ext == ".rs":
+        rustc_cmd = shutil.which("rustc")
+        if not rustc_cmd:
+            return create_error_result(
+                "[ERROR] Rust compiler (rustc) not found in system PATH.\n"
+                "Install Rust via https://rustup.rs/ to compile and run Rust files."
+            )
+
+        bin_ext = ".exe" if sys.platform == "win32" else ""
+        bin_path = os.path.splitext(file_abs)[0] + f"_neuron_bin{bin_ext}"
+
+        comp_res = subprocess.run([rustc_cmd, "-O", file_abs, "-o", bin_path], cwd=file_dir, capture_output=True, text=True, errors="replace")
+        if comp_res.returncode != 0:
+            return subprocess.CompletedProcess(
+                args=[rustc_cmd, file_abs],
+                returncode=comp_res.returncode,
+                stdout="",
+                stderr=f"[Rust Compilation Error]\n{comp_res.stderr}"
+            )
+
+        try:
+            return subprocess.run(
+                [bin_path],
+                cwd=file_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                input=stdin_data
+            )
+        finally:
+            if os.path.exists(bin_path):
+                try:
+                    os.remove(bin_path)
+                except Exception:
+                    pass
+
+    # -------------------------------------------------------------------------
+    # K. GO (.go)
+    # -------------------------------------------------------------------------
+    elif ext == ".go":
+        go_cmd = shutil.which("go")
+        if not go_cmd:
+            return create_error_result(
+                "[ERROR] Go compiler (go) not found in system PATH.\n"
+                "Install Go from https://golang.org/ to run Go source files."
+            )
+
+        return subprocess.run(
+            [go_cmd, "run", file_abs],
+            cwd=file_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            input=stdin_data
+        )
+
+    # -------------------------------------------------------------------------
+    # L. EXECUTABLE BINARY (.exe)
+    # -------------------------------------------------------------------------
+    elif ext == ".exe" and sys.platform == "win32":
+        return subprocess.run(
+            [file_abs],
+            cwd=file_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=timeout,
+            input=stdin_data
+        )
+
+    # -------------------------------------------------------------------------
+    # M. UNSUPPORTED RUNTIME
     # -------------------------------------------------------------------------
     else:
         return create_error_result(
             f"[ERROR] Direct execution runner for '{ext}' is not configured.\n"
-            "Supported languages: Python (.py), C++ (.cpp), C (.c), Java (.java), Node.js (.js)."
+            "Supported languages:\n"
+            "• Python (.py, .pyw)\n"
+            "• C++ (.cpp, .cc, .cxx)\n"
+            "• C (.c)\n"
+            "• Windows Batch (.bat, .cmd)\n"
+            "• PowerShell (.ps1)\n"
+            "• Shell Scripts (.sh, .bash)\n"
+            "• JavaScript (.js, .mjs)\n"
+            "• TypeScript (.ts)\n"
+            "• Java (.java)\n"
+            "• Rust (.rs)\n"
+            "• Go (.go)\n"
+            "• Executable (.exe)"
         )
 
 

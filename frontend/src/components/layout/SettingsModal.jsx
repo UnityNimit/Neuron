@@ -8,6 +8,7 @@ const SETTINGS_DEF = [
   { id: 'lineNumbers', label: 'Editor: Line Numbers', desc: 'Controls the display of line numbers.', type: 'select', options: ['on', 'off', 'relative'], category: 'Text Editor' },
   { id: 'minimap', label: 'Editor: Minimap', desc: 'Controls whether the code minimap is shown.', type: 'boolean', category: 'Text Editor' },
   { id: 'formatOnPaste', label: 'Editor: Format On Paste', desc: 'Controls whether the editor should automatically format pasted content.', type: 'boolean', category: 'Formatting' },
+  { id: 'autoSave', label: 'Files: Auto Save', desc: 'Automatically save dirty files after a brief delay when typing.', type: 'boolean', category: 'Files' },
 ];
 
 export default function SettingsModal({ isOpen, onClose, settings, updateSetting }) {

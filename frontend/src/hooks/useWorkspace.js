@@ -42,6 +42,8 @@ const sanitizeCoordinate = (val, fallback) => {
 export function useWorkspace(session) {
   // --- CORE SYSTEM STATES ---
   const [isGraphLoaded, setIsGraphLoaded] = useState(false);
+  const [isFolderLoading, setIsFolderLoading] = useState(false);
+  const folderLoadingStartTimeRef = useRef(0);
   const [isFileSyncing, setIsFileSyncing] = useState(false);
   const [isWsConnected, setIsWsConnected] = useState(false);
   const [wsLatency, setWsLatency] = useState(0);
@@ -50,19 +52,36 @@ export function useWorkspace(session) {
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState("");
   const [openFiles, setOpenFiles] = useState([]);
+
+  // Ref mirrors for 0ms synchronous access and callback safety
+  const currentFileRef = useRef(currentFile);
+  useEffect(() => {
+    currentFileRef.current = currentFile;
+  }, [currentFile]);
+
+  const openFilesRef = useRef(openFiles);
+  useEffect(() => {
+    openFilesRef.current = openFiles;
+  }, [openFiles]);
   const [absTargetDir, setAbsTargetDir] = useState("");
   const [blastRadius, setBlastRadius] = useState(null);
   const [aiInsight, setAiInsight] = useState(null);
   
   // --- HORIZON 3: AI AGENT SUPERVISOR BATCH STATE ---
   const [agentBatch, setAgentBatch] = useState(null);
+  const [remoteAuthSession, setRemoteAuthSession] = useState(null);
   
   // --- ML & SOURCE CONTROL STATES ---
   const [gitStatuses, setGitStatuses] = useState({});
+  const [isGitRepo, setIsGitRepo] = useState(false);
+  const [gitBranch, setGitBranch] = useState("main");
+  const [repoName, setRepoName] = useState("");
+  const [gitDetailedStatus, setGitDetailedStatus] = useState({ staged: [], unstaged: [] });
+  const [gitGraph, setGitGraph] = useState([]);
   
   // --- TERMINAL MULTI-SESSION STATES ---
   const [terminalLogs, setTerminalLogs] = useState([
-    { text: "Neuron Neural Engine v2.4 initialized.", isError: false },
+    { text: "Neuron Neural Engine initialized.", isError: false },
     { text: "Ready for spatial inspection & code execution.", isError: false }
   ]);
   const [terminalSessions, setTerminalSessions] = useState([
@@ -74,11 +93,66 @@ export function useWorkspace(session) {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   
   const wsRef = useRef(null);
-  const currentFileRef = useRef(currentFile);
   const lastTargetDirRef = useRef("");
   const reconnectAttemptsRef = useRef(0);
   const pingTimestampRef = useRef(Date.now());
+  const hasNotifiedConnectedRef = useRef(false);
   
+  // --- REAL-TIME SYSTEM ALERTS & NOTIFICATIONS ---
+  const [notifications, setNotifications] = useState([
+    {
+      id: 'init_spatial',
+      type: 'success',
+      title: 'Spatial Engine',
+      message: 'WebGPU Spatial Canvas active (60 FPS)',
+      time: 'Just now',
+      timestamp: Date.now(),
+      read: true,
+      source: 'engine'
+    },
+    {
+      id: 'init_guard',
+      type: 'info',
+      title: 'AST Refactor Guard',
+      message: 'LibCST & Tree-Sitter parsing active',
+      time: 'Ready',
+      timestamp: Date.now(),
+      read: true,
+      source: 'ai'
+    }
+  ]);
+
+  const addNotification = useCallback((type, title, message, source = 'system') => {
+    const newNotif = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      type,
+      title,
+      message,
+      time: 'Just now',
+      timestamp: Date.now(),
+      read: false,
+      source
+    };
+    setNotifications(prev => [newNotif, ...prev.slice(0, 49)]);
+  }, []);
+
+  const addNotificationRef = useRef(addNotification);
+  useEffect(() => {
+    addNotificationRef.current = addNotification;
+  }, [addNotification]);
+
+  const dismissNotification = useCallback((id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
+
+  const clearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  const markAllNotificationsRead = useCallback(() => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  }, []);
+
   useEffect(() => { 
     currentFileRef.current = currentFile; 
   }, [currentFile]);
@@ -97,7 +171,6 @@ export function useWorkspace(session) {
 
   // --- THE WEBSOCKET NEURAL ENGINE ---
   useEffect(() => {
-    if (!session) return;
     let ws = null;
     let reconnectTimer = null;
     let heartbeatTimer = null;
@@ -116,6 +189,10 @@ export function useWorkspace(session) {
           setIsWsConnected(true);
           reconnectAttemptsRef.current = 0;
           console.log("🟢 Connected to Python AI Backend:", wsUrl);
+          if (!hasNotifiedConnectedRef.current) {
+            hasNotifiedConnectedRef.current = true;
+            addNotificationRef.current?.('success', 'Neural Engine Connected', 'Spatial Engine & AST Sidecar online (127.0.0.1:8000)', 'engine');
+          }
 
           // Heartbeat Ping loop
           heartbeatTimer = setInterval(() => {
@@ -137,6 +214,16 @@ export function useWorkspace(session) {
               setWsLatency(Math.max(1, Date.now() - pingTimestampRef.current));
             }
 
+            // 0b. WORKSPACE FOLDER LOADING & CANCEL (Minimalist Splash Loading)
+            else if (data.event === 'WORKSPACE_LOADING') {
+              folderLoadingStartTimeRef.current = Date.now();
+              setIsFolderLoading(true);
+            }
+            else if (data.event === 'FOLDER_PICK_CANCELLED') {
+              setIsFolderLoading(false);
+              folderLoadingStartTimeRef.current = 0;
+            }
+
             // 1. FULL WORKSPACE INITIALIZATION / SYNC
             else if (data.event === 'INIT' || data.event === 'SYNC') {
               const payload = data.payload || {};
@@ -144,32 +231,68 @@ export function useWorkspace(session) {
               const isDirSwitch = lastTargetDirRef.current && lastTargetDirRef.current !== newTargetDir;
               lastTargetDirRef.current = newTargetDir;
 
+              if (payload.user_session) {
+                setRemoteAuthSession(prev => {
+                  if (prev && JSON.stringify(prev) === JSON.stringify(payload.user_session)) {
+                    return prev;
+                  }
+                  return payload.user_session;
+                });
+              }
+
               setItems(payload.items || []);
               setFiles(payload.files || []);
               
               const newActive = payload.active_file || "";
-              setCurrentFile(newActive);
+              
+              // Only override currentFile on initial load or workspace folder switch
+              if (isDirSwitch) {
+                setCurrentFile(newActive || "");
+                currentFileRef.current = newActive || "";
+              } else if (!currentFileRef.current) {
+                if (newActive) {
+                  setCurrentFile(newActive);
+                  currentFileRef.current = newActive;
+                }
+              }
 
-              // 🚀 PURGE GHOST TABS ON WORKSPACE FOLDER SWITCH
+              // 🚀 PURGE DELETED FILES WITHOUT RESURRECTING CLOSED TABS
               setOpenFiles(prev => {
-                if (isDirSwitch || prev.length === 0) {
+                if (isDirSwitch) {
                   return newActive ? [newActive] : [];
                 }
-                const validSet = new Set(payload.files || []);
-                const filtered = prev.filter(f => validSet.has(f));
-                if (newActive && !filtered.includes(newActive)) {
-                  return [...filtered, newActive];
+                if (prev.length === 0) {
+                  const initial = currentFileRef.current || newActive;
+                  return initial ? [initial] : [];
                 }
-                return filtered.length > 0 ? filtered : (newActive ? [newActive] : []);
+                const validSet = new Set(payload.files || []);
+                return prev.filter(f => validSet.has(f));
               });
 
               setAbsTargetDir(newTargetDir);
               setGitStatuses(payload.git_statuses || {});
+              setIsGitRepo(Boolean(payload.is_git_repo));
+              setGitBranch(payload.git_branch || "main");
+              setRepoName(payload.repo_name || "");
+              if (payload.git_detailed_status) {
+                setGitDetailedStatus(payload.git_detailed_status);
+              }
+              if (payload.git_graph) {
+                setGitGraph(payload.git_graph);
+              }
 
               if (payload.agent_batch) {
                 setAgentBatch(payload.agent_batch);
                 if (payload.agent_batch.blastRadiusNodeIds) {
                   setBlastRadius(payload.agent_batch.blastRadiusNodeIds);
+                }
+                if (payload.agent_batch.blastProtectionBlocked) {
+                  addNotificationRef.current?.(
+                    'warning',
+                    'Blast Protection Intercepted Burst',
+                    payload.agent_batch.protectionMessage || 'Neutralized rapid multi-file AI edits to safeguard your codebase.',
+                    'blast'
+                  );
                 }
               }
               
@@ -205,6 +328,19 @@ export function useWorkspace(session) {
               
               setIsGraphLoaded(true); 
               setIsFileSyncing(false); 
+
+              // 🚀 Smoothly exit folder loading screen (350ms min display prevents visual jitter)
+              const elapsed = Date.now() - (folderLoadingStartTimeRef.current || 0);
+              const minDisplayTime = 350;
+              if (folderLoadingStartTimeRef.current && elapsed < minDisplayTime) {
+                setTimeout(() => {
+                  setIsFolderLoading(false);
+                  folderLoadingStartTimeRef.current = 0;
+                }, minDisplayTime - elapsed);
+              } else {
+                setIsFolderLoading(false);
+                folderLoadingStartTimeRef.current = 0;
+              }
             }
 
             // 2. INCREMENTAL LIVE GRAPH HOT-PATCHING
@@ -215,14 +351,31 @@ export function useWorkspace(session) {
                 edges_upsert = [], 
                 edges_remove = [], 
                 git_statuses, 
+                git_detailed_status,
+                git_branch,
+                is_git_repo,
+                repo_name,
                 agent_batch 
               } = data.payload || {};
 
               if (git_statuses) setGitStatuses(git_statuses);
+              if (git_detailed_status) setGitDetailedStatus(git_detailed_status);
+              if (typeof is_git_repo !== 'undefined') setIsGitRepo(Boolean(is_git_repo));
+              if (git_branch) setGitBranch(git_branch);
+              if (repo_name) setRepoName(repo_name);
+
               if (agent_batch) {
                 setAgentBatch(agent_batch);
                 if (agent_batch.blastRadiusNodeIds) {
                   setBlastRadius(agent_batch.blastRadiusNodeIds);
+                }
+                if (agent_batch.blastProtectionBlocked) {
+                  addNotificationRef.current?.(
+                    'warning',
+                    'Blast Protection Intercepted Burst',
+                    agent_batch.protectionMessage || 'Neutralized rapid multi-file AI edits to safeguard your codebase.',
+                    'blast'
+                  );
                 }
               }
 
@@ -262,7 +415,49 @@ export function useWorkspace(session) {
               setIsFileSyncing(false);
             }
             
-            // 3. HORIZON 3: AI AGENT SUPERVISOR EVENTS
+            // 3. FILE SAVE & SYNCHRONIZATION EVENTS
+            else if (data.event === 'SAVE_FILE_SUCCESS') {
+              setIsFileSyncing(false);
+              addNotificationRef.current?.('success', 'File Saved', `${data.filename || 'File'} saved successfully to disk`, 'filesystem');
+            }
+            else if (data.event === 'SAVE_FILE_ERROR') {
+              setIsFileSyncing(false);
+              addNotificationRef.current?.('error', 'Save Failed', `Failed to save ${data.filename}: ${data.reason}`, 'filesystem');
+            }
+
+            // 3.1 FAST FILE SWITCH ACKNOWLEDGEMENT
+            else if (data.event === 'FILE_SWITCH_ACK') {
+              setIsFileSyncing(false);
+              const { active_file, content } = data;
+              if (active_file && content !== undefined) {
+                setNodes(prev => prev.map(n => {
+                  if (n.id === active_file && n.data?.nodeType === 'file') {
+                    return {
+                      ...n,
+                      data: {
+                        ...n.data,
+                        code: content
+                      }
+                    };
+                  }
+                  return n;
+                }));
+              }
+            }
+
+            // 3.5 USER AUTHENTICATION SYNCHRONIZATION
+            else if (data.event === 'AUTH_SESSION_UPDATE') {
+              const newSession = data.session;
+              setRemoteAuthSession(newSession);
+              const name = newSession?.user?.user_metadata?.full_name || newSession?.user?.email || 'Google User';
+              addNotificationRef.current?.('success', 'Google Account Synced', `Signed in as ${name}`, 'auth');
+            }
+            else if (data.event === 'AUTH_LOGOUT') {
+              setRemoteAuthSession(null);
+              addNotificationRef.current?.('info', 'Signed Out', 'Signed out of Google account.', 'auth');
+            }
+
+            // 4. HORIZON 3: AI AGENT SUPERVISOR EVENTS
             else if (data.event === 'BLAST_RADIUS') {
               setBlastRadius(Array.isArray(data.payload) ? data.payload : null);
             }
@@ -272,6 +467,21 @@ export function useWorkspace(session) {
             else if (data.event === 'AGENT_ROLLBACK_SUCCESS') {
               setAgentBatch(null);
               setBlastRadius(null);
+              addNotificationRef.current?.('info', 'Agent Rollback', 'Rolled back AI modifications to baseline', 'ai');
+            }
+            else if (data.event === 'AGENT_APPROVE_SUCCESS') {
+              setAgentBatch(null);
+              setBlastRadius(null);
+              addNotificationRef.current?.('success', 'Agent Approved', 'AI batch changes merged into workspace', 'ai');
+            }
+            else if (data.event === 'REFACTOR_CSP_VIOLATION') {
+              addNotificationRef.current?.('error', 'Refactoring Guard (CSP)', data.reason || 'Dependency rule violated', 'ai');
+            }
+            else if (data.event === 'REFACTOR_SUCCESS' || data.event === 'REFACTOR_FILE_MERGE_SUCCESS') {
+              addNotificationRef.current?.('success', 'Refactor Applied', data.message || 'AST transformation merged cleanly', 'ai');
+            }
+            else if (data.event === 'REFACTOR_ERROR' || data.event === 'REFACTOR_FILE_MERGE_ERROR') {
+              addNotificationRef.current?.('error', 'Refactor Error', data.reason || 'Transformation failed', 'ai');
             }
             else if (data.event === 'LLM_SUMMARY_READY') {
               setAiInsight({
@@ -279,11 +489,46 @@ export function useWorkspace(session) {
                 summary: data.summary
               });
             }
+            else if (data.event === 'GIT_DETAILED_STATUS') {
+              if (data.payload) setGitDetailedStatus(data.payload);
+            }
+            else if (data.event === 'GIT_GRAPH_DATA') {
+              if (data.payload) setGitGraph(data.payload);
+            }
+            else if (data.event === 'GIT_COMMIT_SUCCESS') {
+              addNotificationRef.current?.('success', 'Git Commit', 'Changes committed successfully', 'engine');
+            }
+            else if (data.event === 'GIT_COMMIT_ERROR') {
+              addNotificationRef.current?.('error', 'Git Commit Failed', data.error || 'Failed to commit', 'engine');
+            }
 
-            // 4. TERMINAL STREAMING ENGINE
+            // 5. TERMINAL STREAMING ENGINE
             else if (data.event === 'TERMINAL_OUTPUT' || data.event === 'TERMINAL_ERROR') {
-              const lines = (data.payload || '').split('\n').filter(Boolean);
-              const newLogs = lines.map(text => ({ text, isError: data.event === 'TERMINAL_ERROR' }));
+              const rawLines = (data.payload || '').split('\n');
+              if (rawLines.length > 1 && rawLines[rawLines.length - 1] === '') {
+                rawLines.pop();
+              }
+              rawLines.forEach(text => {
+                if (text.startsWith('[Done]')) {
+                  const isExitSuccess = text.includes('code 0');
+                  if (isExitSuccess) {
+                    addNotificationRef.current?.('success', 'Execution Finished', text, 'runtime');
+                  } else {
+                    addNotificationRef.current?.('error', 'Execution Error', text, 'runtime');
+                  }
+                } else if (text.startsWith('[Timeout]')) {
+                  addNotificationRef.current?.('warning', 'Execution Timeout', text, 'runtime');
+                }
+              });
+
+              const newLogs = rawLines.map(text => {
+                const isSystem = text.startsWith('[Done]') || text.startsWith('[Running]') || text.startsWith('[Compiling') || text.startsWith('[Timeout]');
+                return { 
+                  text, 
+                  isError: data.event === 'TERMINAL_ERROR',
+                  isSystem 
+                };
+              });
               setTerminalLogs(prev => [...prev.slice(-400), ...newLogs]);
             } 
             else if (data.event === 'TERMINAL_STREAM_START') {
@@ -322,6 +567,26 @@ export function useWorkspace(session) {
               )));
             }
 
+            // 8. GIT SOURCE CONTROL REAL-TIME EVENT BUS
+            else if (data.event === 'GIT_DETAILED_STATUS') {
+              if (data.payload) setGitDetailedStatus(data.payload);
+            }
+            else if (data.event === 'GIT_GRAPH_DATA') {
+              if (data.payload) setGitGraph(data.payload);
+            }
+            else if (data.event === 'GIT_COMMIT_SUCCESS') {
+              addNotificationRef.current?.('success', 'Commit Succeeded', data.output || 'Changes committed successfully', 'git');
+            }
+            else if (data.event === 'GIT_COMMIT_ERROR') {
+              addNotificationRef.current?.('error', 'Commit Failed', data.error || 'Failed to commit changes', 'git');
+            }
+            else if (data.event === 'GIT_PUSH_SUCCESS') {
+              addNotificationRef.current?.('success', 'Push Succeeded', data.output || 'Pushed commits to remote', 'git');
+            }
+            else if (data.event === 'GIT_PUSH_ERROR') {
+              addNotificationRef.current?.('error', 'Push Failed', data.error || 'Failed to push commits', 'git');
+            }
+
           } catch (msgErr) { 
             console.error("[ERROR] Failed parsing WebSocket payload:", msgErr); 
           }
@@ -331,6 +596,7 @@ export function useWorkspace(session) {
           if (isUnmounted) return;
           setIsWsConnected(false);
           clearInterval(heartbeatTimer);
+          addNotificationRef.current?.('warning', 'Connection Interrupted', 'Python Backend offline. Reconnecting...', 'engine');
           
           const delay = Math.min(6000, 500 * Math.pow(1.4, reconnectAttemptsRef.current++));
           reconnectTimer = setTimeout(connectWebSocket, delay);
@@ -357,20 +623,36 @@ export function useWorkspace(session) {
         ws.close();
       }
     };
-  }, [session, handleCodeEdit]);
+  }, []); // Mounts WebSocket connection once for the lifetime of the application
 
-  // Tab & File Management
-  const closeFile = useCallback((filename) => {
-    setOpenFiles(prev => {
-      const next = prev.filter(f => f !== filename);
-      if (currentFileRef.current === filename) {
-        const fallback = next.length > 0 ? next[next.length - 1] : "";
-        if (wsRef.current?.readyState === WebSocket.OPEN && fallback) {
-          wsRef.current.send(JSON.stringify({ event: 'SWITCH_FILE', filename: fallback }));
-        }
+  // Tab & File Management (VS Code Standard Adjacent Tab Selection & 0ms Optimistic UI)
+  const closeFile = useCallback((fileToClose, onActiveChange) => {
+    const currentList = openFilesRef.current;
+    const closeIdx = currentList.indexOf(fileToClose);
+    const nextList = currentList.filter(f => f !== fileToClose);
+
+    setOpenFiles(nextList);
+    openFilesRef.current = nextList;
+
+    if (currentFileRef.current === fileToClose) {
+      let nextActive = "";
+      if (nextList.length > 0) {
+        // Pick adjacent tab: if closing middle/first tab, pick right adjacent; if closing last tab, pick left adjacent
+        const targetIdx = Math.min(Math.max(0, closeIdx), nextList.length - 1);
+        nextActive = nextList[targetIdx];
       }
-      return next;
-    });
+
+      setCurrentFile(nextActive);
+      currentFileRef.current = nextActive;
+
+      if (onActiveChange) {
+        onActiveChange(nextActive);
+      }
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ event: 'SWITCH_FILE', filename: nextActive }));
+      }
+    }
   }, []);
 
   const refreshWorkspace = useCallback(() => {
@@ -463,13 +745,70 @@ export function useWorkspace(session) {
     }
   }, []);
 
+  const commitGitChanges = useCallback((message, options = {}) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ 
+        event: 'GIT_COMMIT', 
+        message,
+        push: Boolean(options.push),
+        amend: Boolean(options.amend)
+      }));
+    }
+  }, []);
+
+  const pushGitChanges = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: 'GIT_PUSH' }));
+    }
+  }, []);
+
+  const stageGitFile = useCallback((path) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: 'GIT_STAGE_FILE', path }));
+    }
+  }, []);
+
+  const unstageGitFile = useCallback((path) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: 'GIT_UNSTAGE_FILE', path }));
+    }
+  }, []);
+
+  const discardGitFile = useCallback((path) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: 'GIT_DISCARD_FILE', path }));
+    }
+  }, []);
+
+  const stageAllGit = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: 'GIT_STAGE_ALL' }));
+    }
+  }, []);
+
+  const discardAllGit = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: 'GIT_DISCARD_ALL' }));
+    }
+  }, []);
+
+  const refreshGitGraph = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ event: 'GIT_FETCH_STATUS' }));
+    }
+  }, []);
+
   return {
     isGraphLoaded, setIsGraphLoaded, 
+    isFolderLoading, setIsFolderLoading,
     isFileSyncing, setIsFileSyncing,
     isWsConnected, wsLatency,
     items, files, currentFile, setCurrentFile, absTargetDir,
     openFiles, setOpenFiles, closeFile,
-    gitStatuses, 
+    gitStatuses, isGitRepo, gitBranch, repoName,
+    gitDetailedStatus, gitGraph,
+    commitGitChanges, pushGitChanges, stageGitFile, unstageGitFile, discardGitFile,
+    stageAllGit, discardAllGit, refreshGitGraph,
     nodes, setNodes, onNodesChange, 
     edges, setEdges, onEdgesChange,
     blastRadius, setBlastRadius, 
@@ -479,6 +818,8 @@ export function useWorkspace(session) {
     terminalSessions, activeSessionId, setActiveSessionId,
     createTerminalSession, closeTerminalSession, 
     sendTerminalCommand, sendTerminalStdin, killTerminalProcess,
-    refreshWorkspace, wsRef
+    refreshWorkspace, wsRef,
+    notifications, addNotification, dismissNotification, clearNotifications, markAllNotificationsRead,
+    remoteAuthSession, setRemoteAuthSession
   };
 }

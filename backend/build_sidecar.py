@@ -103,6 +103,9 @@ def build_sidecar():
         "--collect-all", "tree_sitter_python",
         "--collect-all", "tree_sitter_javascript",
         "--collect-all", "tree_sitter_typescript",
+        "--collect-all", "tree_sitter_c",
+        "--collect-all", "tree_sitter_cpp",
+        "--collect-all", "tree_sitter_java",
         "--collect-all", "libcst",
         # 3. Graph ML
         "--collect-all", "networkx",
@@ -119,7 +122,7 @@ def build_sidecar():
         "--hidden-import", "anyio",
         "--hidden-import", "sniffio",
         "--hidden-import", "pydantic",
-        # 5. Exclude Unused Heavy Packages
+        # 5. Exclude Unused Heavy Third-Party Packages & Bloat
         "--exclude-module", "matplotlib",
         "--exclude-module", "torch",
         "--exclude-module", "pandas",
@@ -127,6 +130,21 @@ def build_sidecar():
         "--exclude-module", "jupyter",
         "--exclude-module", "PIL",
         "--exclude-module", "pytest",
+        "--exclude-module", "transformers",
+        "--exclude-module", "sentence_transformers",
+        "--exclude-module", "chromadb",
+        "--exclude-module", "chromadb_rust_bindings",
+        "--exclude-module", "onnxruntime",
+        "--exclude-module", "kubernetes",
+        "--exclude-module", "sympy",
+        "--exclude-module", "gensim",
+        "--exclude-module", "llvmlite",
+        "--exclude-module", "numba",
+        "--exclude-module", "grpc",
+        "--exclude-module", "grpcio",
+        "--exclude-module", "opentelemetry",
+        "--exclude-module", "pynndescent",
+        "--exclude-module", "umap",
         main_py_path
     ]
 

@@ -70,6 +70,16 @@ def get_default_workspace_dir() -> str:
     return os.path.abspath(neuron_projects_dir).replace("\\", "/")
 
 
+def get_neuron_config_dir() -> str:
+    """Returns the ~/.neuron configuration directory, ensuring it exists."""
+    config_dir = os.path.join(os.path.expanduser("~"), ".neuron")
+    try:
+        os.makedirs(config_dir, exist_ok=True)
+    except Exception:
+        pass
+    return config_dir
+
+
 class AppState:
     """Global thread-safe memory manager for Neuron Backend."""
     TARGET_DIR: str = get_default_workspace_dir()
@@ -77,3 +87,67 @@ class AppState:
     CONNECTIONS: Set[Any] = set()
     PROCESSES: Dict[str, Any] = {}
     EXCLUDE_DIRS: Set[str] = DEFAULT_EXCLUSIONS
+    USER_SESSION: Any = None
+    PENDING_PKCE_VERIFIER: str = ""
+    BLAST_PROTECTION_ENABLED: bool = False
+
+    @classmethod
+    def save_session(cls, session: Any):
+        """Persists the user session to ~/.neuron/auth_session.json."""
+        try:
+            import json
+            cfg = get_neuron_config_dir()
+            path = os.path.join(cfg, "auth_session.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(session, f)
+        except Exception as e:
+            print(f"[AUTH] Failed saving session to disk: {e}")
+
+    @classmethod
+    def load_session(cls) -> Any:
+        """Loads cached session from ~/.neuron/auth_session.json if valid."""
+        try:
+            import json
+            cfg = get_neuron_config_dir()
+            path = os.path.join(cfg, "auth_session.json")
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def clear_session(cls):
+        """Deletes ~/.neuron/auth_session.json on sign-out."""
+        try:
+            cfg = get_neuron_config_dir()
+            path = os.path.join(cfg, "auth_session.json")
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+    @classmethod
+    def save_verifier(cls, verifier: str):
+        """Saves current PKCE verifier to ~/.neuron/pkce_verifier.txt."""
+        try:
+            cfg = get_neuron_config_dir()
+            path = os.path.join(cfg, "pkce_verifier.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(verifier.strip())
+        except Exception:
+            pass
+
+    @classmethod
+    def load_verifier(cls) -> str:
+        """Loads PKCE verifier from ~/.neuron/pkce_verifier.txt."""
+        try:
+            cfg = get_neuron_config_dir()
+            path = os.path.join(cfg, "pkce_verifier.txt")
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read().strip()
+        except Exception:
+            pass
+        return ""

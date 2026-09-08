@@ -27,7 +27,8 @@ PARSEABLE_CODE_EXTENSIONS: Set[str] = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
     ".java",
-    ".json", ".css", ".html", ".md", ".txt", ".toml", ".yaml", ".yml", ".sql", ".sh", ".env"
+    ".json", ".css", ".html", ".md", ".txt", ".toml", ".yaml", ".yml", ".sql", ".sh", ".env",
+    ".bat", ".cmd", ".bash", ".ini", ".cfg"
 }
 
 MAX_PARSE_SIZE_BYTES = 1_000_000  # 1 MB Safety Ceiling for AST Memory
@@ -46,48 +47,58 @@ LAST_GIT_CHURN_FETCH: float = 0.0
 def get_git_metadata(target_dir: str) -> Dict[str, Any]:
     """
     Extracts Git repository existence, active branch name, and repository root name.
-    Executes in <3ms.
+    Directly reads .git/HEAD for sub-millisecond execution (<0.5ms vs 1,100ms subprocess).
     """
-    if not target_dir or not os.path.exists(os.path.join(target_dir, ".git")):
+    if not target_dir:
         return {
             "is_git_repo": False,
             "git_branch": "",
-            "repo_name": posixpath.basename(target_dir) if target_dir else ""
+            "repo_name": ""
+        }
+
+    abs_target = os.path.abspath(target_dir)
+    git_dir = os.path.join(abs_target, ".git")
+    repo_name = os.path.basename(abs_target)
+
+    # Strictly check if the root of the active workspace is a Git repository
+    if not os.path.exists(git_dir):
+        return {
+            "is_git_repo": False,
+            "git_branch": "",
+            "repo_name": repo_name
         }
 
     branch_name = "main"
+    head_file = os.path.join(git_dir, "HEAD")
     try:
-        # 1. Query current branch name
-        res = subprocess.run(
-            ['git', 'branch', '--show-current'],
-            cwd=target_dir,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=1.0
-        )
-        branch = res.stdout.strip()
-        if branch:
-            branch_name = branch
+        # Fast-Path: Read .git/HEAD directly without spawning subprocess (0.5ms)
+        if os.path.isfile(head_file):
+            with open(head_file, "r", encoding="utf-8", errors="replace") as f:
+                head_content = f.read().strip()
+            if head_content.startswith("ref: refs/heads/"):
+                branch_name = head_content[len("ref: refs/heads/"):].strip()
+            elif head_content:
+                # Detached HEAD SHA
+                branch_name = head_content[:7]
         else:
-            # Fallback for detached HEAD state
-            head_res = subprocess.run(
-                ['git', 'rev-parse', '--short', 'HEAD'],
-                cwd=target_dir,
+            # Fallback for worktrees or complex git links
+            res = subprocess.run(
+                ['git', 'branch', '--show-current'],
+                cwd=abs_target,
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=1.0
+                timeout=1.5
             )
-            branch_name = head_res.stdout.strip() or "HEAD"
+            branch = res.stdout.strip()
+            if branch:
+                branch_name = branch
     except Exception:
         pass
 
-    repo_name = posixpath.basename(target_dir)
-
     return {
         "is_git_repo": True,
-        "git_branch": branch_name,
+        "git_branch": branch_name or "main",
         "repo_name": repo_name
     }
 
@@ -95,28 +106,32 @@ def get_git_metadata(target_dir: str) -> Dict[str, Any]:
 def get_git_status(target_dir: str) -> Dict[str, str]:
     """
     Extracts real-time Git modification states (Modified, Untracked, Added, Deleted, Renamed).
-    Runs in <5ms for instantaneous HUD updates.
+    Runs with high efficiency and handles both staged, untracked, and ignored assets.
     """
     git_statuses = {}
-    if not target_dir or not os.path.exists(os.path.join(target_dir, ".git")):
+    if not target_dir:
+        return {}
+
+    abs_target = os.path.abspath(target_dir)
+    if not os.path.exists(os.path.join(abs_target, ".git")):
         return {}
 
     try:
         result = subprocess.run(
-            ['git', 'status', '--porcelain', '-uall'],
-            cwd=target_dir,
+            ['git', '-c', 'core.quotepath=false', 'status', '--porcelain', '--ignored=matching'],
+            cwd=abs_target,
             capture_output=True,
             text=True,
             check=False,
-            timeout=1.5
+            timeout=5.0
         )
 
         for line in result.stdout.splitlines():
             if len(line) < 4:
                 continue
 
-            status_code = line[:2].strip()
-            raw_path = line[3:].strip().replace("\\", "/")
+            status_code = line[:2]
+            raw_path = posixpath.normpath(line[3:].strip().replace("\\", "/").rstrip("/"))
 
             # Strip quotation marks from filenames with spaces
             if raw_path.startswith('"') and raw_path.endswith('"'):
@@ -124,10 +139,12 @@ def get_git_status(target_dir: str) -> Dict[str, str]:
 
             # Handle renamed files (e.g. "R  old.py -> new.py")
             if "->" in raw_path:
-                raw_path = raw_path.split("->")[-1].strip()
+                raw_path = posixpath.normpath(raw_path.split("->")[-1].strip().replace("\\", "/"))
 
             mapped_status = "M"
-            if "??" in status_code:
+            if "!!" in status_code:
+                mapped_status = "I"
+            elif "??" in status_code:
                 mapped_status = "U"
             elif "A" in status_code:
                 mapped_status = "A"
@@ -135,8 +152,19 @@ def get_git_status(target_dir: str) -> Dict[str, str]:
                 mapped_status = "D"
             elif "R" in status_code:
                 mapped_status = "R"
+            elif "M" in status_code:
+                mapped_status = "M"
 
             git_statuses[raw_path] = mapped_status
+
+            # If an untracked directory is detected, also mark contained files as 'U'
+            if mapped_status == "U":
+                full_untracked = os.path.join(abs_target, raw_path)
+                if os.path.isdir(full_untracked):
+                    for sub_root, _, sub_files in os.walk(full_untracked):
+                        for sf in sub_files:
+                            sub_rel = posixpath.normpath(os.path.relpath(os.path.join(sub_root, sf), abs_target).replace("\\", "/"))
+                            git_statuses[sub_rel] = "U"
 
     except Exception:
         pass
@@ -257,26 +285,17 @@ def get_workspace_state() -> dict:
     mutated_files_buffer: List[Tuple[str, str, str]] = []
     current_contents: Dict[str, str] = {}
 
-    for fpath in file_paths:
-        ext = posixpath.splitext(fpath)[1].lower()
-        if ext not in PARSEABLE_CODE_EXTENSIONS:
-            continue
-
-        full_path = os.path.join(AppState.TARGET_DIR, fpath)
-        try:
-            if os.path.getsize(full_path) > MAX_PARSE_SIZE_BYTES:
-                continue
-            with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            current_contents[fpath] = content
-
-            # Only track diffs if not opening a fresh directory
-            if not is_dir_switch:
-                old_content = PREVIOUS_FILE_CONTENTS.get(fpath, "")
-                if old_content and old_content != content:
-                    mutated_files_buffer.append((fpath, old_content, content))
-        except Exception:
-            pass
+    for node in graph_state.get("nodes", []):
+        ndata = node.get("data", {})
+        if ndata.get("nodeType") == "file":
+            fpath = node.get("id")
+            content = ndata.get("code", "")
+            if fpath:
+                current_contents[fpath] = content
+                if not is_dir_switch:
+                    old_content = PREVIOUS_FILE_CONTENTS.get(fpath, "")
+                    if old_content and old_content != content:
+                        mutated_files_buffer.append((fpath, old_content, content))
 
     PREVIOUS_FILE_CONTENTS = current_contents
 
@@ -287,7 +306,27 @@ def get_workspace_state() -> dict:
             mutated_files=mutated_files_buffer,
             graph_edges=graph_state.get("edges", [])
         )
-        agent_batch_summary = agent_supervisor.get_latest_batch_summary()
+        if AppState.BLAST_PROTECTION_ENABLED:
+            # 🛡️ Blast Protection Active: Safely rollback runaway AI multi-file edits on disk
+            success, reason = agent_supervisor.rollback_batch(
+                batch_id=agent_batch.batch_id,
+                workspace_root=AppState.TARGET_DIR
+            )
+            if success:
+                for fpath, old_text, _ in mutated_files_buffer:
+                    current_contents[fpath] = old_text
+                agent_batch.is_rolled_back = True
+            agent_batch_summary = agent_supervisor.get_latest_batch_summary()
+            if agent_batch_summary:
+                agent_batch_summary["blastProtectionBlocked"] = True
+                agent_batch_summary["protectionMessage"] = (
+                    f"Blast Protection intercepted & neutralized an instant AI mutation burst affecting {len(mutated_files_buffer)} files."
+                )
+        else:
+            agent_batch_summary = agent_supervisor.get_latest_batch_summary()
+
+    from services.git_service import git_get_detailed_status
+    git_detailed = git_get_detailed_status(AppState.TARGET_DIR)
 
     raw_state = {
         "items": items,
@@ -296,10 +335,12 @@ def get_workspace_state() -> dict:
         "active_file": AppState.ACTIVE_FILE,
         "target_dir_abs": AppState.TARGET_DIR,
         "git_statuses": git_statuses,
+        "git_detailed_status": git_detailed,
         "git_branch": git_meta.get("git_branch", "main"),
         "is_git_repo": git_meta.get("is_git_repo", False),
         "repo_name": git_meta.get("repo_name", ""),
-        "agent_batch": agent_batch_summary
+        "agent_batch": agent_batch_summary,
+        "blast_protection": AppState.BLAST_PROTECTION_ENABLED
     }
 
     sanitized = sanitize_for_json(raw_state)
@@ -329,6 +370,7 @@ def compute_incremental_graph_delta(old_state: dict, new_state: dict) -> dict:
         "edges_upsert": edges_upsert,
         "edges_remove": edges_remove,
         "git_statuses": new_state.get("git_statuses", {}),
+        "git_detailed_status": new_state.get("git_detailed_status", {}),
         "git_branch": new_state.get("git_branch", "main"),
         "is_git_repo": new_state.get("is_git_repo", False),
         "repo_name": new_state.get("repo_name", ""),
@@ -366,6 +408,8 @@ async def broadcast_workspace(force_full_sync: bool = False):
         delta_payload = compute_incremental_graph_delta(old_state, new_state)
         message = json.dumps({"event": "GRAPH_DELTA", "payload": delta_payload})
 
+    PREVIOUS_WORKSPACE_STATE = new_state
+
     disconnected = set()
     for ws in list(AppState.CONNECTIONS):
         try:
@@ -382,13 +426,24 @@ async def broadcast_workspace(force_full_sync: bool = False):
 # -------------------------------------------------------------------------
 class CodeWatcher(FileSystemEventHandler):
     """
-    Real-time File System Watchdog with burst debouncing.
-    Batches rapid multi-file agent writes into a single atomic graph update.
+    Real-time File System Watchdog with trailing burst debouncing.
+    Batches rapid multi-file agent writes and terminal Git operations into atomic updates.
     """
     def __init__(self, loop):
         self.loop = loop
-        self.last_trigger = 0
-        self.pending_paths: Set[str] = set()
+        self.timer_handle = None
+
+    def _schedule_debounced_broadcast(self):
+        if self.timer_handle is not None:
+            try:
+                self.timer_handle.cancel()
+            except Exception:
+                pass
+        self.timer_handle = self.loop.call_later(0.35, self._run_broadcast)
+
+    def _run_broadcast(self):
+        self.timer_handle = None
+        asyncio.create_task(broadcast_workspace(force_full_sync=False))
 
     def on_any_event(self, event):
         if event.is_directory and event.event_type == 'modified':
@@ -399,16 +454,15 @@ class CodeWatcher(FileSystemEventHandler):
             return
 
         normalized_path = src_path.replace("\\", "/")
-        
-        # Ignore changes inside target/, binaries/, node_modules/, .git/, etc.
-        if any(f"/{ex}/" in normalized_path or normalized_path.endswith(f"/{ex}") for ex in DEFAULT_EXCLUDE_DIRS):
+
+        # Inspect Git index/HEAD/refs changes while filtering heavy internal objects/logs
+        if "/.git/" in normalized_path or normalized_path.endswith("/.git"):
+            if not any(marker in normalized_path for marker in ("/.git/index", "/.git/HEAD", "/.git/refs/")):
+                return
+        elif any(f"/{ex}/" in normalized_path or normalized_path.endswith(f"/{ex}") for ex in DEFAULT_EXCLUDE_DIRS if ex != ".git"):
             return
 
-        self.pending_paths.add(normalized_path)
-
-        current_time = time.time()
-        # High-performance 0.35s burst debounce
-        if current_time - self.last_trigger > 0.35:
-            self.last_trigger = current_time
-            self.pending_paths.clear()
-            asyncio.run_coroutine_threadsafe(broadcast_workspace(force_full_sync=False), self.loop)
+        try:
+            self.loop.call_soon_threadsafe(self._schedule_debounced_broadcast)
+        except Exception:
+            pass

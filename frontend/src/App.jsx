@@ -7,8 +7,8 @@ import { FileCode2, Network, Loader2, X, Play, AlertOctagon } from 'lucide-react
 import { 
   supabase, 
   isTauriApp, 
-  getLocalDesktopSession, 
-  signInWithGoogleOAuth 
+  triggerGoogleLogin, 
+  triggerLogout 
 } from './supabaseClient';
 import { loadPyodideEngine } from './services/pyodideService';
 
@@ -18,14 +18,17 @@ import { useSettings } from './hooks/useSettings';
 import { usePersistentState } from './hooks/usePersistentState';
 import { usePhysicsEngine } from './hooks/usePhysicsEngine';
 
-// 🌌 THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
+// THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
 import PixiSpatialEngine from './components/canvas/PixiSpatialEngine';
 
 // Layout & UI
 import CodeEditor from './components/layout/CodeEditor';
+import ImageViewer from './components/layout/ImageViewer';
+import UnsupportedFileViewer from './components/layout/UnsupportedFileViewer';
 import TopBar from './components/layout/TopBar';
 import ActivityBar from './components/layout/ActivityBar';
 import Sidebar from './components/layout/Sidebar';
+import SourceControlPanel from './components/layout/SourceControlPanel';
 import SettingsModal from './components/layout/SettingsModal';
 import StatusBar from './components/layout/StatusBar';
 import TerminalPanel from './components/layout/TerminalPanel';
@@ -34,12 +37,34 @@ import CommandPalette from './components/layout/CommandPalette';
 import AgentSupervisorHUD from './components/layout/AgentSupervisorHUD';
 import SplashScreen from './components/layout/SplashScreen'; 
 
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'ico', 'bmp', 'tiff', 'tif', 'avif']);
+const UNSUPPORTED_EXTENSIONS = new Set([
+  'exe', 'dll', 'so', 'dylib', 'bin', 'msi', 'iso', 'dmg', 'o', 'obj', 'class', 'jar',
+  'mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a',
+  'zip', 'tar', 'gz', '7z', 'rar', 'bz2', 'xz',
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'epub',
+  'ttf', 'otf', 'woff', 'woff2', 'eot',
+  'db', 'sqlite', 'sqlite3', 'mdb'
+]);
+
 export default function App() {
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(() => {
+    try {
+      const saved = localStorage.getItem('neuron_user_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const workspace = useWorkspace(session);
   const { settings, updateSetting } = useSettings();
   
-  const { layout, setLayout, centerView, setCenterView, stdin, setStdin } = usePersistentState();
+  const { 
+    layout, setLayout, 
+    activeSidebarView, setActiveSidebarView,
+    centerView, setCenterView, 
+    stdin, setStdin 
+  } = usePersistentState();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -54,6 +79,7 @@ export default function App() {
 
   // --- VS CODE-STYLE DIRTY/UNSAVED FILES TRACKER ---
   const [dirtyFiles, setDirtyFiles] = useState(new Set());
+  const [isSaving, setIsSaving] = useState(false);
   const currentCodeBufferRef = useRef({});
   const autoSaveTimerRef = useRef(null);
 
@@ -61,6 +87,48 @@ export default function App() {
   const hoverTimerRef = useRef(null);
   const pendingRefactorRef = useRef(null);
   const [cspRejection, setCspRejection] = useState(null);
+  const [refactorEnabled, setRefactorEnabled] = useState(false);
+  const [blastProtectionEnabled, setBlastProtectionEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('neuron-blast-protection') === 'true';
+    } catch {
+      return false; // Default OFF ("fault off")
+    }
+  });
+
+  const handleToggleBlastProtection = useCallback(() => {
+    setBlastProtectionEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('neuron-blast-protection', String(next));
+      } catch {}
+      if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+        workspace.wsRef.current.send(JSON.stringify({
+          event: 'SET_BLAST_PROTECTION',
+          enabled: next
+        }));
+      }
+      workspace.addNotification?.(
+        'info',
+        next ? 'Blast Protection Active' : 'Blast Protection Disabled',
+        next 
+          ? 'Guarding code against rapid multi-file AI mutation bursts.' 
+          : 'Blast protection disabled. AI mutations will apply directly.',
+        'blast'
+      );
+      return next;
+    });
+  }, [workspace.wsRef, workspace.addNotification]);
+
+  // Sync blast protection status over WebSocket
+  useEffect(() => {
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.wsRef.current.send(JSON.stringify({
+        event: 'SET_BLAST_PROTECTION',
+        enabled: blastProtectionEnabled
+      }));
+    }
+  }, [workspace.wsRef, workspace.isGraphLoaded, blastProtectionEnabled]);
 
   // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
@@ -76,69 +144,99 @@ export default function App() {
     let isMounted = true;
 
     const initAuth = async () => {
-      // 🚀 DESKTOP NATIVE APP MODE: Instant local session (Zero external redirects)
-      if (isTauriApp()) {
-        const saved = localStorage.getItem('neuron_desktop_session');
-        const desktopSession = saved ? JSON.parse(saved) : getLocalDesktopSession();
-        localStorage.setItem('neuron_desktop_session', JSON.stringify(desktopSession));
-        if (isMounted) setSession(desktopSession);
-        return;
-      }
+      // 1. Check local storage for persistent user session
+      try {
+        const saved = localStorage.getItem('neuron_user_session');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (isMounted && parsed) {
+            setSession(parsed);
+            return;
+          }
+        }
+      } catch (e) {}
 
-      // 🌐 WEB BROWSER MODE: Supabase Session with fail-safe fallback
+      // 2. Fetch session from local backend if already active
+      try {
+        const resp = await fetch('http://127.0.0.1:8000/auth/session');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (isMounted && data?.session) {
+            setSession(data.session);
+            localStorage.setItem('neuron_user_session', JSON.stringify(data.session));
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // 3. Fallback to Supabase if web session exists
       try {
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (isMounted && existingSession) {
           setSession(existingSession);
         }
-
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-          if (isMounted && currentSession) {
-            setSession(currentSession);
-          }
-        });
-        return () => subscription.unsubscribe();
-      } catch (err) {
-        if (isMounted) setSession(getLocalDesktopSession());
-      }
+      } catch (err) {}
     };
 
     initAuth();
     return () => { isMounted = false; };
   }, []);
 
-  const handleLogin = useCallback(async () => {
-    if (isTauriApp()) {
-      const desktopSession = getLocalDesktopSession();
-      localStorage.setItem('neuron_desktop_session', JSON.stringify(desktopSession));
-      setSession(desktopSession);
-      return;
+  // Sync session if remoteAuthSession updates from backend WebSocket
+  useEffect(() => {
+    if (workspace.remoteAuthSession) {
+      setSession(prev => {
+        if (prev && JSON.stringify(prev) === JSON.stringify(workspace.remoteAuthSession)) {
+          return prev;
+        }
+        return workspace.remoteAuthSession;
+      });
+      try {
+        localStorage.setItem('neuron_user_session', JSON.stringify(workspace.remoteAuthSession));
+      } catch (e) {}
     }
+  }, [workspace.remoteAuthSession]);
 
-    try {
-      const { data, error } = await signInWithGoogleOAuth();
-      if (error) throw error;
-      if (data?.session) setSession(data.session);
-    } catch (err) {
-      console.warn("[AUTH] Fallback to local developer session:", err);
-      setSession(getLocalDesktopSession());
-    }
+  const handleLogin = useCallback(async () => {
+    await triggerGoogleLogin();
   }, []);
 
-  // --- RECENT WORKSPACES RECORDER ---
+  const handleLogout = useCallback(async () => {
+    setSession(null);
+    try {
+      localStorage.removeItem('neuron_user_session');
+      localStorage.removeItem('neuron_desktop_session');
+    } catch (e) {}
+    await triggerLogout();
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      workspace.wsRef.current.send(JSON.stringify({ event: 'LOGOUT' }));
+    }
+    workspace.addNotification?.('info', 'Signed Out', 'You have been signed out.', 'auth');
+  }, [workspace]);
+
+  // --- RECENT WORKSPACES RECORDER & FOLDER SWITCH CLEANUP ---
+  const prevTargetDirRef = useRef(workspace.absTargetDir);
   useEffect(() => {
     if (workspace.absTargetDir) {
+      if (prevTargetDirRef.current && prevTargetDirRef.current !== workspace.absTargetDir) {
+        setCenterView('spatial');
+        setDirtyFiles(new Set());
+        currentCodeBufferRef.current = {};
+      }
+      prevTargetDirRef.current = workspace.absTargetDir;
       try {
         const saved = JSON.parse(localStorage.getItem('neuron_recent_projects') || '[]');
         const updated = [workspace.absTargetDir, ...saved.filter(p => p !== workspace.absTargetDir)].slice(0, 10);
         localStorage.setItem('neuron_recent_projects', JSON.stringify(updated));
       } catch (e) {}
     }
-  }, [workspace.absTargetDir]);
+  }, [workspace.absTargetDir, setCenterView]);
 
   const handleOpenRecentWorkspace = useCallback((folderPath) => {
     if (folderPath && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
-      workspace.setIsFileSyncing(true);
+      if (workspace.setIsFolderLoading) {
+        workspace.setIsFolderLoading(true);
+      }
       workspace.wsRef.current.send(JSON.stringify({
         event: 'OPEN_FOLDER_DIALOG',
         target_dir: folderPath
@@ -146,51 +244,119 @@ export default function App() {
     }
   }, [workspace]);
 
+  // Memoized nodes lookup map for O(1) node resolution
+  const nodesMap = useMemo(() => {
+    const map = new Map();
+    (workspace.nodes || []).forEach(n => {
+      if (n?.id) map.set(n.id, n);
+    });
+    return map;
+  }, [workspace.nodes]);
+
   // --- 🚀 ATOMIC SAVE & AUTO-SAVE CONTROLLER ---
   const activeCodeStr = useMemo(() => {
-    const fileNode = (workspace.nodes || []).find(n => n.id === workspace.currentFile && n.data?.nodeType === 'file');
-    return fileNode ? (fileNode.data?.code || "") : "";
-  }, [workspace.nodes, workspace.currentFile]);
+    if (!workspace.currentFile) return "";
+    const fileNode = nodesMap.get(workspace.currentFile);
+    return (fileNode && fileNode.data?.nodeType === 'file') ? (fileNode.data?.code || "") : "";
+  }, [nodesMap, workspace.currentFile]);
+
+  // --- 🚀 FILE TYPE CLASSIFIER (Images, Unsupported Binaries, Code) ---
+  const fileExt = useMemo(() => {
+    if (!workspace.currentFile) return "";
+    const clean = workspace.currentFile.split('?')[0];
+    const parts = clean.split('.');
+    return parts.length > 1 ? parts.pop().toLowerCase() : "";
+  }, [workspace.currentFile]);
+
+  const isImageFile = useMemo(() => IMAGE_EXTENSIONS.has(fileExt), [fileExt]);
+  const isUnsupportedFile = useMemo(() => UNSUPPORTED_EXTENSIONS.has(fileExt), [fileExt]);
 
   const handleSaveFile = useCallback((fileToSave, codeContent) => {
     const target = fileToSave || workspace.currentFile;
+    if (!target) return;
+
     const content = codeContent !== undefined 
       ? codeContent 
       : (currentCodeBufferRef.current[target] ?? activeCodeStr);
     
-    if (workspace.wsRef.current?.readyState === WebSocket.OPEN && target) {
+    // Clear pending auto-save timer for this file
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      setIsSaving(true);
       workspace.wsRef.current.send(JSON.stringify({
         event: 'SAVE_FILE',
         filename: target,
         content: content
       }));
 
-      // Clear dirty indicator
+      // Optimistically clear dirty indicator
       setDirtyFiles(prev => {
+        if (!prev.has(target)) return prev;
         const next = new Set(prev);
         next.delete(target);
         return next;
       });
+
+      // Reset saving indicator after brief visual feedback
+      setTimeout(() => setIsSaving(false), 500);
     }
   }, [workspace.currentFile, workspace.wsRef, activeCodeStr]);
 
-  const handleCodeChange = useCallback((newCode) => {
-    if (!workspace.currentFile) return;
-    currentCodeBufferRef.current[workspace.currentFile] = newCode;
-    
-    const isAutoSaveActive = settings?.autoSave ?? true;
+  const handleCodeChange = useCallback((newCode, targetFile) => {
+    const file = targetFile || workspace.currentFile;
+    if (!file) return;
 
+    currentCodeBufferRef.current[file] = newCode;
+    
+    // 🚀 ALWAYS immediately mark file as dirty on any code edit (0ms latency)
+    setDirtyFiles(prev => {
+      if (prev.has(file)) return prev;
+      const next = new Set(prev);
+      next.add(file);
+      return next;
+    });
+
+    const isAutoSaveActive = settings?.autoSave ?? true;
     if (isAutoSaveActive) {
-      // Auto-save on debounced idle
+      // Auto-save on debounced idle (750ms)
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(() => {
-        handleSaveFile(workspace.currentFile, newCode);
-      }, 550);
-    } else {
-      // Manual Save Mode: Mark file as dirty (●)
-      setDirtyFiles(prev => new Set(prev).add(workspace.currentFile));
+        handleSaveFile(file, newCode);
+      }, 750);
     }
   }, [workspace.currentFile, settings?.autoSave, handleSaveFile]);
+
+  const handleToggleAutoSave = useCallback(() => {
+    const nextVal = !(settings?.autoSave ?? true);
+    updateSetting('autoSave', nextVal);
+    // If turning autoSave ON and active file is dirty, save immediately
+    if (nextVal && workspace.currentFile && dirtyFiles.has(workspace.currentFile)) {
+      handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
+    }
+  }, [settings?.autoSave, updateSetting, workspace.currentFile, dirtyFiles, handleSaveFile]);
+
+  // Flush in-memory unsaved changes before git commit
+  const handleGitCommit = useCallback(async (message, options) => {
+    if (dirtyFiles.size > 0 && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      dirtyFiles.forEach(file => {
+        const content = currentCodeBufferRef.current[file];
+        if (content !== undefined) {
+          workspace.wsRef.current.send(JSON.stringify({
+            event: 'SAVE_FILE',
+            filename: file,
+            content: content
+          }));
+        }
+      });
+      setDirtyFiles(new Set());
+      await new Promise(r => setTimeout(r, 80));
+    }
+    return workspace.commitGitChanges(message, options);
+  }, [dirtyFiles, workspace]);
 
   // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
   const adjLists = useMemo(() => {
@@ -291,6 +457,16 @@ export default function App() {
           workspace.wsRef.current.send(JSON.stringify({ event: 'REFACTOR_UNDO' }));
         }
       }
+      // Fullscreen Toggle (F11)
+      if (e.key === 'F11') {
+        e.preventDefault();
+        try {
+          import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+            const win = getCurrentWindow();
+            win.isFullscreen().then(isFull => win.setFullscreen(!isFull));
+          });
+        } catch (err) {}
+      }
     };
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
@@ -299,18 +475,26 @@ export default function App() {
   // --- WEBSOCKET EVENT LISTENER ---
   useEffect(() => {
     const ws = workspace.wsRef.current;
-    if (!ws) return;
+    if (!ws || !workspace.isWsConnected) return;
 
     const handleWsEvents = (event) => {
       try {
         const data = JSON.parse(event.data);
         
         if (data.event === 'SAVE_FILE_SUCCESS') {
+          setIsSaving(false);
           setDirtyFiles(prev => {
-            const next = new Set(prev);
-            if (data.filename) next.delete(data.filename);
-            return next;
+            if (data.filename && prev.has(data.filename)) {
+              const next = new Set(prev);
+              next.delete(data.filename);
+              return next;
+            }
+            return prev;
           });
+        }
+        else if (data.event === 'SAVE_FILE_ERROR') {
+          setIsSaving(false);
+          console.error(`[SAVE ERROR] Failed saving ${data.filename}:`, data.reason);
         }
         else if (data.event === 'LLM_SUMMARY_READY') {
           if (hoveredNodeId === data.node_id) {
@@ -344,10 +528,14 @@ export default function App() {
 
     ws.addEventListener('message', handleWsEvents);
     return () => ws.removeEventListener('message', handleWsEvents);
-  }, [workspace.wsRef, hoveredNodeId, workspace]);
+  }, [workspace.isWsConnected, hoveredNodeId]);
 
   // --- FUNCTION-TO-FILE AST TRANSPLANT DISPATCHER ---
   const handleRefactorDrop = useCallback(({ symbolName, sourceFile, destFile, nodeId, originalPos }) => {
+    if (!refactorEnabled) {
+      workspace.addNotification?.('info', 'Refactor Disabled', 'Toggle Refactor ON in the bottom status bar to move functions or merge files.', 'ai');
+      return;
+    }
     pendingRefactorRef.current = { symbolName, sourceFile, destFile, nodeId, originalPos };
     
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
@@ -358,10 +546,14 @@ export default function App() {
         dest_file: destFile
       }));
     }
-  }, [workspace.wsRef]);
+  }, [workspace.wsRef, refactorEnabled, workspace.addNotification]);
 
   // --- FILE-TO-FILE FUSION DISPATCHER ---
   const handleFileMergeDrop = useCallback(({ sourceFile, destFile }) => {
+    if (!refactorEnabled) {
+      workspace.addNotification?.('info', 'Refactor Disabled', 'Toggle Refactor ON in the bottom status bar to move functions or merge files.', 'ai');
+      return;
+    }
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
       workspace.wsRef.current.send(JSON.stringify({
         event: 'REFACTOR_FILE_MERGE',
@@ -369,7 +561,7 @@ export default function App() {
         dest_file: destFile
       }));
     }
-  }, [workspace.wsRef]);
+  }, [workspace.wsRef, refactorEnabled, workspace.addNotification]);
 
   // --- 🚀 3D CAMERA WARP DISPATCHER ---
   const handleWarpToNode = useCallback((nodeId) => {
@@ -384,14 +576,23 @@ export default function App() {
 
   // 🚀 UNIVERSAL POLYGLOT CODE RUNNER (C++, C, Java, Python, JS)
   const handleRunCode = useCallback(async () => {
+    if (!workspace.currentFile || isImageFile || isUnsupportedFile) return;
+
+    // If active file is dirty, save it before executing so latest changes run
+    if (workspace.currentFile && dirtyFiles.has(workspace.currentFile)) {
+      handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
+    }
     workspace.setActiveSessionId('output');
     const activeExt = workspace.currentFile?.split('.').pop()?.toLowerCase();
 
     // 1. Primary: Run via Backend Compiler Engine with STDIN
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
-      workspace.setTerminalLogs(prev => [
-        ...prev, 
-        { text: `Compiling & executing ${workspace.currentFile}...`, isSystem: true }
+      const isCompiled = ['cpp', 'cc', 'cxx', 'c', 'rs'].includes(activeExt);
+      const actionText = isCompiled ? 'Compiling & Running' : 'Running';
+
+      workspace.addNotification?.('info', actionText, `${workspace.currentFile}`, 'runtime');
+      workspace.setTerminalLogs([
+        { text: `[${actionText}] ${workspace.currentFile}`, isSystem: true }
       ]);
       workspace.wsRef.current.send(JSON.stringify({
         event: 'RUN_CODE',
@@ -403,7 +604,8 @@ export default function App() {
 
     // 2. Web browser fallback for Python via Pyodide WASM
     if (activeExt === 'py' && isCompilerReady && window.pyodide) {
-      workspace.setTerminalLogs([{ text: `Executing ${workspace.currentFile} in browser WASM...`, isSystem: true }]);
+      workspace.addNotification?.('info', 'Running', `${workspace.currentFile} (Browser WASM)`, 'runtime');
+      workspace.setTerminalLogs([{ text: `[Running] ${workspace.currentFile} (Browser WASM)`, isSystem: true }]);
       try {
         window.pyodide.setStdin({ 
           stdin: () => { 
@@ -412,24 +614,52 @@ export default function App() {
           }
         });
         await window.pyodide.runPythonAsync(activeCodeStr);
-        workspace.setTerminalLogs(prev => [...prev, { text: `Process exited with code 0`, isSystem: true }]);
+        workspace.setTerminalLogs(prev => [...prev, { text: `[Done] exited with code 0`, isSystem: true }]);
+        workspace.addNotification?.('success', 'Execution Succeeded', `${workspace.currentFile} exited with code 0`, 'runtime');
       } catch (error) { 
         workspace.setTerminalLogs(prev => [...prev, { text: error.message, isError: true }]); 
+        workspace.addNotification?.('error', 'Execution Error', error.message, 'runtime');
       }
     }
-  }, [workspace, isCompilerReady, stdin, activeCodeStr]);
+  }, [workspace, isCompilerReady, stdin, activeCodeStr, dirtyFiles, handleSaveFile, isImageFile, isUnsupportedFile]);
 
   const handleSwitchFile = useCallback((filename) => { 
+    if (!filename) return;
+    setCenterView('editor');
+    if ((settings?.autoSave ?? true) && workspace.currentFile && workspace.currentFile !== filename && dirtyFiles.has(workspace.currentFile)) {
+      handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
+    }
+    // 🚀 0ms Optimistic UI updates: instantly select tab, update path & breadcrumbs
+    workspace.setCurrentFile(filename);
+    workspace.setOpenFiles(prev => prev.includes(filename) ? prev : [...prev, filename]);
     if (filename !== workspace.currentFile) { 
       workspace.setIsFileSyncing(true); 
       workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); 
     }
-  }, [workspace]);
+  }, [workspace, settings?.autoSave, dirtyFiles, handleSaveFile, setCenterView]);
+
+  const handleCloseTab = useCallback((fileToClose, e) => {
+    if (e) e.stopPropagation();
+    setDirtyFiles(prev => {
+      if (!prev.has(fileToClose)) return prev;
+      const next = new Set(prev);
+      next.delete(fileToClose);
+      return next;
+    });
+    delete currentCodeBufferRef.current[fileToClose];
+    if (workspace.closeFile) {
+      workspace.closeFile(fileToClose, (newActive) => {
+        if (!newActive) {
+          setCenterView('spatial');
+        }
+      });
+    }
+  }, [workspace, setCenterView]);
 
   const handleOpenFolder = useCallback(() => { 
-    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+    if (workspace.wsRef.current?.readyState === WebSocket.OPEN) { 
       workspace.wsRef.current.send(JSON.stringify({ event: 'OPEN_FOLDER_DIALOG' })); 
-    }
+    } 
   }, [workspace]);
 
   const handleCreateItem = useCallback((name, type) => { 
@@ -445,13 +675,12 @@ export default function App() {
   }, [workspace]);
 
   const onDoubleClickNode = useCallback((filePath, line) => {
-    if (filePath && filePath !== workspace.currentFile) {
-      workspace.setIsFileSyncing(true);
-      workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: filePath }));
+    if (filePath) {
+      handleSwitchFile(filePath);
     }
     setEditorFocusLine(line || 1);
     setCenterView('editor');
-  }, [workspace, setCenterView]);
+  }, [handleSwitchFile, setCenterView]);
 
   // STABLE WEBGPU HOVER ROUTER
   const handleNodeHover = useCallback((isHovering, id) => {
@@ -462,7 +691,7 @@ export default function App() {
     if (isHovering && id) {
       hoverTimerRef.current = setTimeout(() => {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
-          const targetNode = (workspace.nodes || []).find(n => n.id === id);
+          const targetNode = nodesMap.get(id);
           if (targetNode?.data?.code) {
             workspace.setAiInsight({
               nodeId: id,
@@ -477,7 +706,7 @@ export default function App() {
         }
       }, 550);
     }
-  }, [workspace.wsRef, workspace.nodes, workspace]);
+  }, [workspace.wsRef, nodesMap, workspace]);
 
   // --- INIT PYODIDE ENGINE ---
   useEffect(() => { 
@@ -487,7 +716,7 @@ export default function App() {
     ).then(() => setIsCompilerReady(true)); 
   }, [workspace]);
 
-  if (!session || !workspace.isGraphLoaded || !isCompilerReady) {
+  if (!workspace.isGraphLoaded || !isCompilerReady || workspace.isFolderLoading) {
     return (
       <SplashScreen 
         session={session} 
@@ -511,6 +740,7 @@ export default function App() {
         onRunCode={handleRunCode} 
         onOpenSettings={() => setIsSettingsOpen(true)} 
         onWarpToNode={handleWarpToNode}
+        onSwitchFile={handleSwitchFile}
       />
       
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSetting={updateSetting} />
@@ -521,7 +751,7 @@ export default function App() {
         onOpenRecent={handleOpenRecentWorkspace}
         onSave={() => handleSaveFile()}
         autoSave={settings?.autoSave ?? true}
-        onToggleAutoSave={() => updateSetting('autoSave', !(settings?.autoSave ?? true))}
+        onToggleAutoSave={handleToggleAutoSave}
         onCreateFile={() => { const name = prompt("Enter new file name:"); if (name) handleCreateItem(name, 'file'); }} 
         onOpenSettings={() => setIsSettingsOpen(true)} 
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} 
@@ -530,35 +760,76 @@ export default function App() {
       />
       
       <div className="flex flex-row flex-grow overflow-hidden">
-        <ActivityBar layout={layout} setLayout={setLayout} onOpenSettings={() => setIsSettingsOpen(true)} onLogout={() => supabase.auth.signOut()} />
+        <ActivityBar 
+          layout={layout} 
+          setLayout={setLayout} 
+          activeSidebarView={activeSidebarView}
+          setActiveSidebarView={setActiveSidebarView}
+          gitChangeCount={(() => {
+            const staged = workspace.gitDetailedStatus?.staged || [];
+            const unstaged = workspace.gitDetailedStatus?.unstaged || [];
+            const knownPaths = new Set([...staged.map(f => f.path), ...unstaged.map(f => f.path)]);
+            let extraDirty = 0;
+            dirtyFiles.forEach(df => {
+              if (!knownPaths.has(df)) extraDirty++;
+            });
+            const total = staged.length + unstaged.length + extraDirty;
+            return total > 0 ? total : Object.values(workspace.gitStatuses || {}).filter(s => s === 'M' || s === 'U' || s === 'A' || s === 'D').length;
+          })()}
+          onOpenSettings={() => setIsSettingsOpen(true)} 
+          session={session}
+          onLogin={handleLogin}
+          onLogout={handleLogout} 
+        />
         <Group orientation="horizontal" className="flex-grow overflow-hidden" autoSaveId="neuron-layout-v12">
           {layout.sidebar && (
             <>
               <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#191a1b]">
-                <Sidebar 
-                  items={workspace.items} 
-                  currentFile={workspace.currentFile} 
-                  absTargetDir={workspace.absTargetDir} 
-                  gitStatuses={workspace.gitStatuses} 
-                  onSwitchFile={handleSwitchFile} 
-                  onCreateItem={handleCreateItem} 
-                  onDeleteFile={handleDeleteFile} 
-                  onRunFile={handleRunCode} 
-                  onRenameItem={(item) => { 
-                    const oldPath = item.old_path || item.path;
-                    const newPath = item.new_path || item.newPath;
-                    if (oldPath && newPath && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
-                      workspace.wsRef.current.send(JSON.stringify({ 
-                        event: 'RENAME_ITEM', 
-                        old_path: oldPath, 
-                        new_path: newPath 
-                      }));
-                    }
-                  }} 
-                  onMoveItem={(src, dest) => workspace.wsRef.current?.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: src, dest_folder: dest }))} 
-                  onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))} 
-                  onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} 
-                />
+                {activeSidebarView === 'git' ? (
+                  <SourceControlPanel 
+                    isGitRepo={workspace.isGitRepo}
+                    gitBranch={workspace.gitBranch}
+                    repoName={workspace.repoName}
+                    gitDetailedStatus={workspace.gitDetailedStatus}
+                    gitGraph={workspace.gitGraph}
+                    dirtyFiles={dirtyFiles}
+                    onSwitchFile={handleSwitchFile}
+                    onCommit={handleGitCommit}
+                    onPush={workspace.pushGitChanges}
+                    onStageFile={workspace.stageGitFile}
+                    onUnstageFile={workspace.unstageGitFile}
+                    onDiscardFile={workspace.discardGitFile}
+                    onStageAll={workspace.stageAllGit}
+                    onDiscardAll={workspace.discardAllGit}
+                    onRefresh={workspace.refreshGitGraph}
+                  />
+                ) : (
+                  <Sidebar 
+                    items={workspace.items} 
+                    currentFile={workspace.currentFile} 
+                    absTargetDir={workspace.absTargetDir} 
+                    gitStatuses={workspace.gitStatuses} 
+                    dirtyFiles={dirtyFiles}
+                    onSwitchFile={handleSwitchFile} 
+                    onCreateItem={handleCreateItem} 
+                    onDeleteFile={handleDeleteFile} 
+                    onRunFile={handleRunCode} 
+                    onRenameItem={(item) => { 
+                      const oldPath = item.old_path || item.path;
+                      const newPath = item.new_path || item.newPath;
+                      if (oldPath && newPath && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+                        workspace.wsRef.current.send(JSON.stringify({ 
+                          event: 'RENAME_ITEM', 
+                          old_path: oldPath, 
+                          new_path: newPath 
+                        }));
+                      }
+                    }} 
+                    onMoveItem={(src, dest) => workspace.wsRef.current?.send(JSON.stringify({ event: 'MOVE_ITEM', src_path: src, dest_folder: dest }))} 
+                    onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))} 
+                    onRefresh={() => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile }))} 
+                  />
+                )}
               </Panel>
               {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (Sidebar) */}
               <Separator className="w-[1px] bg-[#242628] hover:bg-blue-500 cursor-col-resize z-50 flex justify-center transition-colors outline-none" />
@@ -577,45 +848,69 @@ export default function App() {
                   {/* Spatial Map Tab */}
                   <button 
                     onClick={() => setCenterView('spatial')} 
-                    className={`h-full px-3 flex items-center gap-1.5 text-xs font-mono border-r border-[#242628] transition-colors shrink-0 cursor-pointer ${
+                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] font-mono font-medium border-r border-[#242628] transition-colors shrink-0 cursor-pointer ${
                       centerView === 'spatial' 
                         ? 'bg-[#121314] text-blue-400 border-t-2 border-t-blue-500 font-semibold' 
                         : 'bg-[#191a1b] text-slate-400 hover:bg-[#202224] hover:text-slate-200'
                     }`}
                   >
-                    <Network size={13} /> <span>Spatial Map</span>
+                    <Network size={12} /> <span>Spatial Map</span>
                   </button>
 
                   {/* Dynamic Multi-File Tabs (With VS Code Dirty Dot Indicator ●) */}
                   {(workspace.openFiles || []).map(file => {
-                    const gStat = (workspace.gitStatuses || {})[file];
+                    const isDirty = dirtyFiles.has(file);
+                    const rawGStat = (workspace.gitStatuses || {})[file];
+                    const gStat = (isDirty && (!rawGStat || rawGStat === 'I')) ? 'M' : rawGStat;
                     const isModified = gStat === 'M';
                     const isUntracked = gStat === 'U';
+                    const isAdded = gStat === 'A';
+                    const isDeleted = gStat === 'D';
                     const isActive = centerView === 'editor' && workspace.currentFile === file;
-                    const isDirty = dirtyFiles.has(file);
+                    
+                    let tabTextColor = "text-slate-400";
+                    let iconColor = "text-slate-500";
+                    let badgeColor = "";
+
+                    if (isDirty) {
+                      tabTextColor = isActive ? "italic text-amber-300 font-semibold" : "italic text-amber-300";
+                      iconColor = "text-amber-400";
+                      badgeColor = "text-amber-400";
+                    } else if (isModified) {
+                      tabTextColor = isActive ? "text-amber-300 font-semibold" : "text-amber-400";
+                      iconColor = "text-amber-400";
+                      badgeColor = "text-amber-400";
+                    } else if (isUntracked || isAdded) {
+                      tabTextColor = isActive ? "text-emerald-300 font-semibold" : "text-emerald-400";
+                      iconColor = "text-emerald-400";
+                      badgeColor = "text-emerald-400";
+                    } else if (isDeleted) {
+                      tabTextColor = "text-red-400 line-through";
+                      iconColor = "text-red-400";
+                      badgeColor = "text-red-400";
+                    } else if (isActive) {
+                      tabTextColor = "text-white";
+                      iconColor = "text-blue-400";
+                    }
                     
                     return (
                       <div 
                         key={file} 
-                        onClick={() => { setCenterView('editor'); handleSwitchFile(file); }} 
-                        className={`h-full px-3 flex items-center gap-2 text-xs font-mono border-r border-[#242628] transition-colors cursor-pointer shrink-0 group ${
+                        onClick={() => handleSwitchFile(file)} 
+                        className={`h-full px-3 flex items-center gap-2 text-[11px] font-mono font-medium border-r border-[#242628] transition-colors cursor-pointer shrink-0 group ${
                           isActive 
                             ? 'bg-[#121314] text-white border-t-2 border-t-blue-500 font-semibold' 
                             : 'bg-[#191a1b] text-slate-400 hover:bg-[#202224] hover:text-slate-200'
                         }`}
                       >
-                        <FileCode2 size={13} className={isModified ? "text-blue-400" : isUntracked ? "text-emerald-400" : "text-slate-500"} /> 
+                        <FileCode2 size={12} className={iconColor} /> 
                         
-                        <span className={isActive ? "text-white" : isModified ? "text-blue-300" : isUntracked ? "text-emerald-300" : "text-slate-400"}>
+                        <span className={tabTextColor}>
                           {file.split('/').pop()}
                         </span>
                         
-                        {gStat && (
-                          <span className={`text-[9px] px-1 py-0.2 rounded font-bold ${
-                            isModified 
-                              ? "text-blue-300 bg-blue-950/40 border border-blue-800/40" 
-                              : "text-emerald-300 bg-emerald-950/40 border border-emerald-800/40"
-                          }`}>
+                        {gStat && gStat !== 'I' && (
+                          <span className={`text-[10px] font-mono font-bold ${badgeColor} pr-0.5`}>
                             {gStat}
                           </span>
                         )}
@@ -626,26 +921,17 @@ export default function App() {
                         
                         {/* 🚀 VS CODE-STYLE CLOSE BUTTON OR DIRTY CIRCLE (●) */}
                         <button 
-                          onClick={(e) => { 
-                            e.stopPropagation(); 
-                            if (workspace.closeFile) workspace.closeFile(file); 
-                            if ((workspace.openFiles || []).length === 1) setCenterView('spatial'); 
-                            setDirtyFiles(prev => {
-                              const next = new Set(prev);
-                              next.delete(file);
-                              return next;
-                            });
-                          }} 
-                          className="rounded p-0.5 ml-0.5 transition-all text-slate-400 hover:text-slate-200 flex items-center justify-center relative w-4 h-4"
+                          onClick={(e) => handleCloseTab(file, e)} 
+                          className="rounded p-0.5 ml-1 transition-all text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center relative w-4 h-4 group/btn"
                           title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
                         >
                           {isDirty ? (
                             <>
-                              <span className="w-2 h-2 rounded-full bg-slate-300 group-hover:opacity-0 transition-opacity" />
-                              <X size={11} className="opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 m-auto" />
+                              <span className="w-2 h-2 rounded-full bg-amber-400 group-hover/btn:opacity-0 transition-opacity" />
+                              <X size={12} className="opacity-0 group-hover/btn:opacity-100 transition-opacity absolute inset-0 m-auto text-slate-300 hover:text-white" />
                             </>
                           ) : (
-                            <X size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <X size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-white" />
                           )}
                         </button>
                       </div>
@@ -653,15 +939,17 @@ export default function App() {
                   })}
 
                   {/* 🚀 HOLLOW WHITE TRIANGLE RUN BUTTON (F5) */}
-                  <div className="ml-auto flex items-center pr-2.5 shrink-0">
-                    <button 
-                      onClick={handleRunCode} 
-                      className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-white/10 text-white/80 hover:text-white transition-all cursor-pointer"
-                      title="Run Active File (F5)"
-                    >
-                      <Play size={13} strokeWidth={1.8} />
-                    </button>
-                  </div>
+                  {!isImageFile && !isUnsupportedFile && (
+                    <div className="ml-auto flex items-center pr-2.5 shrink-0">
+                      <button 
+                        onClick={handleRunCode} 
+                        className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-white/10 text-white/80 hover:text-white transition-all cursor-pointer"
+                        title="Run Active File (F5)"
+                      >
+                        <Play size={13} strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  )}
 
                 </div>
 
@@ -676,6 +964,7 @@ export default function App() {
                         blastRadius={workspace.blastRadius}
                         cspRejectionEvent={cspRejection}
                         warpTargetNodeId={warpTargetNodeId}
+                        refactorEnabled={refactorEnabled}
                         onDragStart={onDragStart}
                         onDragMove={onDragMove}
                         onDragEnd={onDragEnd}
@@ -735,12 +1024,33 @@ export default function App() {
                       )}
 
                     </div>
+                  ) : isImageFile ? (
+                    <ImageViewer 
+                      filename={workspace.currentFile} 
+                      isSyncing={workspace.isFileSyncing}
+                    />
+                  ) : isUnsupportedFile ? (
+                    <UnsupportedFileViewer 
+                      filename={workspace.currentFile} 
+                      onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))}
+                    />
+                  ) : !workspace.currentFile ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 font-mono text-xs select-none">
+                      <p>No file open</p>
+                      <button 
+                        onClick={() => setCenterView('spatial')} 
+                        className="mt-3 px-3 py-1.5 rounded bg-[#1e2022] hover:bg-[#25282a] text-slate-300 hover:text-white transition-colors border border-white/5 cursor-pointer"
+                      >
+                        Switch to Spatial Map
+                      </button>
+                    </div>
                   ) : (
                     <CodeEditor 
                       filename={workspace.currentFile} 
                       initialCode={activeCodeStr} 
                       settings={settings} 
                       focusLine={editorFocusLine} 
+                      isSyncing={workspace.isFileSyncing}
                       onCodeChange={handleCodeChange}
                       onSave={() => handleSaveFile()}
                       onClearFocus={() => setEditorFocusLine(null)} 
@@ -795,17 +1105,27 @@ export default function App() {
       {/* 🚀 BOTTOM STATUS BAR (#191a1b Secondary Theme) */}
       <StatusBar 
         activeFile={workspace.currentFile} 
-        lineCount={(activeCodeStr?.split("\n").length || 0).toString()} 
-        wordCount={(activeCodeStr?.trim().split(/\s+/).length || 0).toString()} 
+        lineCount={isImageFile || isUnsupportedFile ? "" : (activeCodeStr?.split("\n").length || 0).toString()} 
+        wordCount={isImageFile || isUnsupportedFile ? "" : (activeCodeStr?.trim().split(/\s+/).length || 0).toString()} 
         language={workspace.currentFile?.split('.').pop() || 'plaintext'} 
         nodes={workspace.nodes || []}
         edges={workspace.edges || []}
         gitStatuses={workspace.gitStatuses || {}}
         gitBranch={workspace.gitBranch || "main"}
-        isGitRepo={workspace.isGitRepo ?? true}
+        isGitRepo={Boolean(workspace.isGitRepo)}
         repoName={workspace.repoName || ""}
         absTargetDir={workspace.absTargetDir || ""}
+        isDirty={dirtyFiles.has(workspace.currentFile)}
+        isSaving={isSaving}
+        refactorEnabled={refactorEnabled}
+        onToggleRefactor={() => setRefactorEnabled(prev => !prev)}
+        blastProtectionEnabled={blastProtectionEnabled}
+        onToggleBlastProtection={handleToggleBlastProtection}
         onCenterSpatialMap={() => setCenterView('spatial')}
+        notifications={workspace.notifications}
+        onClearNotifications={workspace.clearNotifications}
+        onDismissNotification={workspace.dismissNotification}
+        onMarkAllNotificationsRead={workspace.markAllNotificationsRead}
       />
     </div>
   );

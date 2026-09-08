@@ -14,7 +14,8 @@ export default function CommandPalette({
   workspace, 
   onRunCode, 
   onOpenSettings, 
-  onWarpToNode 
+  onWarpToNode,
+  onSwitchFile
 }) {
   const [semanticResults, setSemanticResults] = useState([]);
   const [isSearchingVector, setIsSearchingVector] = useState(false);
@@ -161,22 +162,30 @@ export default function CommandPalette({
         if (onWarpToNode) onWarpToNode(item.id);
       } else {
         // 🚀 B. Open Directly in Code Editor at Line
-        if (item.filePath && item.filePath !== workspace.currentFile) {
-          workspace.setIsFileSyncing(true);
+        if (onSwitchFile && item.filePath) {
+          onSwitchFile(item.filePath);
+        } else {
+          if (item.filePath && item.filePath !== workspace.currentFile) {
+            workspace.setIsFileSyncing?.(true);
+            workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: item.filePath }));
+          }
+          if (workspace.setCenterView) workspace.setCenterView('editor');
+        }
+      }
+    } else if (item.type === 'file') {
+      if (onSwitchFile && item.filePath) {
+        onSwitchFile(item.filePath);
+      } else {
+        if (item.filePath !== workspace.currentFile) {
+          workspace.setIsFileSyncing?.(true);
           workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: item.filePath }));
         }
         if (workspace.setCenterView) workspace.setCenterView('editor');
       }
-    } else if (item.type === 'file') {
-      if (item.filePath !== workspace.currentFile) {
-        workspace.setIsFileSyncing(true);
-        workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: item.filePath }));
-      }
-      if (workspace.setCenterView) workspace.setCenterView('editor');
     } else if (item.type === 'command') {
       if (item.action) item.action();
     }
-  }, [onClose, onWarpToNode, workspace]);
+  }, [onClose, onWarpToNode, workspace, onSwitchFile]);
 
   // 5. KEYBOARD NAVIGATION HANDLER (Enter = Warp, Shift+Enter = Editor)
   const handleKeyDown = (e) => {

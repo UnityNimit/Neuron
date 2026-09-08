@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { 
   Bot, Sparkles, RotateCcw, CheckCircle2, ChevronDown, 
   ChevronUp, X, Zap, Network, FileCode2, AlertTriangle, 
-  Plus, Minus, RefreshCw, ExternalLink 
+  Plus, Minus, RefreshCw, ExternalLink, ShieldAlert 
 } from 'lucide-react';
 
 export default function AgentSupervisorHUD({ 
@@ -17,7 +17,7 @@ export default function AgentSupervisorHUD({
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
 
-  if (!agentBatch || agentBatch.isRolledBack) return null;
+  if (!agentBatch || (agentBatch.isRolledBack && !agentBatch.blastProtectionBlocked)) return null;
 
   const { 
     batchId, 
@@ -41,26 +41,36 @@ export default function AgentSupervisorHUD({
           
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-cyan-950/80 border border-cyan-700/50 flex items-center justify-center text-cyan-400 shrink-0">
-              <Bot size={15} className="animate-pulse" />
+              {agentBatch.blastProtectionBlocked ? (
+                <ShieldAlert size={15} className="text-cyan-400 animate-pulse" />
+              ) : (
+                <Bot size={15} className="animate-pulse" />
+              )}
             </div>
             
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono font-bold text-slate-100 uppercase tracking-wider">
-                  AI Agent Mutation Burst
+                  {agentBatch.blastProtectionBlocked ? "Blast Protection Intercepted" : "AI Agent Mutation Burst"}
                 </span>
                 <span className="text-[9px] font-mono font-bold bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-800/40">
-                  {modifiedFiles.length} Files Modified
+                  {agentBatch.blastProtectionBlocked ? "Codebase Preserved" : `${modifiedFiles.length} Files Modified`}
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
-                <Network size={10} className="text-purple-400" /> 
-                <span>Blast Radius: <strong className="text-purple-300">{blastRadiusNodeIds.length}</strong> downstream nodes</span>
-                {affectedApiRoutes.length > 0 && (
+                {agentBatch.blastProtectionBlocked ? (
+                  <span>Neutralized instant AI burst ({modifiedFiles.length} files, {blastRadiusNodeIds.length} blast nodes).</span>
+                ) : (
                   <>
-                    <span>·</span>
-                    <Zap size={10} className="text-cyan-400" />
-                    <span className="text-cyan-300">{affectedApiRoutes.length} API Routes Impacted</span>
+                    <Network size={10} className="text-purple-400" /> 
+                    <span>Blast Radius: <strong className="text-purple-300">{blastRadiusNodeIds.length}</strong> downstream nodes</span>
+                    {affectedApiRoutes.length > 0 && (
+                      <>
+                        <span>·</span>
+                        <Zap size={10} className="text-cyan-400" />
+                        <span className="text-cyan-300">{affectedApiRoutes.length} API Routes Impacted</span>
+                      </>
+                    )}
                   </>
                 )}
               </span>
@@ -178,23 +188,45 @@ export default function AgentSupervisorHUD({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* 1-Click Instant Rollback Button */}
-            <button 
-              onClick={() => onRollback && onRollback(batchId)}
-              className="px-3 py-1.5 bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 hover:text-red-100 rounded-lg transition-all flex items-center gap-1.5 text-[11px] shadow-[0_0_12px_rgba(239,68,68,0.2)]"
-            >
-              <RotateCcw size={12} />
-              <span>Rollback Batch</span>
-            </button>
+            {agentBatch.blastProtectionBlocked ? (
+              <>
+                <button 
+                  onClick={onDismiss}
+                  className="px-3 py-1.5 bg-[#202020] hover:bg-[#2a2a2a] border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-all flex items-center gap-1.5 text-[11px] cursor-pointer"
+                >
+                  <span>Keep Preserved</span>
+                </button>
 
-            {/* 1-Click Approve / Lock-in Button */}
-            <button 
-              onClick={() => onApprove && onApprove(batchId)}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all flex items-center gap-1.5 text-[11px] font-semibold shadow-[0_0_15px_rgba(16,185,129,0.3)]"
-            >
-              <CheckCircle2 size={12} />
-              <span>Approve Changes</span>
-            </button>
+                <button 
+                  onClick={() => onApprove && onApprove(batchId)}
+                  className="px-3.5 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg transition-all flex items-center gap-1.5 text-[11px] font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer"
+                  title="Override Blast Protection and apply these changes to disk"
+                >
+                  <CheckCircle2 size={12} />
+                  <span>Restore Changes</span>
+                </button>
+              </>
+            ) : (
+              <>
+                {/* 1-Click Instant Rollback Button */}
+                <button 
+                  onClick={() => onRollback && onRollback(batchId)}
+                  className="px-3 py-1.5 bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 hover:text-red-100 rounded-lg transition-all flex items-center gap-1.5 text-[11px] shadow-[0_0_12px_rgba(239,68,68,0.2)] cursor-pointer"
+                >
+                  <RotateCcw size={12} />
+                  <span>Rollback Batch</span>
+                </button>
+
+                {/* 1-Click Approve / Lock-in Button */}
+                <button 
+                  onClick={() => onApprove && onApprove(batchId)}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all flex items-center gap-1.5 text-[11px] font-semibold shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer"
+                >
+                  <CheckCircle2 size={12} />
+                  <span>Approve Changes</span>
+                </button>
+              </>
+            )}
           </div>
 
         </div>

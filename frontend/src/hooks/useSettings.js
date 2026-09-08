@@ -7,6 +7,7 @@ const defaultSettings = {
   lineNumbers: 'on',
   minimap: false,
   formatOnPaste: true,
+  autoSave: true,
 };
 
 export function useSettings() {

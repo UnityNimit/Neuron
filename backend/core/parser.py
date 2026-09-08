@@ -52,15 +52,52 @@ try:
 except ImportError:
     pass
 
+# Persistent Global Parsers (instantiated once, reused across calls)
+GLOBAL_PARSERS: Dict[str, Optional[Parser]] = {
+    "py": Parser(PY_LANGUAGE),
+    "js": Parser(JS_LANGUAGE) if JS_LANGUAGE else None,
+    "ts": Parser(TS_LANGUAGE) if TS_LANGUAGE else None,
+    "tsx": Parser(TSX_LANGUAGE) if TSX_LANGUAGE else None,
+    "c": Parser(C_LANGUAGE) if C_LANGUAGE else None,
+    "cpp": Parser(CPP_LANGUAGE) if CPP_LANGUAGE else None,
+    "java": Parser(JAVA_LANGUAGE) if JAVA_LANGUAGE else None,
+}
+
+# Incremental AST Cache: (rel_path, abs_target) -> (mtime, file_size, cached_ast_data)
+_AST_CACHE: Dict[Tuple[str, str], Tuple[float, int, dict]] = {}
+
 # STRICT SOURCE CODE WHITELIST: Includes C, C++, Java, Python, JS, TS, Web
 VALID_SOURCE_EXTENSIONS: Set[str] = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
     ".java",
-    ".json", ".css", ".html", ".md", ".txt", ".toml", ".yaml", ".yml"
+    ".json", ".css", ".html", ".md", ".txt", ".toml", ".yaml", ".yml",
+    ".bat", ".cmd", ".sh", ".bash", ".sql", ".env", ".ini", ".cfg"
 }
 
 MAX_FILE_SIZE_BYTES = 1_000_000  # 1 MB Safety Ceiling
+
+# Fast AST Decision Triggers (reused across all AST traversals without re-allocating sets)
+DECISION_TRIGGERS: Set[str] = {
+    'if_statement', 'for_statement', 'while_statement', 'except_clause',
+    'with_item', 'match_statement', 'list_comprehension', 'conditional_expression',
+    'for_in_statement', 'for_range_loop', 'catch_clause', 'switch_case', 'case_statement',
+    'do_statement', 'ternary_expression', 'try_statement'
+}
+
+
+def calculate_complexity(node: Optional[Node]) -> int:
+    """Iterative AST complexity counter using constant-time decision lookup."""
+    if not node:
+        return 0
+    score = 0
+    stack = [node]
+    while stack:
+        curr = stack.pop()
+        if curr.type in DECISION_TRIGGERS:
+            score += 1
+        stack.extend(curr.children)
+    return score
 
 
 def clean_text(text: str) -> str:
@@ -179,14 +216,14 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
     backend_api_registry: Dict[str, str] = {}
     frontend_network_calls: List[dict] = []
 
-    # Parsers Initialization
-    py_parser = Parser(PY_LANGUAGE)
-    js_parser = Parser(JS_LANGUAGE) if JS_LANGUAGE else None
-    ts_parser = Parser(TS_LANGUAGE) if TS_LANGUAGE else None
-    tsx_parser = Parser(TSX_LANGUAGE) if TSX_LANGUAGE else None
-    c_parser = Parser(C_LANGUAGE) if C_LANGUAGE else None
-    cpp_parser = Parser(CPP_LANGUAGE) if CPP_LANGUAGE else None
-    java_parser = Parser(JAVA_LANGUAGE) if JAVA_LANGUAGE else None
+    # Parsers Reference (reusing persistent global instances)
+    py_parser = GLOBAL_PARSERS.get("py")
+    js_parser = GLOBAL_PARSERS.get("js")
+    ts_parser = GLOBAL_PARSERS.get("ts")
+    tsx_parser = GLOBAL_PARSERS.get("tsx")
+    c_parser = GLOBAL_PARSERS.get("c")
+    cpp_parser = GLOBAL_PARSERS.get("cpp")
+    java_parser = GLOBAL_PARSERS.get("java")
 
     # -------------------------------------------------------------------------
     # 2. INGEST SOURCE FILES (Python, JS, TS, C, C++, Java, Text)
@@ -201,7 +238,10 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
 
             full_path = os.path.join(target_dir, rel_path)
             try:
-                if os.path.getsize(full_path) > MAX_FILE_SIZE_BYTES:
+                st = os.stat(full_path)
+                file_size = st.st_size
+                mtime = st.st_mtime
+                if file_size > MAX_FILE_SIZE_BYTES:
                     continue
             except Exception:
                 continue
@@ -211,19 +251,32 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
             file_exports[rel_path] = {}
             file_imports[rel_path] = {}
 
+            # 🚀 HIGH-SPEED INCREMENTAL AST CACHE CHECK (0.001ms hit)
+            cache_key = (rel_path, target_dir)
+            cached = _AST_CACHE.get(cache_key)
+            if cached and cached[0] == mtime and cached[1] == file_size:
+                file_asts[rel_path] = cached[2]
+                if rel_path.endswith(".py"):
+                    mod_name = rel_path.replace("/", ".").replace(".py", "")
+                    module_to_file[mod_name] = rel_path
+                    base_name = posixpath.basename(rel_path).replace(".py", "")
+                    module_to_file[base_name] = rel_path
+                continue
+
             try:
                 with open(full_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
                 content_bytes = content.encode('utf-8')
 
                 # Python
-                if rel_path.endswith(".py"):
-                    file_asts[rel_path] = {
+                if rel_path.endswith(".py") and py_parser:
+                    ast_entry = {
                         "lang": "python",
                         "bytes": content_bytes,
                         "tree": py_parser.parse(content_bytes),
                         "content": content
                     }
+                    file_asts[rel_path] = ast_entry
                     mod_name = rel_path.replace("/", ".").replace(".py", "")
                     module_to_file[mod_name] = rel_path
                     base_name = posixpath.basename(rel_path).replace(".py", "")
@@ -232,58 +285,68 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
                 # TypeScript / TSX
                 elif rel_path.endswith((".tsx", ".ts")) and (tsx_parser or ts_parser or js_parser):
                     parser_instance = tsx_parser if (rel_path.endswith(".tsx") and tsx_parser) else (ts_parser or js_parser)
-                    file_asts[rel_path] = {
+                    ast_entry = {
                         "lang": "typescript",
                         "bytes": content_bytes,
                         "tree": parser_instance.parse(content_bytes),
                         "content": content
                     }
+                    file_asts[rel_path] = ast_entry
 
                 # JavaScript / JSX
                 elif rel_path.endswith((".js", ".jsx", ".mjs", ".cjs")) and js_parser:
-                    file_asts[rel_path] = {
+                    ast_entry = {
                         "lang": "javascript",
                         "bytes": content_bytes,
                         "tree": js_parser.parse(content_bytes),
                         "content": content
                     }
+                    file_asts[rel_path] = ast_entry
 
                 # C++
                 elif rel_path.endswith((".cpp", ".hpp", ".cc", ".cxx")) and (cpp_parser or c_parser):
                     parser_instance = cpp_parser if cpp_parser else c_parser
-                    file_asts[rel_path] = {
+                    ast_entry = {
                         "lang": "cpp",
                         "bytes": content_bytes,
                         "tree": parser_instance.parse(content_bytes),
                         "content": content
                     }
+                    file_asts[rel_path] = ast_entry
 
                 # C
                 elif rel_path.endswith((".c", ".h")) and (c_parser or cpp_parser):
                     parser_instance = c_parser if c_parser else cpp_parser
-                    file_asts[rel_path] = {
+                    ast_entry = {
                         "lang": "c",
                         "bytes": content_bytes,
                         "tree": parser_instance.parse(content_bytes),
                         "content": content
                     }
+                    file_asts[rel_path] = ast_entry
 
                 # Java
                 elif rel_path.endswith(".java") and java_parser:
-                    file_asts[rel_path] = {
+                    ast_entry = {
                         "lang": "java",
                         "bytes": content_bytes,
                         "tree": java_parser.parse(content_bytes),
                         "content": content
                     }
+                    file_asts[rel_path] = ast_entry
 
                 # Plain Text / Config
                 else:
-                    file_asts[rel_path] = {
+                    ast_entry = {
                         "lang": "text",
                         "content": content,
                         "is_text_only": True
                     }
+                    file_asts[rel_path] = ast_entry
+
+                # Store into persistent AST cache
+                _AST_CACHE[cache_key] = (mtime, file_size, ast_entry)
+
             except Exception as e:
                 print(f"[WARN] Error reading {rel_path}: {e}")
 
@@ -383,21 +446,6 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
         local_string_vars: Dict[str, str] = {}
         for var_match in re.finditer(r'(?:const|let|var)\s+([a-zA-Z0-9_]+)\s*=\s*[\'\"`]([^\'\"`]+)[\'\"`]', content):
             local_string_vars[var_match.group(1)] = var_match.group(2)
-
-        def calculate_complexity(node: Node) -> int:
-            score = 0
-            decision_triggers = {
-                # Python / JS / TS / C / C++ / Java decision keywords
-                'if_statement', 'for_statement', 'while_statement', 'except_clause',
-                'with_item', 'match_statement', 'list_comprehension', 'conditional_expression',
-                'for_in_statement', 'for_range_loop', 'catch_clause', 'switch_case', 'case_statement',
-                'do_statement', 'ternary_expression', 'try_statement'
-            }
-            if node.type in decision_triggers:
-                score += 1
-            for child in node.children:
-                score += calculate_complexity(child)
-            return score
 
         if "tree" not in ast_data:
             continue

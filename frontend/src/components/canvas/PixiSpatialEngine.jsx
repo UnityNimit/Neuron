@@ -44,7 +44,8 @@ export default function PixiSpatialEngine({
   onRefactorDrop,
   onFileMergeDrop,
   onNodeDoubleClick, 
-  onNodeHover
+  onNodeHover,
+  refactorEnabled = false
 }) {
   const containerRef = useRef(null);
   const appRef = useRef(null);
@@ -53,19 +54,19 @@ export default function PixiSpatialEngine({
   const stateRef = useRef({ 
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
-    onRefactorDrop, onFileMergeDrop 
+    onRefactorDrop, onFileMergeDrop, refactorEnabled 
   });
   
   useEffect(() => {
     stateRef.current = { 
       activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
       onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
-      onRefactorDrop, onFileMergeDrop 
+      onRefactorDrop, onFileMergeDrop, refactorEnabled 
     };
   }, [
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
-    onRefactorDrop, onFileMergeDrop
+    onRefactorDrop, onFileMergeDrop, refactorEnabled
   ]);
 
   useEffect(() => {
@@ -198,22 +199,27 @@ export default function PixiSpatialEngine({
             let nearestCandidate = null;
             let shortestDist = isCurrentFile ? FILE_MERGE_PROXIMITY_PX : FUNCTION_CAPTURE_PROXIMITY_PX;
 
-            (simDataRef.current.nodes || []).forEach(candidate => {
-              if (candidate.data?.nodeType === 'file' && candidate.id !== node.id) {
-                if (isCurrentFunction && candidate.data?.filePath === node.data?.filePath) return;
-                
-                const dx = (candidate.x || 0) - pos.x;
-                const dy = (candidate.y || 0) - pos.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < shortestDist) {
-                  shortestDist = dist;
-                  nearestCandidate = candidate;
+            if (stateRef.current.refactorEnabled) {
+              (simDataRef.current.nodes || []).forEach(candidate => {
+                if (candidate.data?.nodeType === 'file' && candidate.id !== node.id) {
+                  if (isCurrentFunction && candidate.data?.filePath === node.data?.filePath) return;
+                  
+                  const dx = (candidate.x || 0) - pos.x;
+                  const dy = (candidate.y || 0) - pos.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  if (dist < shortestDist) {
+                    shortestDist = dist;
+                    nearestCandidate = candidate;
+                  }
                 }
-              }
-            });
+              });
 
-            currentCaptureTarget = nearestCandidate;
-            isFileMergeMode = isCurrentFile && !!nearestCandidate;
+              currentCaptureTarget = nearestCandidate;
+              isFileMergeMode = isCurrentFile && !!nearestCandidate;
+            } else {
+              currentCaptureTarget = null;
+              isFileMergeMode = false;
+            }
           }
         });
         
@@ -231,7 +237,7 @@ export default function PixiSpatialEngine({
 
             stateRef.current.onDragEnd(draggedId);
 
-            if (targetFile) {
+            if (targetFile && stateRef.current.refactorEnabled) {
               if (wasFileMerge && stateRef.current.onFileMergeDrop) {
                 stateRef.current.onFileMergeDrop({
                   sourceFile: node.data?.filePath || node.id,
@@ -585,6 +591,20 @@ export default function PixiSpatialEngine({
 
           if (sx === null || sy === null || tx === null || ty === null || isNaN(sx) || isNaN(sy) || isNaN(tx) || isNaN(ty)) return;
           
+          // Frustum Culling for Edges (Skip lines entirely off-screen)
+          const minX = Math.min(sx, tx);
+          const maxX = Math.max(sx, tx);
+          const minY = Math.min(sy, ty);
+          const maxY = Math.max(sy, ty);
+          if (
+            maxX < visibleBounds.x - 80 ||
+            minX > visibleBounds.x + visibleBounds.width + 80 ||
+            maxY < visibleBounds.y - 80 ||
+            minY > visibleBounds.y + visibleBounds.height + 80
+          ) {
+            return;
+          }
+
           const srcSpawn = edge.source.spawnProgress ?? 1;
           const tgtSpawn = edge.target.spawnProgress ?? 1;
           const edgeSpawnAlpha = Math.min(srcSpawn, tgtSpawn);

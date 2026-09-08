@@ -20,12 +20,17 @@ from services.file_service import (
     rename_item, reveal_in_explorer
 )
 from services.terminal_service import (
-    kill_terminal_process, run_python_script_sync, 
+    kill_terminal_process, run_code_polyglot_sync, run_python_script_sync, 
     stream_terminal_command, write_terminal_stdin
+)
+from services.git_service import (
+    git_commit, git_push, git_stage, git_unstage, git_discard,
+    git_get_detailed_status, git_get_log_graph
 )
 from services.workspace_service import broadcast_workspace, get_workspace_state
 
 router = APIRouter()
+_RECENT_SAVE_TIMESTAMPS: list = []
 
 
 async def safe_send_json(websocket: WebSocket, payload: dict) -> bool:
@@ -42,6 +47,18 @@ async def safe_send_json(websocket: WebSocket, payload: dict) -> bool:
         if websocket in AppState.CONNECTIONS:
             AppState.CONNECTIONS.remove(websocket)
     return False
+
+
+async def safe_send_to_active(websocket: WebSocket, payload: dict) -> bool:
+    """
+    Tries sending to the originating websocket; if disconnected, falls back to broadcasting
+    to any active connection in AppState.CONNECTIONS so results are never dropped.
+    """
+    sent = await safe_send_json(websocket, payload)
+    if not sent and AppState.CONNECTIONS:
+        await broadcast_to_all(payload)
+        return True
+    return sent
 
 
 async def broadcast_to_all(payload: dict) -> None:
@@ -91,6 +108,10 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # 1. EMIT INITIAL WORKSPACE STATE ASYNCHRONOUSLY
     initial_state = await asyncio.to_thread(get_workspace_state)
+    if AppState.USER_SESSION:
+        initial_state["user_session"] = AppState.USER_SESSION
+    graph = await asyncio.to_thread(git_get_log_graph, AppState.TARGET_DIR, 40)
+    initial_state["git_graph"] = graph
     await safe_send_json(websocket, {"event": "INIT", "payload": initial_state})
 
     # 2. ASYNC VECTOR INDEXING (Zero blocking on main loop)
@@ -106,6 +127,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
             message = json.loads(raw_data)
             evt = message.get("event")
+
+            if evt == "LOGOUT":
+                AppState.USER_SESSION = None
+                for ws in list(AppState.CONNECTIONS):
+                    await safe_send_json(ws, {"event": "AUTH_LOGOUT"})
+                continue
 
             # -----------------------------------------------------------------
             # 0. HEARTBEAT PROTOCOL (Ping / Pong Latency)
@@ -139,17 +166,68 @@ async def websocket_endpoint(websocket: WebSocket):
             # 2. WORKSPACE DIRECTORY & FILE OPERATIONS
             # -----------------------------------------------------------------
             elif evt == "OPEN_FOLDER_DIALOG":
-                chosen_dir = await asyncio.to_thread(pick_folder_sync)
+                target = message.get("target_dir") or message.get("path")
+                if target and os.path.exists(target):
+                    chosen_dir = target
+                else:
+                    chosen_dir = await asyncio.to_thread(pick_folder_sync)
                 if chosen_dir and os.path.exists(chosen_dir):
                     AppState.TARGET_DIR = os.path.abspath(chosen_dir)
                     AppState.ACTIVE_FILE = ""
+                    # 🚀 Instantly notify frontend to display the minimalist loading screen
+                    await broadcast_to_all({
+                        "event": "WORKSPACE_LOADING",
+                        "target_dir": AppState.TARGET_DIR
+                    })
+                    await broadcast_workspace(force_full_sync=True)
+                    trigger_background_indexing()
+                else:
+                    await safe_send_json(websocket, {
+                        "event": "FOLDER_PICK_CANCELLED"
+                    })
+
+            elif evt == "OPEN_FOLDER":
+                folder_path = message.get("path") or message.get("target_dir", "")
+                if folder_path and os.path.exists(folder_path):
+                    AppState.TARGET_DIR = os.path.abspath(folder_path)
+                    AppState.ACTIVE_FILE = ""
+                    # 🚀 Instantly notify frontend to display the minimalist loading screen
+                    await broadcast_to_all({
+                        "event": "WORKSPACE_LOADING",
+                        "target_dir": AppState.TARGET_DIR
+                    })
                     await broadcast_workspace(force_full_sync=True)
                     trigger_background_indexing()
 
             elif evt == "SWITCH_FILE":
-                AppState.ACTIVE_FILE = message.get("filename", "")
-                synced_state = await asyncio.to_thread(get_workspace_state)
-                await safe_send_json(websocket, {"event": "SYNC", "payload": synced_state})
+                new_file = message.get("filename", "")
+                AppState.ACTIVE_FILE = new_file
+
+                # Fast path: Read file directly in <1ms without full AST re-parse
+                file_content = ""
+                if new_file:
+                    clean_path = new_file.replace("\\", "/").strip().lstrip("/")
+                    full_path = os.path.join(AppState.TARGET_DIR, clean_path)
+                    if os.path.exists(full_path) and os.path.isfile(full_path):
+                        ext = os.path.splitext(clean_path)[1].lower()
+                        binary_exts = {
+                            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".avif",
+                            ".exe", ".dll", ".so", ".dylib", ".bin", ".iso", ".zip", ".tar",
+                            ".gz", ".7z", ".rar", ".mp4", ".mkv", ".avi", ".mov", ".webm",
+                            ".mp3", ".wav", ".pdf"
+                        }
+                        if ext not in binary_exts:
+                            try:
+                                with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+                                    file_content = f.read()
+                            except Exception:
+                                pass
+
+                await safe_send_json(websocket, {
+                    "event": "FILE_SWITCH_ACK",
+                    "active_file": new_file,
+                    "content": file_content
+                })
 
             elif evt == "CREATE_ITEM":
                 create_item(message.get("item_name", ""), message.get("item_type", "file"))
@@ -181,6 +259,19 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 async def handle_save_file():
                     try:
+                        if AppState.BLAST_PROTECTION_ENABLED:
+                            now = time.time()
+                            global _RECENT_SAVE_TIMESTAMPS
+                            _RECENT_SAVE_TIMESTAMPS = [t for t in _RECENT_SAVE_TIMESTAMPS if now - t < 1.0]
+                            _RECENT_SAVE_TIMESTAMPS.append(now)
+                            if len(_RECENT_SAVE_TIMESTAMPS) > 6:
+                                await safe_send_json(websocket, {
+                                    "event": "SAVE_FILE_ERROR",
+                                    "filename": target_file,
+                                    "reason": "Blast Protection Active: Throttled rapid automated save flood (>6 saves/sec)."
+                                })
+                                return
+
                         clean_path = target_file.replace("\\", "/").lstrip("/")
                         full_path = os.path.abspath(os.path.join(AppState.TARGET_DIR, clean_path))
                         
@@ -269,10 +360,27 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "AGENT_APPROVE_BATCH":
                 batch_id = message.get("batch_id")
                 if batch_id in agent_supervisor.active_batches:
-                    agent_supervisor.active_batches[batch_id].is_committed = True
+                    batch = agent_supervisor.active_batches[batch_id]
+                    if batch.is_rolled_back:
+                        await asyncio.to_thread(
+                            agent_supervisor.reapply_batch,
+                            batch_id=batch_id,
+                            workspace_root=AppState.TARGET_DIR
+                        )
+                        await broadcast_workspace(force_full_sync=True)
+                    else:
+                        batch.is_committed = True
                 await safe_send_json(websocket, {
                     "event": "AGENT_APPROVE_SUCCESS", 
                     "batch_id": batch_id
+                })
+
+            elif evt == "SET_BLAST_PROTECTION":
+                enabled = bool(message.get("enabled", False))
+                AppState.BLAST_PROTECTION_ENABLED = enabled
+                await broadcast_to_all({
+                    "event": "BLAST_PROTECTION_CHANGED",
+                    "enabled": enabled
                 })
 
             elif evt == "GET_AGENT_BATCH_DETAILS":
@@ -447,33 +555,121 @@ async def websocket_endpoint(websocket: WebSocket):
             # 8. SUBPROCESS CODE EXECUTION (Universal Polyglot Runner)
             # -----------------------------------------------------------------
             elif evt == "RUN_CODE":
-                target_file = message.get("filename", AppState.ACTIVE_FILE)
-                clean_path = target_file.replace("\\", "/").lstrip("/")
-                file_to_run = os.path.abspath(os.path.join(AppState.TARGET_DIR, clean_path))
+                target_file = message.get("filename") or AppState.ACTIVE_FILE
+                if not target_file:
+                    await safe_send_to_active(websocket, {
+                        "event": "TERMINAL_ERROR",
+                        "payload": "[ERROR] No active file selected to execute.\n"
+                    })
+                    continue
 
-                await safe_send_json(websocket, {
-                    "event": "TERMINAL_OUTPUT", 
-                    "payload": f"Executing {clean_path}...\n"
-                })
+                # Resolve file path with fallbacks
+                if os.path.isabs(target_file) and os.path.exists(target_file):
+                    file_to_run = os.path.abspath(target_file)
+                else:
+                    clean_path = target_file.replace("\\", "/").lstrip("/")
+                    candidates = [
+                        os.path.abspath(os.path.join(AppState.TARGET_DIR, clean_path)),
+                        os.path.abspath(os.path.join(AppState.TARGET_DIR, target_file)),
+                        os.path.abspath(target_file)
+                    ]
+                    file_to_run = candidates[0]
+                    for cand in candidates:
+                        if os.path.exists(cand):
+                            file_to_run = cand
+                            break
+
+                start_time = asyncio.get_event_loop().time()
                 try:
                     res = await asyncio.to_thread(
-                        run_python_script_sync, 
+                        run_code_polyglot_sync, 
                         file_to_run, 
-                        message.get("stdin", "")
+                        message.get("stdin", ""),
+                        30.0
                     )
+                    elapsed = asyncio.get_event_loop().time() - start_time
                     if res.stdout:
-                        await safe_send_json(websocket, {"event": "TERMINAL_OUTPUT", "payload": res.stdout})
+                        stdout_payload = res.stdout
+                        if len(stdout_payload) > 250000:
+                            stdout_payload = stdout_payload[:250000] + "\n\n[Warning: Output buffer exceeded 250KB and was safely truncated]\n"
+                        await safe_send_to_active(websocket, {"event": "TERMINAL_OUTPUT", "payload": stdout_payload})
                     if res.stderr:
-                        await safe_send_json(websocket, {"event": "TERMINAL_ERROR", "payload": res.stderr})
-                    await safe_send_json(websocket, {
+                        stderr_payload = res.stderr
+                        if len(stderr_payload) > 50000:
+                            stderr_payload = stderr_payload[:50000] + "\n\n[Warning: Error buffer exceeded 50KB and was safely truncated]\n"
+                        await safe_send_to_active(websocket, {"event": "TERMINAL_ERROR", "payload": stderr_payload})
+                    await safe_send_to_active(websocket, {
                         "event": "TERMINAL_OUTPUT", 
-                        "payload": f"\nProcess exited with code {res.returncode}\n"
+                        "payload": f"\n[Done] exited with code {res.returncode} in {elapsed:.2f}s\n"
                     })
                 except subprocess.TimeoutExpired:
-                    await safe_send_json(websocket, {
+                    await safe_send_to_active(websocket, {
                         "event": "TERMINAL_ERROR", 
-                        "payload": "\nExecution Timed Out (15s limit).\n"
+                        "payload": "\n[Timeout] Execution exceeded 30s limit.\n"
                     })
+                except Exception as run_err:
+                    await safe_send_to_active(websocket, {
+                        "event": "TERMINAL_ERROR", 
+                        "payload": f"\n[Execution Error] {run_err}\n"
+                    })
+
+            # -----------------------------------------------------------------
+            # 9. GIT SOURCE CONTROL OPERATIONS
+            # -----------------------------------------------------------------
+            elif evt == "GIT_COMMIT":
+                commit_msg = message.get("message", "")
+                push = bool(message.get("push", False))
+                amend = bool(message.get("amend", False))
+                res = await asyncio.to_thread(git_commit, AppState.TARGET_DIR, commit_msg, push, amend)
+                if res.get("success"):
+                    await safe_send_json(websocket, {"event": "GIT_COMMIT_SUCCESS", "output": res.get("output", "")})
+                    asyncio.create_task(broadcast_workspace(force_full_sync=False))
+                    graph = await asyncio.to_thread(git_get_log_graph, AppState.TARGET_DIR, 40)
+                    await broadcast_to_all({"event": "GIT_GRAPH_DATA", "payload": graph})
+                else:
+                    await safe_send_json(websocket, {"event": "GIT_COMMIT_ERROR", "error": res.get("error", "Commit failed")})
+
+            elif evt == "GIT_PUSH":
+                res = await asyncio.to_thread(git_push, AppState.TARGET_DIR)
+                if res.get("success"):
+                    await safe_send_json(websocket, {"event": "GIT_PUSH_SUCCESS", "output": res.get("output", "")})
+                    graph = await asyncio.to_thread(git_get_log_graph, AppState.TARGET_DIR, 40)
+                    await broadcast_to_all({"event": "GIT_GRAPH_DATA", "payload": graph})
+                else:
+                    await safe_send_json(websocket, {"event": "GIT_PUSH_ERROR", "error": res.get("error", "Push failed")})
+
+            elif evt == "GIT_STAGE_FILE":
+                file_p = message.get("path")
+                await asyncio.to_thread(git_stage, AppState.TARGET_DIR, file_p)
+                asyncio.create_task(broadcast_workspace(force_full_sync=False))
+
+            elif evt == "GIT_UNSTAGE_FILE":
+                file_p = message.get("path")
+                await asyncio.to_thread(git_unstage, AppState.TARGET_DIR, file_p)
+                asyncio.create_task(broadcast_workspace(force_full_sync=False))
+
+            elif evt == "GIT_DISCARD_FILE":
+                file_p = message.get("path")
+                await asyncio.to_thread(git_discard, AppState.TARGET_DIR, file_p)
+                asyncio.create_task(broadcast_workspace(force_full_sync=False))
+
+            elif evt == "GIT_STAGE_ALL":
+                await asyncio.to_thread(git_stage, AppState.TARGET_DIR, "all")
+                asyncio.create_task(broadcast_workspace(force_full_sync=False))
+
+            elif evt == "GIT_DISCARD_ALL":
+                await asyncio.to_thread(git_discard, AppState.TARGET_DIR, "all")
+                asyncio.create_task(broadcast_workspace(force_full_sync=False))
+
+            elif evt == "GIT_FETCH_GRAPH":
+                graph = await asyncio.to_thread(git_get_log_graph, AppState.TARGET_DIR, 40)
+                await safe_send_json(websocket, {"event": "GIT_GRAPH_DATA", "payload": graph})
+
+            elif evt == "GIT_FETCH_STATUS":
+                detailed = await asyncio.to_thread(git_get_detailed_status, AppState.TARGET_DIR)
+                graph = await asyncio.to_thread(git_get_log_graph, AppState.TARGET_DIR, 40)
+                await safe_send_json(websocket, {"event": "GIT_DETAILED_STATUS", "payload": detailed})
+                await safe_send_json(websocket, {"event": "GIT_GRAPH_DATA", "payload": graph})
 
     except WebSocketDisconnect:
         AppState.CONNECTIONS.discard(websocket)

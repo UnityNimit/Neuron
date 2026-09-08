@@ -6,8 +6,8 @@ export default function StdinPanel({ stdin = "", setStdin }) {
     <div className="w-full h-full flex flex-col bg-[#191a1b] select-none">
       
       {/* Super-Minimalist Header (Sleek 1px Border) */}
-      <div className="h-8 shrink-0 bg-[#191a1b] flex items-center justify-between px-3 border-b border-[#242628] text-[10px] ...">
-        <span>INPUT</span>
+      <div className="h-8 shrink-0 bg-[#191a1b] flex items-center px-3 border-b border-[#242628] text-[11px] font-mono font-medium tracking-wide text-slate-300">
+        <span>Input</span>
       </div>
 
       {/* Minimalist Input Area (Sleek 1px Border & 4px Scrollbar) */}

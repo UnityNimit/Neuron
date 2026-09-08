@@ -58,6 +58,10 @@ def sanitize_for_json(obj: Any) -> Any:
     return obj
 
 
+# In-Memory Cache for Graph Topology ML analysis (avoids repeating Louvain, PageRank, Betweenness & IsolationForest on unchanged topology)
+_TOPOLOGY_ML_CACHE: Dict[int, Dict[str, Any]] = {}
+
+
 def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
     """
      THE ULTIMATE MULTI-MODAL ML & GRAPH THEORY INTELLIGENCE PIPELINE
@@ -89,167 +93,211 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
             d["entropy"] = compute_shannon_entropy(d.get("code", ""))
         return sanitize_for_json(nodes)
 
-    # -------------------------------------------------------------------------
-    # 1. BUILD DUAL GRAPHS (Undirected for Louvain, Directed for Flow/Authority)
-    # -------------------------------------------------------------------------
-    G = nx.Graph()
-    DiG = nx.DiGraph()
+    # 🚀 HIGH-SPEED TOPOLOGY HASH CHECK (<0.01ms cache hit)
+    node_keys = tuple(sorted(str(n["id"]) for n in nodes if n.get("id")))
+    edge_keys = tuple(sorted(f"{e.get('source')}->{e.get('target')}:{e.get('type')}" for e in edges))
+    topo_hash = hash((node_keys, edge_keys))
 
-    for n in nodes:
-        nid = str(n["id"])
-        G.add_node(nid)
-        DiG.add_node(nid)
+    cached_ml = _TOPOLOGY_ML_CACHE.get(topo_hash)
+    if cached_ml is not None:
+        community_map = cached_ml["community_map"]
+        centrality_map = cached_ml["centrality_map"]
+        anomaly_flags = cached_ml["anomaly_flags"]
+        for n in nodes:
+            nid = str(n["id"])
+            d = n.setdefault("data", {})
+            d["community"] = int(community_map.get(nid, 0))
+            norm_pr, norm_bw, in_deg, out_deg = centrality_map.get(nid, (0.0, 0.0, 0, 0))
+            d["pagerank"] = norm_pr
+            d["betweenness"] = norm_bw
+            d["in_degree"] = in_deg
+            d["out_degree"] = out_deg
+            d["entropy"] = float(compute_shannon_entropy(str(d.get("code", ""))))
+    else:
+        # -------------------------------------------------------------------------
+        # 1. BUILD DUAL GRAPHS (Undirected for Louvain, Directed for Flow/Authority)
+        # -------------------------------------------------------------------------
+        G = nx.Graph()
+        DiG = nx.DiGraph()
 
-    seen_edge_pairs: Set[Tuple[str, str]] = set()
+        for n in nodes:
+            nid = str(n["id"])
+            G.add_node(nid)
+            DiG.add_node(nid)
 
-    for e in edges:
-        src = str(e.get("source", ""))
-        tgt = str(e.get("target", ""))
-        
-        if src and tgt and src != tgt and src in node_id_set and tgt in node_id_set:
-            pair = (src, tgt)
-            if pair in seen_edge_pairs:
-                continue
-            seen_edge_pairs.add(pair)
+        seen_edge_pairs: Set[Tuple[str, str]] = set()
 
-            # Weighted semantic topology
-            edge_type = e.get("type", "hierarchy")
-            if edge_type == "network_bridge":
-                weight = 60.0  # Laser Frontend-Backend Conduit
-            elif edge_type == "call":
-                weight = 40.0  # Dynamic AST Function Call
-            elif edge_type == "import":
-                weight = 20.0  # Module Dependency
-            else:
-                weight = 1.0   # Structural Directory Containment
+        for e in edges:
+            src = str(e.get("source", ""))
+            tgt = str(e.get("target", ""))
+            
+            if src and tgt and src != tgt and src in node_id_set and tgt in node_id_set:
+                pair = (src, tgt)
+                if pair in seen_edge_pairs:
+                    continue
+                seen_edge_pairs.add(pair)
 
-            G.add_edge(src, tgt, weight=float(weight))
-            DiG.add_edge(src, tgt, weight=float(weight))
+                # Weighted semantic topology
+                edge_type = e.get("type", "hierarchy")
+                if edge_type == "network_bridge":
+                    weight = 60.0  # Laser Frontend-Backend Conduit
+                elif edge_type == "call":
+                    weight = 40.0  # Dynamic AST Function Call
+                elif edge_type == "import":
+                    weight = 20.0  # Module Dependency
+                else:
+                    weight = 1.0   # Structural Directory Containment
 
-    # -------------------------------------------------------------------------
-    # 2. ADAPTIVE LOUVAIN COMMUNITY DETECTION (Nebula Galaxy Clusters)
-    # -------------------------------------------------------------------------
-    try:
-        graph_size = len(nodes)
-        dynamic_res = 1.2 if graph_size > 100 else 1.05
-        communities = louvain_communities(G, weight='weight', resolution=dynamic_res, seed=42)
-        
+                G.add_edge(src, tgt, weight=float(weight))
+                DiG.add_edge(src, tgt, weight=float(weight))
+
+        # -------------------------------------------------------------------------
+        # 2. ADAPTIVE LOUVAIN COMMUNITY DETECTION (Nebula Galaxy Clusters)
+        # -------------------------------------------------------------------------
         community_map: Dict[str, int] = {}
-        for cluster_idx, member_set in enumerate(communities):
-            for node_id in member_set:
-                community_map[node_id] = int(cluster_idx)
-
-        for n in nodes:
-            n.setdefault("data", {})["community"] = int(community_map.get(str(n["id"]), 0))
-    except Exception as e:
-        for n in nodes:
-            n.setdefault("data", {})["community"] = 0
-
-    # -------------------------------------------------------------------------
-    # 3. DUAL GRAPH CENTRALITY (PageRank Authority & Betweenness Bottlenecks)
-    # -------------------------------------------------------------------------
-    pagerank_scores: Dict[str, float] = {}
-    betweenness_scores: Dict[str, float] = {}
-
-    try:
-        if len(DiG.edges) > 0:
-            pagerank_scores = nx.pagerank(DiG, alpha=0.85, weight='weight', max_iter=500, tol=1e-5)
-        else:
-            pagerank_scores = {nid: 1.0 / max(1, len(nodes)) for nid in node_id_set}
-
-        if len(G.edges) > 0:
-            betweenness_scores = nx.betweenness_centrality(G, weight='weight', normalized=True)
-        else:
-            betweenness_scores = {nid: 0.0 for nid in node_id_set}
-    except Exception:
-        pagerank_scores = {nid: 0.0 for nid in node_id_set}
-        betweenness_scores = {nid: 0.0 for nid in node_id_set}
-
-    pr_values = list(pagerank_scores.values())
-    bw_values = list(betweenness_scores.values())
-    pr_max = float(max(pr_values)) if pr_values else 1.0
-    bw_max = float(max(bw_values)) if bw_values else 1.0
-
-    for n in nodes:
-        nid = str(n["id"])
-        d = n.setdefault("data", {})
-        
-        raw_pr = float(pagerank_scores.get(nid, 0.0))
-        raw_bw = float(betweenness_scores.get(nid, 0.0))
-        
-        norm_pr = float(raw_pr / pr_max) if pr_max > 0 else 0.0
-        norm_bw = float(raw_bw / bw_max) if bw_max > 0 else 0.0
-
-        d["pagerank"] = float(round(norm_pr, 4))
-        d["betweenness"] = float(round(norm_bw, 4))
-        d["in_degree"] = int(DiG.in_degree(nid)) if nid in DiG else 0
-        d["out_degree"] = int(DiG.out_degree(nid)) if nid in DiG else 0
-
-    # -------------------------------------------------------------------------
-    # 4. 10-DIMENSIONAL CONTINUOUS FEATURE TENSOR (X in R^10)
-    # -------------------------------------------------------------------------
-    feature_rows = []
-    target_node_indices = []
-
-    for idx, n in enumerate(nodes):
-        d = n.setdefault("data", {})
-        
-        x1_loc = float(d.get("loc", 1) or 1)
-        x2_complexity = float(d.get("complexity", 0) or 0)
-        x3_density = float(d.get("density", 0.0) or 0.0)
-        x4_nesting = float(d.get("nesting", 1.0) or 1.0)
-        x5_params = float(d.get("params", 0.0) or 0.0)
-        x6_churn = float(d.get("churn", 0.0) or 0.0)
-        x7_pr = float(d.get("pagerank", 0.0) or 0.0)
-        x8_bw = float(d.get("betweenness", 0.0) or 0.0)
-        
-        in_deg = float(d.get("in_degree", 0))
-        out_deg = float(d.get("out_degree", 0))
-        x9_fan_ratio = float((in_deg + 1.0) / (out_deg + 1.0))
-        
-        x10_entropy = float(compute_shannon_entropy(str(d.get("code", ""))))
-        d["entropy"] = x10_entropy
-
-        feature_vector = [
-            x1_loc, x2_complexity, x3_density, x4_nesting, x5_params,
-            x6_churn, x7_pr, x8_bw, x9_fan_ratio, x10_entropy
-        ]
-        feature_rows.append(feature_vector)
-        target_node_indices.append(idx)
-
-    # -------------------------------------------------------------------------
-    # 5. UNSUPERVISED ANOMALY ISOLATION (Single-Threaded n_jobs=1)
-    # -------------------------------------------------------------------------
-    anomaly_flags: Dict[str, bool] = {}
-    
-    if len(feature_rows) >= 6:
         try:
-            X = np.array(feature_rows, dtype=np.float64)
-            X = np.nan_to_num(X, nan=0.0, posinf=1.0, neginf=0.0)
-
-            # Min-Max Feature Normalization
-            x_min = X.min(axis=0)
-            x_max = X.max(axis=0)
-            ranges = np.where((x_max - x_min) == 0, 1.0, x_max - x_min)
-            X_norm = (X - x_min) / ranges
-            X_norm = np.nan_to_num(X_norm, nan=0.0, posinf=1.0, neginf=0.0)
-
-            contamination = max(0.02, min(0.12, 6.0 / len(feature_rows)))
+            graph_size = len(nodes)
+            dynamic_res = 1.2 if graph_size > 100 else 1.05
+            communities = louvain_communities(G, weight='weight', resolution=dynamic_res, seed=42)
             
-            #  FORK-BOMB PROOF: n_jobs=1 runs in 2ms without subprocess overhead
-            iso_forest = IsolationForest(
-                n_estimators=80,
-                contamination=contamination,
-                random_state=42,
-                n_jobs=1
-            )
-            predictions = iso_forest.fit_predict(X_norm)
-            
-            for row_idx, node_array_idx in enumerate(target_node_indices):
-                node_id = str(nodes[node_array_idx]["id"])
-                anomaly_flags[node_id] = bool(predictions[row_idx] == -1)
+            for cluster_idx, member_set in enumerate(communities):
+                for node_id in member_set:
+                    community_map[node_id] = int(cluster_idx)
+
+            for n in nodes:
+                n.setdefault("data", {})["community"] = int(community_map.get(str(n["id"]), 0))
         except Exception:
-            pass
+            for n in nodes:
+                n.setdefault("data", {})["community"] = 0
+
+        # -------------------------------------------------------------------------
+        # 3. DUAL GRAPH CENTRALITY (PageRank Authority & Betweenness Bottlenecks)
+        # -------------------------------------------------------------------------
+        pagerank_scores: Dict[str, float] = {}
+        betweenness_scores: Dict[str, float] = {}
+
+        try:
+            if len(DiG.edges) > 0:
+                pagerank_scores = nx.pagerank(DiG, alpha=0.85, weight='weight', max_iter=500, tol=1e-5)
+            else:
+                pagerank_scores = {nid: 1.0 / max(1, len(nodes)) for nid in node_id_set}
+
+            if len(G.edges) > 0:
+                if len(G) > 80:
+                    betweenness_scores = nx.betweenness_centrality(G, k=min(60, len(G)), weight='weight', normalized=True, seed=42)
+                else:
+                    betweenness_scores = nx.betweenness_centrality(G, weight='weight', normalized=True)
+            else:
+                betweenness_scores = {nid: 0.0 for nid in node_id_set}
+        except Exception:
+            pagerank_scores = {nid: 0.0 for nid in node_id_set}
+            betweenness_scores = {nid: 0.0 for nid in node_id_set}
+
+        pr_values = list(pagerank_scores.values())
+        bw_values = list(betweenness_scores.values())
+        pr_max = float(max(pr_values)) if pr_values else 1.0
+        bw_max = float(max(bw_values)) if bw_values else 1.0
+
+        for n in nodes:
+            nid = str(n["id"])
+            d = n.setdefault("data", {})
+            
+            raw_pr = float(pagerank_scores.get(nid, 0.0))
+            raw_bw = float(betweenness_scores.get(nid, 0.0))
+            
+            norm_pr = float(raw_pr / pr_max) if pr_max > 0 else 0.0
+            norm_bw = float(raw_bw / bw_max) if bw_max > 0 else 0.0
+
+            d["pagerank"] = float(round(norm_pr, 4))
+            d["betweenness"] = float(round(norm_bw, 4))
+            d["in_degree"] = int(DiG.in_degree(nid)) if nid in DiG else 0
+            d["out_degree"] = int(DiG.out_degree(nid)) if nid in DiG else 0
+
+        # -------------------------------------------------------------------------
+        # 4. 10-DIMENSIONAL CONTINUOUS FEATURE TENSOR (X in R^10)
+        # -------------------------------------------------------------------------
+        feature_rows = []
+        target_node_indices = []
+
+        for idx, n in enumerate(nodes):
+            d = n.setdefault("data", {})
+            
+            x1_loc = float(d.get("loc", 1) or 1)
+            x2_complexity = float(d.get("complexity", 0) or 0)
+            x3_density = float(d.get("density", 0.0) or 0.0)
+            x4_nesting = float(d.get("nesting", 1.0) or 1.0)
+            x5_params = float(d.get("params", 0.0) or 0.0)
+            x6_churn = float(d.get("churn", 0.0) or 0.0)
+            x7_pr = float(d.get("pagerank", 0.0) or 0.0)
+            x8_bw = float(d.get("betweenness", 0.0) or 0.0)
+            
+            in_deg = float(d.get("in_degree", 0))
+            out_deg = float(d.get("out_degree", 0))
+            x9_fan_ratio = float((in_deg + 1.0) / (out_deg + 1.0))
+            
+            x10_entropy = float(compute_shannon_entropy(str(d.get("code", ""))))
+            d["entropy"] = x10_entropy
+
+            feature_vector = [
+                x1_loc, x2_complexity, x3_density, x4_nesting, x5_params,
+                x6_churn, x7_pr, x8_bw, x9_fan_ratio, x10_entropy
+            ]
+            feature_rows.append(feature_vector)
+            target_node_indices.append(idx)
+
+        # -------------------------------------------------------------------------
+        # 5. UNSUPERVISED ANOMALY ISOLATION (Single-Threaded n_jobs=1)
+        # -------------------------------------------------------------------------
+        anomaly_flags: Dict[str, bool] = {}
+        
+        if len(feature_rows) >= 6:
+            try:
+                X = np.array(feature_rows, dtype=np.float64)
+                X = np.nan_to_num(X, nan=0.0, posinf=1.0, neginf=0.0)
+
+                # Min-Max Feature Normalization
+                x_min = X.min(axis=0)
+                x_max = X.max(axis=0)
+                ranges = np.where((x_max - x_min) == 0, 1.0, x_max - x_min)
+                X_norm = (X - x_min) / ranges
+                X_norm = np.nan_to_num(X_norm, nan=0.0, posinf=1.0, neginf=0.0)
+
+                contamination = max(0.02, min(0.12, 6.0 / len(feature_rows)))
+                
+                iso_forest = IsolationForest(
+                    n_estimators=80,
+                    contamination=contamination,
+                    random_state=42,
+                    n_jobs=1
+                )
+                predictions = iso_forest.fit_predict(X_norm)
+                
+                for row_idx, node_array_idx in enumerate(target_node_indices):
+                    node_id = str(nodes[node_array_idx]["id"])
+                    anomaly_flags[node_id] = bool(predictions[row_idx] == -1)
+            except Exception:
+                pass
+
+        # Save to Topology ML Cache
+        centrality_map: Dict[str, Tuple[float, float, int, int]] = {}
+        for n in nodes:
+            nid = str(n["id"])
+            d = n.get("data", {})
+            centrality_map[nid] = (
+                d.get("pagerank", 0.0),
+                d.get("betweenness", 0.0),
+                d.get("in_degree", 0),
+                d.get("out_degree", 0)
+            )
+
+        if len(_TOPOLOGY_ML_CACHE) > 8:
+            _TOPOLOGY_ML_CACHE.clear()
+
+        _TOPOLOGY_ML_CACHE[topo_hash] = {
+            "community_map": community_map,
+            "centrality_map": centrality_map,
+            "anomaly_flags": anomaly_flags
+        }
 
     # -------------------------------------------------------------------------
     # 6. RISK SCORING & ARCHITECTURAL CODE SMELL DIAGNOSIS

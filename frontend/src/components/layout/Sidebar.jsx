@@ -11,6 +11,7 @@ export default function Sidebar({
   currentFile = "", 
   absTargetDir = "", 
   gitStatuses = {}, 
+  dirtyFiles = new Set(),
   onSwitchFile, 
   onCreateItem, 
   onDeleteFile, 
@@ -41,19 +42,60 @@ export default function Sidebar({
     return absTargetDir ? absTargetDir.split(/[/\\]/).pop().toUpperCase() : "WORKSPACE";
   }, [absTargetDir]);
 
-  // SMART GIT FOLDER STATUS (Propagates 'M' & 'U' indicators up to parent folders)
+  // SMART GIT FOLDER STATUS (Propagates 'M', 'A', 'D', 'U' indicators up to parent folders)
   const folderGitStatus = useMemo(() => {
     const fStatus = {};
-    Object.entries(gitStatuses || {}).forEach(([filePath, status]) => {
+    const priority = { 'M': 4, 'A': 3, 'D': 2, 'U': 1 };
+    
+    // Merge on-disk gitStatuses with real-time in-memory dirtyFiles for 0ms feedback
+    const combined = { ...(gitStatuses || {}) };
+    if (dirtyFiles) {
+      dirtyFiles.forEach(df => {
+        if (!combined[df] || combined[df] === 'I') combined[df] = 'M';
+      });
+    }
+
+    Object.entries(combined).forEach(([filePath, status]) => {
+      if (status === 'I') return;
       const parts = filePath.split('/');
       let current = "";
       for (let i = 0; i < parts.length - 1; i++) {
         current = current ? `${current}/${parts[i]}` : parts[i];
-        fStatus[current] = status === 'U' ? 'U' : 'M'; 
+        const existingPriority = priority[fStatus[current]] || 0;
+        const newPriority = priority[status] || 0;
+        if (newPriority > existingPriority) {
+          fStatus[current] = status;
+        }
       }
     });
     return fStatus;
+  }, [gitStatuses, dirtyFiles]);
+
+  const ignoredPathsSet = useMemo(() => {
+    const set = new Set();
+    Object.entries(gitStatuses || {}).forEach(([filePath, status]) => {
+      if (status === 'I') {
+        set.add(filePath);
+      }
+    });
+    return set;
   }, [gitStatuses]);
+
+  const isPathIgnored = (itemPath) => {
+    if (!itemPath) return false;
+    if (ignoredPathsSet.has(itemPath)) return true;
+    const parts = itemPath.split('/');
+    let cur = "";
+    for (let i = 0; i < parts.length; i++) {
+      cur = cur ? `${cur}/${parts[i]}` : parts[i];
+      if (ignoredPathsSet.has(cur)) return true;
+    }
+    const last = parts[parts.length - 1];
+    if (['node_modules', 'dist', 'target', 'build', '__pycache__', '.venv', 'venv', '.git'].includes(last)) {
+      return true;
+    }
+    return false;
+  };
 
   const visibleItems = useMemo(() => {
     return (items || []).filter(item => {
@@ -164,22 +206,25 @@ export default function Sidebar({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedPath, items, inlineRename, inlineCreate]);
 
-  const itemsToRender = [];
-  let inputInserted = false;
-  visibleItems.forEach(item => {
-    itemsToRender.push(item);
-    if (inlineCreate && item.path === inlineCreate.parentPath) {
-      itemsToRender.push({ isInlineInput: true, ...inlineCreate, path: 'inline-input' });
-      inputInserted = true;
+  const itemsToRender = useMemo(() => {
+    const list = [];
+    let inputInserted = false;
+    visibleItems.forEach(item => {
+      list.push(item);
+      if (inlineCreate && item.path === inlineCreate.parentPath) {
+        list.push({ isInlineInput: true, ...inlineCreate, path: 'inline-input' });
+        inputInserted = true;
+      }
+    });
+    if (inlineCreate && !inputInserted && inlineCreate.parentPath === "") {
+      list.push({ isInlineInput: true, ...inlineCreate, path: 'inline-input' });
     }
-  });
-  if (inlineCreate && !inputInserted && inlineCreate.parentPath === "") {
-    itemsToRender.push({ isInlineInput: true, ...inlineCreate, path: 'inline-input' });
-  }
+    return list;
+  }, [visibleItems, inlineCreate]);
 
   return (
     <div 
-      className="w-full h-full bg-[#191a1b] flex flex-col select-none relative font-sans text-slate-300 border-r border-[#242628]"
+      className="w-full h-full bg-[#191a1b] flex flex-col select-none relative font-sans text-slate-300"
       onContextMenu={(e) => { 
         e.preventDefault(); 
         e.stopPropagation(); 
@@ -203,8 +248,8 @@ export default function Sidebar({
       {/* ----------------------------------------------------------------- */}
       {/* 1. TOP HEADER & ACTION ICONS                                      */}
       {/* ----------------------------------------------------------------- */}
-      <div className="h-8 px-3 text-[10px] font-mono font-bold tracking-widest text-slate-400 flex items-center justify-between uppercase shrink-0 border-b border-[#242628]">
-        <span className="text-slate-300 font-semibold tracking-wider">Explorer</span>
+      <div className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide text-slate-300 flex items-center justify-between shrink-0 border-b border-[#242628]">
+        <span className="text-slate-300 font-medium tracking-wide">Explorer</span>
         
         <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
           <button 
@@ -250,15 +295,15 @@ export default function Sidebar({
       {/* 2. ROOT WORKSPACE FOLDER TOGGLER                                  */}
       {/* ----------------------------------------------------------------- */}
       <div 
-        className="px-2 py-1 text-[11px] font-mono font-bold text-slate-300 tracking-wider flex items-center gap-1 shrink-0 hover:bg-[#222426] cursor-pointer transition-colors" 
+        className="px-2.5 py-1 text-[11px] font-mono font-bold text-slate-200 tracking-wider flex items-center gap-1 shrink-0 hover:bg-[#222426] cursor-pointer transition-colors select-none" 
         onClick={() => setIsRootCollapsed(!isRootCollapsed)}
       >
         {isRootCollapsed ? (
-          <ChevronRight size={14} className="text-slate-500" />
+          <ChevronRight size={13} className="text-slate-500 shrink-0" />
         ) : (
-          <ChevronDown size={14} className="text-slate-500" />
+          <ChevronDown size={13} className="text-slate-500 shrink-0" />
         )}
-        <span className="truncate">{rootFolderName}</span>
+        <span className="truncate font-bold">{rootFolderName}</span>
       </div>
 
       {/* ----------------------------------------------------------------- */}
@@ -299,7 +344,7 @@ export default function Sidebar({
                       if (e.key === 'Enter') commitInlineCreate(inputValue); 
                       if (e.key === 'Escape') setInlineCreate(null); 
                     }} 
-                    className="w-full bg-[#121314] text-[#e2e8f0] text-[12px] font-mono border border-blue-500 outline-none px-1.5 py-0.5 rounded shadow-inner" 
+                    className="w-full bg-[#121314] text-[#e2e8f0] text-[11px] font-mono border border-blue-500 outline-none px-1.5 py-0.5 rounded shadow-inner" 
                   />
                 </div>
               );
@@ -311,25 +356,39 @@ export default function Sidebar({
             const isSelected = selectedPath === item.path;
             const isActiveFile = currentFile === item.path && !isFolder;
             const isBeingRenamed = inlineRename?.item?.path === item.path;
+            const isDirty = !isFolder && Boolean(dirtyFiles && dirtyFiles.has(item.path));
+            const isIgnored = isPathIgnored(item.path);
 
             // 🚀 CLEAN MINIMALIST GIT STATUS COMPUTATION (No Boxes, No Borders)
-            const gStatus = isFolder ? folderGitStatus[item.path] : (gitStatuses || {})[item.path];
+            let gStatus = isFolder ? folderGitStatus[item.path] : (gitStatuses || {})[item.path];
+            if (!isFolder && isDirty && (!gStatus || gStatus === 'I')) {
+              gStatus = 'M';
+            }
+
             let gitColor = 'text-slate-300';
             let badgeColor = '';
             
-            if (gStatus === 'U' || gStatus === 'A') { 
-              gitColor = 'text-emerald-400'; 
+            if (isDirty) {
+              gitColor = 'text-amber-300 font-normal';
+              badgeColor = 'text-amber-400';
+            } else if (gStatus === 'U' || gStatus === 'A') { 
+              gitColor = 'text-emerald-400 font-normal'; 
               badgeColor = 'text-emerald-400'; // Clean unboxed green
             } else if (gStatus === 'M') { 
-              gitColor = 'text-amber-400'; 
+              gitColor = 'text-amber-400 font-normal'; 
               badgeColor = 'text-amber-400';   // Clean unboxed orange-yellow
             } else if (gStatus === 'D') { 
-              gitColor = 'text-red-400'; 
+              gitColor = 'text-red-400 font-normal'; 
               badgeColor = 'text-red-400';     // Clean unboxed red
             }
 
             if (isActiveFile && gitColor === 'text-slate-300') {
-              gitColor = 'text-blue-400 font-semibold';
+              gitColor = 'text-white font-normal';
+            }
+
+            if (isIgnored && !isDirty && !isActiveFile) {
+              gitColor = 'text-slate-500/60 font-normal';
+              badgeColor = '';
             }
 
             return (
@@ -368,14 +427,16 @@ export default function Sidebar({
                   }
                 }}
                 style={{ paddingLeft: `${(depth * 14) + 8}px` }}
-                className={`relative flex items-center justify-between pr-2 py-1 cursor-pointer text-[12px] font-mono group transition-colors ${
+                className={`relative flex items-center justify-between pr-2 py-1 cursor-pointer text-[11px] font-mono font-normal group transition-colors select-none ${
                   dragOverPath === item.path 
                     ? 'bg-blue-600/30 border border-blue-500/50' 
                     : isSelected 
-                      ? 'bg-[#282a2d] text-white font-medium' 
+                      ? 'bg-[#282a2d] text-white font-normal' 
                       : isActiveFile
-                        ? 'bg-[#202224] text-white'
-                        : 'hover:bg-[#202224] border border-transparent'
+                        ? 'bg-[#202224] text-white font-normal'
+                        : isIgnored
+                          ? 'text-slate-500/60 hover:bg-[#202224] hover:text-slate-400 border border-transparent'
+                          : 'hover:bg-[#202224] border border-transparent'
                 }`}
               >
                 {/* Visual Indentation Guide Lines */}
@@ -395,12 +456,18 @@ export default function Sidebar({
                       ) : (
                         <ChevronDown size={13} className="text-slate-500 shrink-0" />
                       )}
-                      <Folder size={13} className="text-[#dcb67a] shrink-0" />
+                      <Folder size={13} className={isIgnored ? "text-[#dcb67a]/40 shrink-0" : "text-[#dcb67a] shrink-0"} />
                     </>
                   ) : (
                     <>
                       <div className="w-[13px] shrink-0" />
-                      <FileCode2 size={13} className={isActiveFile ? "text-blue-400 shrink-0" : "text-slate-500 shrink-0"} />
+                      <FileCode2 size={13} className={
+                        isActiveFile 
+                          ? "text-blue-400 shrink-0" 
+                          : isIgnored 
+                            ? "text-slate-600 shrink-0" 
+                            : "text-slate-500 shrink-0"
+                      } />
                     </>
                   )}
                   
@@ -415,20 +482,26 @@ export default function Sidebar({
                         if (e.key === 'Enter') commitInlineRename(renameValue);
                         if (e.key === 'Escape') setInlineRename(null);
                       }}
-                      className="w-full bg-[#121314] text-[#e2e8f0] text-[12px] font-mono border border-blue-500 outline-none px-1 rounded shadow-inner"
+                      className="w-full bg-[#121314] text-[#e2e8f0] text-[11px] font-mono border border-blue-500 outline-none px-1 rounded shadow-inner"
                     />
                   ) : (
-                    <span className={`truncate text-xs ${gitColor}`}>
+                    <span className={`truncate text-[11px] font-mono font-normal ${gitColor}`}>
                       {item.path.split('/').pop()}
                     </span>
                   )}
                 </div>
 
-                {/* 🚀 CLEAN UNBOXED GIT BADGES (No Boxes, No Borders) */}
+                {/* 🚀 CLEAN UNBOXED GIT BADGES & DIRTY DOT INDICATOR */}
                 {!isBeingRenamed && (
                   <div className="flex items-center gap-1.5 shrink-0 z-10 bg-inherit pl-1">
-                    {gStatus && (
-                      <span className={`text-[11px] font-mono font-bold ${badgeColor} group-hover:hidden transition-opacity pr-0.5`}>
+                    {isDirty && (
+                      <span 
+                        className="w-2 h-2 rounded-full bg-amber-400 shrink-0 transition-opacity" 
+                        title="Unsaved changes"
+                      />
+                    )}
+                    {gStatus && gStatus !== 'I' && (
+                      <span className={`text-[10px] font-mono font-bold ${badgeColor} transition-opacity pr-0.5`}>
                         {gStatus}
                       </span>
                     )}

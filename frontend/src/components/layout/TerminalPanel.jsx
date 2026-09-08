@@ -1,6 +1,6 @@
 // src/components/layout/TerminalPanel.jsx
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, X, Trash2, Square, ChevronDown, Terminal } from 'lucide-react';
+import { Plus, X, Trash2, Square, ChevronDown } from 'lucide-react';
 import AnsiToHtml from 'ansi-to-html';
 
 const ansiConverter = new AnsiToHtml({ 
@@ -107,23 +107,23 @@ export default function TerminalPanel({
   };
 
   return (
-    <div className="w-full h-full bg-[#191a1b] flex flex-col font-mono text-sm border-t border-[#26282a] select-none">
+    <div className="w-full h-full bg-[#191a1b] flex flex-col font-mono text-sm select-none">
       
       {/* ----------------------------------------------------------------- */}
       {/* 1. ULTRA-MINIMAL TERMINAL TAB STRIP                               */}
       {/* ----------------------------------------------------------------- */}
-      <div className="h-8 shrink-0 bg-[#191a1b] border-b border-[#242628] flex items-center justify-between px-2 text-xs select-none">
+      <div className="h-8 shrink-0 bg-[#191a1b] border-b border-[#242628] flex items-center justify-between px-0 select-none">
         
         {/* Session Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto flex-grow mr-4 [&::-webkit-scrollbar]:hidden">
+        <div className="flex items-center overflow-x-auto flex-grow mr-2 [&::-webkit-scrollbar]:hidden">
           
           {/* Output Log Tab */}
           <button 
             onClick={() => onSelectSession && onSelectSession('output')} 
-            className={`h-8 px-3 flex items-center gap-1.5 text-[11px] font-mono transition-all shrink-0 cursor-pointer ${
+            className={`h-8 px-3 flex items-center text-[11px] font-mono font-medium border-r border-[#242628] transition-colors shrink-0 cursor-pointer ${
               activeSessionId === 'output' 
-                ? 'bg-[#141516] text-blue-400 font-semibold border-t-2 border-t-blue-500' 
-                : 'text-slate-400 hover:text-slate-200 hover:bg-[#202224]'
+                ? 'bg-[#121314] text-blue-400 font-semibold border-t-2 border-t-blue-500' 
+                : 'bg-[#191a1b] text-slate-400 hover:text-slate-200 hover:bg-[#202224]'
             }`}
           >
             <span>Output</span>
@@ -136,10 +136,10 @@ export default function TerminalPanel({
               <div 
                 key={s.id} 
                 onClick={() => onSelectSession && onSelectSession(s.id)} 
-                className={`h-8 px-2.5 flex items-center gap-1.5 cursor-pointer text-[11px] font-mono transition-all group shrink-0 ${
+                className={`h-8 px-3 flex items-center gap-1.5 cursor-pointer text-[11px] font-mono font-medium border-r border-[#242628] transition-colors group shrink-0 ${
                   isActive 
-                    ? 'bg-[#141516] text-blue-400 font-semibold border-t-2 border-t-blue-500' 
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-[#202224]'
+                    ? 'bg-[#121314] text-blue-400 font-semibold border-t-2 border-t-blue-500' 
+                    : 'bg-[#191a1b] text-slate-400 hover:text-slate-200 hover:bg-[#202224]'
                 }`}
               >
                 <div className={`w-1.5 h-1.5 rounded-full ${s.isRunning ? 'bg-blue-400 animate-pulse' : 'bg-slate-600'}`} />
@@ -149,7 +149,8 @@ export default function TerminalPanel({
                     e.stopPropagation(); 
                     if (onCloseSession) onCloseSession(s.id); 
                   }} 
-                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1 p-0.5"
+                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1 p-0.5 rounded hover:bg-white/10"
+                  title="Close Terminal"
                 >
                   <X size={11} />
                 </button>
@@ -159,7 +160,7 @@ export default function TerminalPanel({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0 pr-2">
           
           {/* New Shell Dropdown */}
           <div className="relative" ref={dropdownRef}>
@@ -249,7 +250,7 @@ export default function TerminalPanel({
               <div 
                 key={index} 
                 className={`${
-                  log.isError ? 'text-red-400' : log.isSystem ? 'text-slate-500' : 'text-slate-300'
+                  log.isError ? 'text-red-400' : log.isSystem ? 'text-blue-400/90 font-medium' : 'text-slate-200'
                 } whitespace-pre-wrap select-text leading-relaxed`}
                 dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(log.text || "") }} 
               />

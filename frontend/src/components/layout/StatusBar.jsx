@@ -1,7 +1,7 @@
 // frontend/src/components/layout/StatusBar.jsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
-  Bell, X, GitBranch, Activity, CheckCircle2, Zap 
+  Bell, X, GitBranch, CheckCircle2, Loader2 
 } from 'lucide-react';
 
 export default function StatusBar({ 
@@ -18,7 +18,17 @@ export default function StatusBar({
   isGitRepo = true,
   repoName = "",
   absTargetDir = "",
-  onCenterSpatialMap
+  isDirty = false,
+  isSaving = false,
+  refactorEnabled = false,
+  onToggleRefactor,
+  blastProtectionEnabled = false,
+  onToggleBlastProtection,
+  onCenterSpatialMap,
+  notifications = [],
+  onClearNotifications,
+  onDismissNotification,
+  onMarkAllNotificationsRead
 }) {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notifRef = useRef(null);
@@ -33,37 +43,49 @@ export default function StatusBar({
 
   // 2. Git Status & Repo Resolution
   const modifiedGitCount = useMemo(() => {
-    return Object.values(gitStatuses || {}).filter(s => s === 'M' || s === 'U').length;
+    return Object.values(gitStatuses || {}).filter(s => s === 'M' || s === 'U' || s === 'A' || s === 'D').length;
   }, [gitStatuses]);
 
   const currentRepoName = useMemo(() => {
+    if (!isGitRepo) return "";
     if (repoName) return repoName;
     if (absTargetDir) return absTargetDir.split(/[/\\]/).pop();
     return "";
-  }, [repoName, absTargetDir]);
+  }, [repoName, absTargetDir, isGitRepo]);
 
-  const hasGit = Boolean(
-    isGitRepo && (currentRepoName || Object.keys(gitStatuses || {}).length > 0 || gitBranch)
-  );
+  const hasGit = Boolean(isGitRepo);
 
-  // 3. Real-time System Notifications
-  const [notifications, setNotifications] = useState([
-    { id: 1, type: "success", text: "Spatial WebGPU Engine running (60 FPS)", time: "Just now" },
-    { id: 2, type: "bridge", text: `${bridgeCount || 1} Cross-Stack API Bridges active`, time: "Live" },
-    { id: 3, type: "info", text: "AC-3 Refactoring Shield armed", time: "Ready" }
-  ]);
+  // 3. Dynamic Relative Time & Unread Computations
+  const getRelativeTime = (timestamp) => {
+    if (!timestamp) return 'Just now';
+    const diff = Math.floor((Date.now() - timestamp) / 1000);
+    if (diff < 10) return 'Just now';
+    if (diff < 60) return `${diff}s ago`;
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  };
 
+  const [, setTick] = useState(0);
   useEffect(() => {
-    if (bridgeCount > 0) {
-      setNotifications(prev => {
-        const filtered = prev.filter(n => n.id !== 2);
-        return [
-          ...filtered,
-          { id: 2, type: "bridge", text: `${bridgeCount} Cross-Stack API Laser Conduits active`, time: "Live" }
-        ];
-      });
-    }
-  }, [bridgeCount]);
+    if (!isNotificationsOpen) return;
+    const interval = setInterval(() => setTick(t => t + 1), 10000);
+    return () => clearInterval(interval);
+  }, [isNotificationsOpen]);
+
+  const unreadCount = useMemo(() => {
+    return (notifications || []).filter(n => !n.read).length;
+  }, [notifications]);
+
+  const hasUnreadError = useMemo(() => {
+    return (notifications || []).some(n => !n.read && n.type === 'error');
+  }, [notifications]);
+
+  const hasUnreadWarning = useMemo(() => {
+    return (notifications || []).some(n => !n.read && n.type === 'warning');
+  }, [notifications]);
 
   // Click outside listener for notifications popover
   useEffect(() => {
@@ -75,11 +97,6 @@ export default function StatusBar({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const clearNotification = (id, e) => {
-    e.stopPropagation();
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
 
   // Smart File Type Resolver
   const getFileType = (filename) => {
@@ -154,24 +171,77 @@ export default function StatusBar({
       {/* ------------------------------------------------------------------- */}
       <div className="flex items-center gap-2.5 h-full shrink-0">
         
-        {/* 🚀 SMART GIT INDICATOR (Repo / Branch or 'no git') */}
-        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer">
-          <GitBranch size={11} className={hasGit ? "text-blue-400" : "text-slate-600"} />
+        {/* 🚀 SMART GIT INDICATOR (Repo / Branch or 'Not a git folder') */}
+        <div className="flex items-center gap-1.5 text-[10px] transition-colors">
+          <GitBranch size={11} className={hasGit ? "text-blue-400" : "text-slate-500"} />
           {hasGit ? (
-            <span>
+            <span className="text-slate-400 hover:text-slate-200 cursor-pointer">
               {currentRepoName ? `${currentRepoName} / ` : ''}{gitBranch || 'main'}
               {modifiedGitCount > 0 && (
                 <span className="text-amber-400 ml-1">({modifiedGitCount}*)</span>
               )}
             </span>
           ) : (
-            <span className="text-slate-600">no git</span>
+            <span className="text-slate-500">Not a git folder</span>
           )}
         </div>
 
-        {/* Coordinates */}
+        {/* Active File Save Status, AutoSave Toggle & Coordinates */}
         {activeFile ? (
           <>
+            {/* Live Save Status Indicator */}
+            <span className="text-slate-600">·</span>
+            <div className="flex items-center gap-1.5 text-[10px]">
+              {isSaving ? (
+                <span className="text-blue-400 flex items-center gap-1 font-mono">
+                  <Loader2 size={10} className="animate-spin" /> Saving...
+                </span>
+              ) : isDirty ? (
+                <span className="text-amber-400 font-semibold flex items-center gap-1 font-mono" title="Unsaved changes in active file (Ctrl+S to save)">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" /> Unsaved
+                </span>
+              ) : (
+                <span className="text-slate-400 flex items-center gap-1 font-mono" title="All changes saved to disk">
+                  <CheckCircle2 size={10} className="text-emerald-400" /> Saved
+                </span>
+              )}
+            </div>
+
+            {/* Minimalist Refactor ON/OFF Toggle */}
+            {onToggleRefactor && (
+              <>
+                <span className="text-slate-600 hidden sm:inline">·</span>
+                <button
+                  onClick={onToggleRefactor}
+                  className="text-[10px] text-slate-400 hover:text-slate-200 transition-colors font-mono flex items-center gap-1 cursor-pointer"
+                  title={`Spatial Code Refactoring is ${refactorEnabled ? 'Active' : 'Disabled'} (Click to toggle)`}
+                >
+                  <span>Refactor:</span>
+                  <span className={refactorEnabled ? "text-blue-400 font-semibold" : "text-slate-500 font-semibold"}>
+                    {refactorEnabled ? "ON" : "OFF"}
+                  </span>
+                </button>
+              </>
+            )}
+
+            {/* Minimalist Blast Protection ON/OFF Toggle */}
+            {onToggleBlastProtection && (
+              <>
+                <span className="text-slate-600 hidden sm:inline">·</span>
+                <button
+                  onClick={onToggleBlastProtection}
+                  className="text-[10px] text-slate-400 hover:text-slate-200 transition-colors font-mono flex items-center gap-1 cursor-pointer"
+                  title={`Blast Protection is ${blastProtectionEnabled ? 'Active (Guards code against rapid AI mutation bursts)' : 'Disabled'} (Click to toggle)`}
+                >
+                  <span className="hidden sm:inline">Blast Protection:</span>
+                  <span className="sm:hidden">Blast:</span>
+                  <span className={blastProtectionEnabled ? "text-cyan-400 font-semibold" : "text-slate-500 font-semibold"}>
+                    {blastProtectionEnabled ? "ON" : "OFF"}
+                  </span>
+                </button>
+              </>
+            )}
+
             <span className="text-slate-600 hidden md:inline">·</span>
             <div className="text-slate-300 text-[10px] hidden md:flex">
               Ln {lineCount}, Col 1 ({wordCount} words)
@@ -187,6 +257,40 @@ export default function StatusBar({
           </>
         ) : (
           <>
+            {/* Minimalist Refactor ON/OFF Toggle for Spatial Map view */}
+            {onToggleRefactor && (
+              <>
+                <span className="text-slate-600 hidden sm:inline">·</span>
+                <button
+                  onClick={onToggleRefactor}
+                  className="text-[10px] text-slate-400 hover:text-slate-200 transition-colors font-mono flex items-center gap-1 cursor-pointer"
+                  title={`Spatial Code Refactoring is ${refactorEnabled ? 'Active' : 'Disabled'} (Click to toggle)`}
+                >
+                  <span>Refactor:</span>
+                  <span className={refactorEnabled ? "text-blue-400 font-semibold" : "text-slate-500 font-semibold"}>
+                    {refactorEnabled ? "ON" : "OFF"}
+                  </span>
+                </button>
+              </>
+            )}
+
+            {/* Minimalist Blast Protection ON/OFF Toggle for Spatial Map view */}
+            {onToggleBlastProtection && (
+              <>
+                <span className="text-slate-600 hidden sm:inline">·</span>
+                <button
+                  onClick={onToggleBlastProtection}
+                  className="text-[10px] text-slate-400 hover:text-slate-200 transition-colors font-mono flex items-center gap-1 cursor-pointer"
+                  title={`Blast Protection is ${blastProtectionEnabled ? 'Active (Guards code against rapid AI mutation bursts)' : 'Disabled'} (Click to toggle)`}
+                >
+                  <span className="hidden sm:inline">Blast Protection:</span>
+                  <span className="sm:hidden">Blast:</span>
+                  <span className={blastProtectionEnabled ? "text-cyan-400 font-semibold" : "text-slate-500 font-semibold"}>
+                    {blastProtectionEnabled ? "ON" : "OFF"}
+                  </span>
+                </button>
+              </>
+            )}
             <span className="text-slate-600">·</span>
             <div className="text-slate-400 text-[10px]">
               <span>Spatial Map</span>
@@ -201,62 +305,86 @@ export default function StatusBar({
         {/* ----------------------------------------------------------------- */}
         <div className="relative h-full flex items-center" ref={notifRef}>
           <button 
-            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+            onClick={() => {
+              const nextState = !isNotificationsOpen;
+              setIsNotificationsOpen(nextState);
+              if (nextState && onMarkAllNotificationsRead) {
+                onMarkAllNotificationsRead();
+              }
+            }}
             className={`p-1 flex items-center justify-center transition-colors relative cursor-pointer rounded hover:bg-[#242628] ${
               isNotificationsOpen ? 'text-slate-100 bg-[#242628]' : 'text-slate-400 hover:text-slate-200'
             }`} 
-            title="System Notifications"
+            title="System Alerts & Notifications"
           >
-            <Bell size={11} />
-            {notifications.length > 0 && (
-              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+            <Bell size={12} />
+            {unreadCount > 0 && (
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-blue-500 rounded-full" />
             )}
           </button>
 
           {/* Notifications Popover Menu */}
           {isNotificationsOpen && (
-            <div className="absolute bottom-full right-0 mb-2 w-80 bg-[#191a1b]/95 border border-[#2e3032] rounded-xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-150 z-[200]">
-              <div className="px-3 py-2 border-b border-[#242628] flex items-center justify-between bg-[#151617]">
-                <span className="text-[10px] font-bold text-slate-200 uppercase tracking-widest flex items-center gap-1.5">
-                  <Activity size={11} className="text-blue-400" /> System Alerts
-                </span>
-                {notifications.length > 0 && (
+            <div className="absolute bottom-full right-0 mb-2 w-88 max-w-[92vw] bg-[#191a1b]/98 border border-[#2e3032] rounded-xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-2 duration-150 z-[200]">
+              <div className="px-3.5 py-2 border-b border-[#242628] flex items-center justify-between bg-[#151617]">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono font-semibold text-slate-200 tracking-wide">
+                    System Alerts
+                  </span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded-full bg-[#242628] text-slate-400 border border-[#2e3032]">
+                    {notifications.length}
+                  </span>
+                </div>
+                {notifications.length > 0 && onClearNotifications && (
                   <button 
-                    onClick={() => setNotifications([])} 
-                    className="text-[9px] text-slate-400 hover:text-slate-200 transition-colors uppercase tracking-wider cursor-pointer"
+                    onClick={onClearNotifications} 
+                    className="text-[10px] font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer hover:underline"
                   >
                     Clear All
                   </button>
                 )}
               </div>
               
-              <div className="max-h-60 overflow-y-auto divide-y divide-[#222426]">
+              <div className="max-h-72 overflow-y-auto divide-y divide-[#222426] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-[#2e3032]">
                 {notifications.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-slate-500 text-xs">
-                    All subsystems operating nominally.
+                  <div className="px-4 py-8 flex flex-col items-center justify-center gap-2 text-center text-slate-500 text-xs font-mono">
+                    <span>No notifications</span>
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <div key={notif.id} className="px-3 py-2 hover:bg-[#202224] transition-colors flex items-start justify-between group">
-                      <div className="flex items-start gap-2.5">
-                        {notif.type === 'success' ? (
-                          <CheckCircle2 size={12} className="text-emerald-400 shrink-0 mt-0.5" />
-                        ) : notif.type === 'bridge' ? (
-                          <Zap size={12} className="text-blue-400 shrink-0 mt-0.5" />
-                        ) : (
-                          <Bell size={12} className="text-blue-400 shrink-0 mt-0.5" />
-                        )}
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-slate-300 text-xs leading-tight font-sans">{notif.text}</span>
-                          <span className="text-[9px] text-slate-500 font-mono">{notif.time}</span>
+                    <div key={notif.id} className="px-3.5 py-2.5 hover:bg-[#202224]/80 transition-colors flex items-start justify-between gap-2 group">
+                      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-xs font-mono font-semibold truncate ${
+                            notif.type === 'error' ? 'text-red-400' : notif.type === 'warning' ? 'text-amber-400' : 'text-slate-200'
+                          }`}>
+                            {notif.title || (notif.type === 'error' ? 'System Alert' : 'Notification')}
+                          </span>
+                          {notif.source && (
+                            <span className="text-[8px] font-mono uppercase px-1 py-0.2 rounded bg-slate-800/80 text-slate-400 border border-slate-700/50">
+                              {notif.source}
+                            </span>
+                          )}
                         </div>
+                        <span className="text-slate-400 text-[11px] leading-snug break-words font-sans">
+                          {notif.message || notif.text}
+                        </span>
+                        <span className="text-[9px] text-slate-500 font-mono mt-0.5">
+                          {notif.timestamp ? getRelativeTime(notif.timestamp) : (notif.time || 'Just now')}
+                        </span>
                       </div>
-                      <button 
-                        onClick={(e) => clearNotification(notif.id, e)} 
-                        className="opacity-0 group-hover:opacity-100 hover:text-white p-0.5 transition-opacity text-slate-500 cursor-pointer"
-                      >
-                        <X size={11} />
-                      </button>
+                      {onDismissNotification && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDismissNotification(notif.id);
+                          }} 
+                          className="opacity-0 group-hover:opacity-100 hover:text-white p-1 rounded hover:bg-white/10 transition-all text-slate-500 cursor-pointer shrink-0 mt-0.5"
+                          title="Dismiss Alert"
+                        >
+                          <X size={11} />
+                        </button>
+                      )}
                     </div>
                   ))
                 )}

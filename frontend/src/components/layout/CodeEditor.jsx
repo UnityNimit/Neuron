@@ -80,11 +80,29 @@ export default function CodeEditor({
   settings = {}, 
   focusLine, 
   onCodeChange, 
-  onClearFocus 
+  onSave, 
+  onClearFocus,
+  isSyncing = false
 }) {
   const editorRef = useRef(null);
   const modelsMapRef = useRef(new Map()); // Map<filePath, ITextModel>
   const timerRef = useRef(null);
+
+  const onCodeChangeRef = useRef(onCodeChange);
+  const onSaveRef = useRef(onSave);
+  const filenameRef = useRef(filename);
+
+  useEffect(() => {
+    onCodeChangeRef.current = onCodeChange;
+  }, [onCodeChange]);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
+  useEffect(() => {
+    filenameRef.current = filename;
+  }, [filename]);
 
   // -------------------------------------------------------------------------
   // 2. POLYGLOT LANGUAGE DETECTION
@@ -160,7 +178,7 @@ export default function CodeEditor({
   }, [filename, initialCode, language, getOrCreateModel]);
 
   // -------------------------------------------------------------------------
-  // 4. EDITOR MOUNT & KEYBINDINGS (Ctrl+/ Line Commenting)
+  // 4. EDITOR MOUNT & KEYBINDINGS (Ctrl+S Save & Ctrl+/ Line Commenting)
   // -------------------------------------------------------------------------
   const handleMount = (editor) => {
     editorRef.current = editor;
@@ -173,6 +191,18 @@ export default function CodeEditor({
       }
     }
 
+    // 🚀 BIND CTRL + S / CMD + S (SAVE ACTIVE FILE)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      const currentVal = editor.getValue();
+      const currentFile = filenameRef.current;
+      if (onCodeChangeRef.current && currentFile) {
+        onCodeChangeRef.current(currentVal, currentFile);
+      }
+      if (onSaveRef.current && currentFile) {
+        onSaveRef.current(currentFile, currentVal);
+      }
+    });
+
     // 🚀 BIND CTRL + / (TOGGLE LINE COMMENT) FOR ALL LANGUAGES
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => {
       editor.trigger('keyboard', 'editor.action.commentLine', null);
@@ -183,16 +213,14 @@ export default function CodeEditor({
       editor.trigger('keyboard', 'editor.action.blockComment', null);
     });
 
-    // Listen for model content changes (Per-File Debounced Save)
+    // Listen for model content changes (Notify parent instantly so dirty indicator is 0ms)
     editor.onDidChangeModelContent(() => {
       const currentVal = editor.getValue();
+      const currentFile = filenameRef.current;
       
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        if (onCodeChange) {
-          onCodeChange(currentVal);
-        }
-      }, 400);
+      if (onCodeChangeRef.current && currentFile) {
+        onCodeChangeRef.current(currentVal, currentFile);
+      }
     });
 
     // Jump to line if focusLine was passed
@@ -214,18 +242,58 @@ export default function CodeEditor({
     }
   }, [focusLine, onClearFocus]);
 
+  // -------------------------------------------------------------------------
+  // 3. FILE PATH BREADCRUMBS (Relative to Workspace Root)
+  // -------------------------------------------------------------------------
+  const breadcrumbSegments = useMemo(() => {
+    if (!filename) return [];
+    return filename.replace(/\\/g, '/').split('/').filter(Boolean);
+  }, [filename]);
+
   return (
-    <div className="w-full h-full relative flex-1 overflow-hidden min-h-0 min-w-0 bg-[#121314]">
-      <Editor
-        height="100%"
-        width="100%"
-        theme="neuron-obsidian"
-        onMount={handleMount}
-        loading={
-          <div className="w-full h-full flex items-center justify-center bg-[#121314] text-slate-500 font-mono text-xs">
-            Loading Editor...
+    <div className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 bg-[#121314]">
+      {/* 🚀 MINIMALIST FILE PATH BREADCRUMB BAR (e.g. frontend > src > App.jsx) */}
+      {breadcrumbSegments.length > 0 && (
+        <div className="h-6 shrink-0 bg-[#121314] border-b border-[#242628] px-3 flex items-center justify-between text-[11px] font-mono text-slate-400 select-none z-20">
+          <div className="flex items-center gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            {breadcrumbSegments.map((segment, idx) => {
+              const isLast = idx === breadcrumbSegments.length - 1;
+              return (
+                <React.Fragment key={idx}>
+                  {idx > 0 && <span className="text-slate-600 font-mono text-[10px]">&gt;</span>}
+                  <span className={isLast ? "text-slate-200" : "text-slate-400 hover:text-slate-300 transition-colors"}>
+                    {segment}
+                  </span>
+                </React.Fragment>
+              );
+            })}
           </div>
-        }
+          {isSyncing && (
+            <span className="text-[10px] font-mono text-blue-400/80 animate-pulse pl-2 shrink-0">
+              Loading...
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 🚀 RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
+      {isSyncing && (
+        <div className="h-[1.5px] w-full bg-[#121314] overflow-hidden shrink-0 z-20">
+          <div className="h-full bg-blue-500/80 animate-pulse w-full" />
+        </div>
+      )}
+
+      <div className="w-full flex-1 min-h-0 relative">
+        <Editor
+          height="100%"
+          width="100%"
+          theme="neuron-obsidian"
+          onMount={handleMount}
+          loading={
+            <div className="w-full h-full flex items-center justify-center bg-[#121314] text-slate-500 font-mono text-xs">
+              Loading Editor...
+            </div>
+          }
         options={{
           automaticLayout: true,
           fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
@@ -246,6 +314,7 @@ export default function CodeEditor({
           renderWhitespace: "selection"
         }}
       />
+      </div>
     </div>
   );
 }

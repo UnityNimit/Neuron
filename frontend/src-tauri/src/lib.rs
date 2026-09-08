@@ -1,10 +1,15 @@
 // frontend/src-tauri/src/lib.rs
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command as StdCommand, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use std::time::Duration;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -13,6 +18,7 @@ use tauri_plugin_shell::ShellExt;
 pub struct ProcessState {
     pub tauri_child: Arc<Mutex<Option<CommandChild>>>,
     pub std_child: Arc<Mutex<Option<Child>>>,
+    pub is_quitting: Arc<AtomicBool>,
 }
 
 /// 🚀 IMMEDIATE LOG FLUSHER (Writes to %TEMP%\neuron_debug.log)
@@ -37,6 +43,51 @@ fn get_timestamp() -> String {
     format!("{}.{:03}", since_the_epoch.as_secs(), since_the_epoch.subsec_millis())
 }
 
+/// Check if backend port 8000 is already active
+fn is_backend_running() -> bool {
+    let addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+    TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
+}
+
+/// Terminate all backend processes cleanly and thoroughly
+fn kill_all_backend_processes(state: &ProcessState) {
+    log_debug("Initiating complete backend process termination...");
+
+    if let Ok(mut lock) = state.tauri_child.lock() {
+        if let Some(child) = lock.take() {
+            let _ = child.kill();
+        }
+    }
+
+    if let Ok(mut lock) = state.std_child.lock() {
+        if let Some(mut child) = lock.take() {
+            let _ = child.kill();
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let _ = StdCommand::new("taskkill")
+            .args(&["/F", "/IM", "neuron-backend.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+
+        let _ = StdCommand::new("taskkill")
+            .args(&["/F", "/IM", "neuron-backend-x86_64-pc-windows-msvc.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
+
+    log_debug("Backend process termination signals dispatched.");
+}
+
 /// Custom IPC Command to query backend health
 #[tauri::command]
 async fn get_backend_status() -> Result<bool, String> {
@@ -47,8 +98,34 @@ async fn get_backend_status() -> Result<bool, String> {
     }
 }
 
+/// Custom IPC Command to completely quit Neuron and terminate the backend engine
+#[tauri::command]
+async fn quit_neuron_completely(app: AppHandle, state: State<'_, ProcessState>) -> Result<(), String> {
+    log_debug("quit_neuron_completely command received from UI.");
+    state.is_quitting.store(true, Ordering::SeqCst);
+    kill_all_backend_processes(&state);
+    app.exit(0);
+    Ok(())
+}
+
+/// Custom IPC Command to restart the backend engine
+#[tauri::command]
+async fn restart_backend(app: AppHandle, state: State<'_, ProcessState>) -> Result<(), String> {
+    log_debug("restart_backend command received.");
+    kill_all_backend_processes(&state);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let state_inner = (*state).clone();
+    launch_backend_with_logging(&app, &state_inner);
+    Ok(())
+}
+
 /// Multi-tier launcher with comprehensive logging
 fn launch_backend_with_logging(app: &AppHandle, state: &ProcessState) {
+    if is_backend_running() {
+        log_debug("⚡ [INSTANT START] Backend is ALREADY running on port 8000. Skipping spawn!");
+        return;
+    }
+
     log_debug("=================================================");
     log_debug("🚀 STARTING NEURON BACKEND LAUNCH SEQUENCE");
     log_debug("=================================================");
@@ -211,43 +288,104 @@ fn start_health_probe() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let process_state = ProcessState::default();
-    let state_clone = process_state.clone();
+    let state_setup = process_state.clone();
+    let state_event = process_state.clone();
+    let state_exit = process_state.clone();
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .manage(process_state.clone())
-        .invoke_handler(tauri::generate_handler![get_backend_status])
+        .invoke_handler(tauri::generate_handler![
+            get_backend_status,
+            quit_neuron_completely,
+            restart_backend
+        ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            launch_backend_with_logging(&app_handle, &state_clone);
+
+            // Maximize main window on launch to fit 1920x1080 and any display
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.maximize();
+            }
+
+            // Spawn backend engine
+            launch_backend_with_logging(&app_handle, &state_setup);
+
+            // Configure System Tray Menu
+            let show_i = MenuItem::with_id(app, "show", "Open Neuron IDE", true, None::<&str>)?;
+            let status_i = MenuItem::with_id(app, "status", "● Backend: Running (Port 8000)", false, None::<&str>)?;
+            let restart_i = MenuItem::with_id(app, "restart", "Restart Backend Engine", true, None::<&str>)?;
+            let sep = PredefinedMenuItem::separator(app)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit Neuron Completely", true, None::<&str>)?;
+
+            let tray_menu = Menu::with_items(app, &[&show_i, &status_i, &restart_i, &sep, &quit_i])?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .tooltip("Neuron IDE - Spatial Development Platform");
+
+            // Attach default window icon if available
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let state_tray = state_setup.clone();
+            tray_builder
+                .on_menu_event(move |app_h, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app_h.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "restart" => {
+                            let state_inner = state_tray.clone();
+                            let h = app_h.clone();
+                            tauri::async_runtime::spawn(async move {
+                                kill_all_backend_processes(&state_inner);
+                                tokio::time::sleep(Duration::from_millis(600)).await;
+                                launch_backend_with_logging(&h, &state_inner);
+                            });
+                        }
+                        "quit" => {
+                            state_tray.is_quitting.store(true, Ordering::SeqCst);
+                            kill_all_backend_processes(&state_tray);
+                            app_h.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app_h = tray.app_handle();
+                        if let Some(window) = app_h.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
             Ok(())
         })
-        .on_window_event(move |_window, event| {
-            if let WindowEvent::Destroyed = event {
-                log_debug("Window closed. Cleaning up backend process tree...");
-                if let Ok(mut lock) = process_state.tauri_child.lock() {
-                    if let Some(child) = lock.take() {
-                        let _ = child.kill();
-                    }
-                }
-                if let Ok(mut lock) = process_state.std_child.lock() {
-                    if let Some(mut child) = lock.take() {
-                        #[cfg(windows)]
-                        {
-                            use std::os::windows::process::CommandExt;
-                            const CREATE_NO_WINDOW: u32 = 0x08000000;
-                            let pid = child.id();
-                            let mut kill_cmd = StdCommand::new("taskkill");
-                            kill_cmd.args(&["/F", "/T", "/PID", &pid.to_string()])
-                                    .creation_flags(CREATE_NO_WINDOW)
-                                    .stdout(Stdio::null())
-                                    .stderr(Stdio::null());
-                            let _ = kill_cmd.spawn();
-                        }
-                        let _ = child.kill();
-                    }
+        .on_window_event(move |window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if !state_event.is_quitting.load(Ordering::SeqCst) {
+                    // Prevent process kill; keep backend running in background
+                    api.prevent_close();
+                    let _ = window.hide();
+                    log_debug("Main window closed to system tray. Backend continues running for instant reopen.");
                 }
             }
         })
@@ -256,7 +394,8 @@ pub fn run() {
 
     app.run(move |_app_handle, event| {
         if let RunEvent::Exit = event {
-            log_debug("Neuron Application Exited.");
+            log_debug("Neuron Application Exiting. Ensuring all backend processes terminated...");
+            kill_all_backend_processes(&state_exit);
         }
     });
 }

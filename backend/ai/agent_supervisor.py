@@ -32,6 +32,7 @@ class FileMutationDelta:
     symbols_deleted: List[str] = field(default_factory=list)
     raw_diff: str = ""
     original_content: str = ""
+    new_content: str = ""
 
 
 @dataclass
@@ -130,7 +131,8 @@ class AgentSupervisorEngine:
             symbols_modified=symbols_modified,
             symbols_deleted=symbols_deleted,
             raw_diff=raw_diff,
-            original_content=old_content
+            original_content=old_content,
+            new_content=new_content
         )
 
     def compute_transitive_blast_radius(
@@ -255,6 +257,31 @@ class AgentSupervisorEngine:
             return True, f"Successfully rolled back batch {batch_id} across {len(batch.modified_files)} files."
         except Exception as e:
             return False, f"Rollback failed during disk write: {e}"
+
+    def reapply_batch(self, batch_id: str, workspace_root: str) -> Tuple[bool, str]:
+        """
+        Re-applies the batch of changes if the user explicitly approves them.
+        """
+        if batch_id not in self.active_batches:
+            return False, f"Batch '{batch_id}' not found in active supervisor vault."
+
+        batch = self.active_batches[batch_id]
+        try:
+            for fpath, delta in batch.file_deltas.items():
+                abs_path = os.path.join(workspace_root, fpath)
+                if delta.status == "DELETED":
+                    if os.path.exists(abs_path):
+                        os.remove(abs_path)
+                elif delta.new_content:
+                    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+                    with open(abs_path, "w", encoding="utf-8") as f:
+                        f.write(delta.new_content)
+
+            batch.is_rolled_back = False
+            batch.is_committed = True
+            return True, f"Successfully applied batch {batch_id} across {len(batch.modified_files)} files."
+        except Exception as e:
+            return False, f"Apply failed during disk write: {e}"
 
     def get_latest_batch_summary(self) -> Optional[dict]:
         """Returns JSON-serializable telemetry of the latest active agent batch."""

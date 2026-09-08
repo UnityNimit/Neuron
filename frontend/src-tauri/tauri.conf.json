@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Neuron",
-  "version": "2.4.0",
+  "version": "1.0.0",
   "identifier": "com.neuron.ide",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -12,12 +12,15 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Neuron Spatial IDE",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 1000,
-        "minHeight": 650,
+        "width": 1280,
+        "height": 720,
+        "minWidth": 960,
+        "minHeight": 580,
         "resizable": true,
+        "maximized": true,
+        "center": true,
         "fullscreen": false,
         "decorations": false,
         "transparent": false,
@@ -27,7 +30,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' tauri:; connect-src 'self' ws://127.0.0.1:8000 wss://* http://127.0.0.1:8000 https://*; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' data: https:;"
+      "csp": "default-src 'self' tauri:; connect-src 'self' ws://127.0.0.1:8000 wss://* http://127.0.0.1:8000 https://*; img-src 'self' data: http://127.0.0.1:8000 asset: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' data: https:;"
     }
   },
   "bundle": {
@@ -47,7 +50,12 @@
     ],
     "copyright": "Copyright © 2026 Neuron Team",
     "category": "DeveloperTool",
-    "shortDescription": "Full-Stack Spatial Code Intelligence IDE"
+    "shortDescription": "Full-Stack Spatial Code Intelligence IDE",
+    "windows": {
+      "nsis": {
+        "installerHooks": "hooks.nsh"
+      }
+    }
   },
   "plugins": {
     "shell": {
