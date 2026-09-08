@@ -27,7 +27,7 @@ from services.git_service import (
     git_commit, git_push, git_stage, git_unstage, git_discard,
     git_get_detailed_status, git_get_log_graph
 )
-from services.workspace_service import broadcast_workspace, get_workspace_state
+from services.workspace_service import broadcast_workspace, get_workspace_state, reset_workspace_mutation_tracker
 
 router = APIRouter()
 _RECENT_SAVE_TIMESTAMPS: list = []
@@ -106,8 +106,11 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception:
             pass
 
+    # Reset mutation tracker and clear any lingering agent supervisor batches on connect
+    reset_workspace_mutation_tracker()
+
     # 1. EMIT INITIAL WORKSPACE STATE ASYNCHRONOUSLY
-    initial_state = await asyncio.to_thread(get_workspace_state)
+    initial_state = await asyncio.to_thread(get_workspace_state, True)
     if AppState.USER_SESSION:
         initial_state["user_session"] = AppState.USER_SESSION
     graph = await asyncio.to_thread(git_get_log_graph, AppState.TARGET_DIR, 40)
@@ -174,6 +177,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if chosen_dir and os.path.exists(chosen_dir):
                     AppState.TARGET_DIR = os.path.abspath(chosen_dir)
                     AppState.ACTIVE_FILE = ""
+                    reset_workspace_mutation_tracker()
                     # 🚀 Instantly notify frontend to display the minimalist loading screen
                     await broadcast_to_all({
                         "event": "WORKSPACE_LOADING",
@@ -191,6 +195,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if folder_path and os.path.exists(folder_path):
                     AppState.TARGET_DIR = os.path.abspath(folder_path)
                     AppState.ACTIVE_FILE = ""
+                    reset_workspace_mutation_tracker()
                     # 🚀 Instantly notify frontend to display the minimalist loading screen
                     await broadcast_to_all({
                         "event": "WORKSPACE_LOADING",
@@ -378,6 +383,10 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "SET_BLAST_PROTECTION":
                 enabled = bool(message.get("enabled", False))
                 AppState.BLAST_PROTECTION_ENABLED = enabled
+                if not enabled:
+                    agent_supervisor.active_batches.clear()
+                    agent_supervisor.current_burst_id = None
+                    agent_supervisor.file_content_snapshots.clear()
                 await broadcast_to_all({
                     "event": "BLAST_PROTECTION_CHANGED",
                     "enabled": enabled

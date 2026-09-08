@@ -1,10 +1,5 @@
 // frontend/src/components/layout/AgentSupervisorHUD.jsx
 import React, { useState } from 'react';
-import { 
-  Bot, Sparkles, RotateCcw, CheckCircle2, ChevronDown, 
-  ChevronUp, X, Zap, Network, FileCode2, AlertTriangle, 
-  Plus, Minus, RefreshCw, ExternalLink, ShieldAlert 
-} from 'lucide-react';
 
 export default function AgentSupervisorHUD({ 
   agentBatch, 
@@ -31,96 +26,126 @@ export default function AgentSupervisorHUD({
   const selectedDelta = fileDeltas[selectedFileIdx] || fileDeltas[0];
 
   return (
-    <div className="fixed bottom-10 right-6 z-[120] max-w-xl w-full select-none animate-in fade-in slide-in-from-bottom-5 duration-200">
-      <div className="bg-[#121212]/95 border border-cyan-500/40 shadow-[0_0_50px_rgba(6,182,212,0.2)] rounded-2xl overflow-hidden backdrop-blur-xl flex flex-col">
+    <div className="fixed bottom-8 right-6 z-[120] max-w-lg w-full select-none animate-in fade-in slide-in-from-bottom-3 duration-200">
+      <div 
+        className="border rounded-xl overflow-hidden flex flex-col font-sans transition-colors"
+        style={{
+          backgroundColor: 'var(--theme-surface, #161719)',
+          borderColor: 'var(--theme-border, #242628)',
+          boxShadow: '0 16px 48px rgba(0,0,0,0.32)'
+        }}
+      >
         
         {/* ----------------------------------------------------------------- */}
         {/* 1. TOP COMPACT STATUS BAR                                         */}
         {/* ----------------------------------------------------------------- */}
-        <div className="px-4 py-3 bg-[#181818]/90 border-b border-[#262626] flex items-center justify-between">
-          
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-cyan-950/80 border border-cyan-700/50 flex items-center justify-center text-cyan-400 shrink-0">
-              {agentBatch.blastProtectionBlocked ? (
-                <ShieldAlert size={15} className="text-cyan-400 animate-pulse" />
-              ) : (
-                <Bot size={15} className="animate-pulse" />
-              )}
-            </div>
-            
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold text-slate-100 uppercase tracking-wider">
-                  {agentBatch.blastProtectionBlocked ? "Blast Protection Intercepted" : "AI Agent Mutation Burst"}
-                </span>
-                <span className="text-[9px] font-mono font-bold bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-800/40">
-                  {agentBatch.blastProtectionBlocked ? "Codebase Preserved" : `${modifiedFiles.length} Files Modified`}
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
-                {agentBatch.blastProtectionBlocked ? (
-                  <span>Neutralized instant AI burst ({modifiedFiles.length} files, {blastRadiusNodeIds.length} blast nodes).</span>
-                ) : (
-                  <>
-                    <Network size={10} className="text-purple-400" /> 
-                    <span>Blast Radius: <strong className="text-purple-300">{blastRadiusNodeIds.length}</strong> downstream nodes</span>
-                    {affectedApiRoutes.length > 0 && (
-                      <>
-                        <span>·</span>
-                        <Zap size={10} className="text-cyan-400" />
-                        <span className="text-cyan-300">{affectedApiRoutes.length} API Routes Impacted</span>
-                      </>
-                    )}
-                  </>
-                )}
+        <div 
+          className="px-3.5 py-2.5 border-b flex items-center justify-between gap-3"
+          style={{
+            backgroundColor: 'var(--theme-secondary, #191a1b)',
+            borderColor: 'var(--theme-border, #242628)'
+          }}
+        >
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2">
+              <span 
+                className="text-[10px] font-mono font-bold tracking-wider px-1.5 py-0.5 rounded border"
+                style={{
+                  backgroundColor: 'var(--theme-surface-hover, #222426)',
+                  borderColor: 'var(--theme-border-subtle, #2e3032)',
+                  color: 'var(--theme-accent, #3b82f6)'
+                }}
+              >
+                {agentBatch.blastProtectionBlocked ? "BLAST SHIELD" : "AI MUTATION"}
+              </span>
+              <span 
+                className="text-xs font-mono font-semibold truncate"
+                style={{ color: 'var(--theme-text-bright, #f8fafc)' }}
+              >
+                {agentBatch.blastProtectionBlocked ? "Changes Intercepted" : "Burst Detected"}
               </span>
             </div>
+            
+            <span 
+              className="text-[11px] font-mono mt-0.5 truncate"
+              style={{ color: 'var(--theme-text-secondary, #94a3b8)' }}
+            >
+              {agentBatch.blastProtectionBlocked ? (
+                `${modifiedFiles.length} files preserved · ${blastRadiusNodeIds.length} downstream nodes guarded`
+              ) : (
+                `${modifiedFiles.length} files modified · ${blastRadiusNodeIds.length} blast nodes${affectedApiRoutes.length > 0 ? ` · ${affectedApiRoutes.length} APIs` : ''}`
+              )}
+            </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          {/* Action triggers: Details & Dismiss */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <button 
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1.5 rounded-lg hover:bg-[#282828] text-slate-400 hover:text-slate-200 transition-colors"
-              title={isExpanded ? "Collapse Details" : "Expand AST Diffs"}
+              className="px-2 py-1 text-[11px] font-mono rounded transition-colors hover:opacity-80 cursor-pointer"
+              style={{
+                backgroundColor: 'var(--theme-surface-hover, #222426)',
+                color: 'var(--theme-text-primary, #e2e8f0)',
+                border: '1px solid var(--theme-border-subtle, #2e3032)'
+              }}
             >
-              {isExpanded ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+              {isExpanded ? "Hide" : "Details"}
             </button>
             <button 
               onClick={onDismiss}
-              className="p-1.5 rounded-lg hover:bg-[#282828] text-slate-400 hover:text-slate-200 transition-colors"
+              className="px-2 py-1 text-[11px] font-mono rounded transition-colors hover:opacity-80 cursor-pointer"
+              style={{
+                backgroundColor: 'transparent',
+                color: 'var(--theme-text-muted, #64748b)'
+              }}
               title="Dismiss Alert"
             >
-              <X size={15} />
+              Dismiss
             </button>
           </div>
-
         </div>
 
         {/* ----------------------------------------------------------------- */}
         {/* 2. EXPANDED AST DELTA & CODE DIFF DRAWER                          */}
         {/* ----------------------------------------------------------------- */}
         {isExpanded && (
-          <div className="flex flex-row h-72 border-b border-[#262626] bg-[#0c0c0c] divide-x divide-[#222]">
-            
+          <div 
+            className="flex flex-row h-64 border-b divide-x"
+            style={{
+              backgroundColor: 'var(--theme-background, #121314)',
+              borderColor: 'var(--theme-border, #242628)'
+            }}
+          >
             {/* Left Column: Modified Files List */}
-            <div className="w-48 overflow-y-auto p-2 divide-y divide-[#1e1e1e] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10">
+            <div 
+              className="w-44 overflow-y-auto p-1.5 flex flex-col gap-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-white/10"
+              style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+            >
               {fileDeltas.map((f, idx) => {
                 const isSelected = idx === selectedFileIdx;
                 return (
                   <div 
                     key={f.filePath}
                     onClick={() => setSelectedFileIdx(idx)}
-                    className={`p-2 rounded-lg cursor-pointer text-[11px] font-mono transition-colors flex flex-col gap-0.5 ${
-                      isSelected ? 'bg-cyan-950/40 border border-cyan-800/40 text-cyan-200' : 'hover:bg-[#161616] text-slate-400'
-                    }`}
+                    className="p-1.5 rounded cursor-pointer text-[11px] font-mono transition-all flex flex-col gap-0.5"
+                    style={{
+                      backgroundColor: isSelected ? 'var(--theme-surface-active, #2a2c2e)' : 'transparent',
+                      border: isSelected ? '1px solid var(--theme-accent, #3b82f6)' : '1px solid transparent',
+                      color: isSelected ? 'var(--theme-text-bright, #f8fafc)' : 'var(--theme-text-secondary, #94a3b8)'
+                    }}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="truncate font-semibold">{f.filePath.split('/').pop()}</span>
-                      <span className={`text-[9px] ${f.locDelta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      <span className="truncate font-medium">{f.filePath.split('/').pop()}</span>
+                      <span className="text-[10px] font-mono" style={{ color: f.locDelta >= 0 ? '#10b981' : '#ef4444' }}>
                         {f.locDelta >= 0 ? `+${f.locDelta}` : f.locDelta}
                       </span>
                     </div>
-                    <span className="text-[9px] text-slate-600 truncate">{f.filePath}</span>
+                    <span 
+                      className="text-[9px] truncate"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      {f.filePath}
+                    </span>
                   </div>
                 );
               })}
@@ -128,45 +153,82 @@ export default function AgentSupervisorHUD({
 
             {/* Right Column: AST Symbol Diff & Code Inspector */}
             {selectedDelta && (
-              <div className="flex-1 p-3 flex flex-col justify-between overflow-hidden">
+              <div 
+                className="flex-1 p-2.5 flex flex-col justify-between overflow-hidden"
+                style={{ backgroundColor: 'var(--theme-surface, #161719)' }}
+              >
                 <div className="overflow-hidden flex flex-col gap-2">
                   
                   {/* File Header with Action Link */}
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-mono text-slate-200">
-                      <FileCode2 size={13} className="text-blue-400" />
-                      <span className="font-semibold">{selectedDelta.filePath}</span>
-                    </div>
+                    <span 
+                      className="font-mono text-xs font-semibold truncate"
+                      style={{ color: 'var(--theme-text-bright, #f8fafc)' }}
+                    >
+                      {selectedDelta.filePath}
+                    </span>
                     <button 
                       onClick={() => onSwitchFile && onSwitchFile(selectedDelta.filePath)}
-                      className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                      className="text-[10px] font-mono hover:underline cursor-pointer"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
                     >
-                      <span>Open Editor</span> <ExternalLink size={10} />
+                      Open Editor
                     </button>
                   </div>
 
                   {/* Modified Symbols Pill Box */}
-                  <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                  <div className="flex flex-wrap gap-1 max-h-14 overflow-y-auto">
                     {(selectedDelta.symbolsAdded || []).map(sym => (
-                      <span key={sym} className="text-[9px] font-mono bg-emerald-950/60 text-emerald-300 border border-emerald-800/40 px-1.5 py-0.5 rounded flex items-center gap-1">
-                        <Plus size={8} /> {sym}()
+                      <span 
+                        key={sym} 
+                        className="text-[9px] font-mono px-1.5 py-0.5 rounded border"
+                        style={{
+                          backgroundColor: 'var(--theme-surface-hover, #222426)',
+                          borderColor: 'var(--theme-border-subtle, #2e3032)',
+                          color: '#10b981'
+                        }}
+                      >
+                        + {sym}()
                       </span>
                     ))}
                     {(selectedDelta.symbolsModified || []).map(sym => (
-                      <span key={sym} className="text-[9px] font-mono bg-yellow-950/60 text-yellow-300 border border-yellow-800/40 px-1.5 py-0.5 rounded flex items-center gap-1">
-                        <RefreshCw size={8} /> {sym}()
+                      <span 
+                        key={sym} 
+                        className="text-[9px] font-mono px-1.5 py-0.5 rounded border"
+                        style={{
+                          backgroundColor: 'var(--theme-surface-hover, #222426)',
+                          borderColor: 'var(--theme-border-subtle, #2e3032)',
+                          color: '#f59e0b'
+                        }}
+                      >
+                        ~ {sym}()
                       </span>
                     ))}
                     {(selectedDelta.symbolsDeleted || []).map(sym => (
-                      <span key={sym} className="text-[9px] font-mono bg-red-950/60 text-red-300 border border-red-800/40 px-1.5 py-0.5 rounded flex items-center gap-1">
-                        <Minus size={8} /> {sym}()
+                      <span 
+                        key={sym} 
+                        className="text-[9px] font-mono px-1.5 py-0.5 rounded border"
+                        style={{
+                          backgroundColor: 'var(--theme-surface-hover, #222426)',
+                          borderColor: 'var(--theme-border-subtle, #2e3032)',
+                          color: '#ef4444'
+                        }}
+                      >
+                        - {sym}()
                       </span>
                     ))}
                   </div>
 
                   {/* Raw Diff Preview */}
                   {selectedDelta.diffSnippet && (
-                    <pre className="p-2 bg-[#121212] rounded-lg border border-[#222] font-mono text-[9px] text-slate-300 overflow-x-auto max-h-36 leading-relaxed [&::-webkit-scrollbar]:hidden">
+                    <pre 
+                      className="p-2 rounded border font-mono text-[9px] overflow-x-auto max-h-28 leading-relaxed [&::-webkit-scrollbar]:hidden"
+                      style={{
+                        backgroundColor: 'var(--theme-background, #121314)',
+                        borderColor: 'var(--theme-border, #242628)',
+                        color: 'var(--theme-text-primary, #e2e8f0)'
+                      }}
+                    >
                       <code>{selectedDelta.diffSnippet}</code>
                     </pre>
                   )}
@@ -174,17 +236,24 @@ export default function AgentSupervisorHUD({
                 </div>
               </div>
             )}
-
           </div>
         )}
 
         {/* ----------------------------------------------------------------- */}
-        {/* 3. BOTTOM ACTION BAR (Rollback vs Approve)                         */}
+        {/* 3. BOTTOM ACTION BAR (Rollback vs Keep)                           */}
         {/* ----------------------------------------------------------------- */}
-        <div className="px-4 py-2.5 bg-[#141414] flex items-center justify-between text-xs font-mono">
-          
-          <div className="flex items-center gap-2 text-[10px] text-slate-400">
-            <span>Net LOC: <strong className={totalLocDelta >= 0 ? "text-emerald-400" : "text-red-400"}>{totalLocDelta >= 0 ? `+${totalLocDelta}` : totalLocDelta}</strong></span>
+        <div 
+          className="px-3.5 py-2 border-t flex items-center justify-between text-xs font-mono"
+          style={{
+            backgroundColor: 'var(--theme-secondary, #191a1b)',
+            borderColor: 'var(--theme-border, #242628)'
+          }}
+        >
+          <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--theme-text-secondary, #94a3b8)' }}>
+            <span>Net LOC:</span>
+            <span className="font-semibold" style={{ color: totalLocDelta >= 0 ? '#10b981' : '#ef4444' }}>
+              {totalLocDelta >= 0 ? `+${totalLocDelta}` : totalLocDelta}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -192,43 +261,53 @@ export default function AgentSupervisorHUD({
               <>
                 <button 
                   onClick={onDismiss}
-                  className="px-3 py-1.5 bg-[#202020] hover:bg-[#2a2a2a] border border-slate-700 text-slate-300 hover:text-white rounded-lg transition-all flex items-center gap-1.5 text-[11px] cursor-pointer"
+                  className="px-2.5 py-1 rounded text-[11px] font-mono transition-all hover:opacity-90 cursor-pointer border"
+                  style={{
+                    backgroundColor: 'var(--theme-surface-hover, #222426)',
+                    borderColor: 'var(--theme-border, #242628)',
+                    color: 'var(--theme-text-primary, #e2e8f0)'
+                  }}
                 >
-                  <span>Keep Preserved</span>
+                  Keep Preserved
                 </button>
 
                 <button 
                   onClick={() => onApprove && onApprove(batchId)}
-                  className="px-3.5 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg transition-all flex items-center gap-1.5 text-[11px] font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] cursor-pointer"
+                  className="px-3 py-1 rounded text-[11px] font-mono font-medium transition-all hover:opacity-90 cursor-pointer text-white"
+                  style={{
+                    backgroundColor: 'var(--theme-accent, #3b82f6)'
+                  }}
                   title="Override Blast Protection and apply these changes to disk"
                 >
-                  <CheckCircle2 size={12} />
-                  <span>Restore Changes</span>
+                  Restore Changes
                 </button>
               </>
             ) : (
               <>
-                {/* 1-Click Instant Rollback Button */}
                 <button 
                   onClick={() => onRollback && onRollback(batchId)}
-                  className="px-3 py-1.5 bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 hover:text-red-100 rounded-lg transition-all flex items-center gap-1.5 text-[11px] shadow-[0_0_12px_rgba(239,68,68,0.2)] cursor-pointer"
+                  className="px-2.5 py-1 rounded text-[11px] font-mono transition-all hover:opacity-90 cursor-pointer border"
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    borderColor: 'rgba(239, 68, 68, 0.3)',
+                    color: '#f87171'
+                  }}
                 >
-                  <RotateCcw size={12} />
-                  <span>Rollback Batch</span>
+                  Rollback
                 </button>
 
-                {/* 1-Click Approve / Lock-in Button */}
                 <button 
                   onClick={() => onApprove && onApprove(batchId)}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-all flex items-center gap-1.5 text-[11px] font-semibold shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer"
+                  className="px-3 py-1 rounded text-[11px] font-mono font-medium transition-all hover:opacity-90 cursor-pointer text-white"
+                  style={{
+                    backgroundColor: 'var(--theme-accent, #3b82f6)'
+                  }}
                 >
-                  <CheckCircle2 size={12} />
-                  <span>Approve Changes</span>
+                  Keep Changes
                 </button>
               </>
             )}
           </div>
-
         </div>
 
       </div>

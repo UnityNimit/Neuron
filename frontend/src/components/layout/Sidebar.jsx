@@ -224,7 +224,11 @@ export default function Sidebar({
 
   return (
     <div 
-      className="w-full h-full bg-[#191a1b] flex flex-col select-none relative font-sans text-slate-300"
+      className="w-full h-full flex flex-col select-none relative font-sans"
+      style={{
+        backgroundColor: 'var(--theme-secondary, #191a1b)',
+        color: 'var(--theme-text-primary, #cbd5e1)'
+      }}
       onContextMenu={(e) => { 
         e.preventDefault(); 
         e.stopPropagation(); 
@@ -248,27 +252,30 @@ export default function Sidebar({
       {/* ----------------------------------------------------------------- */}
       {/* 1. TOP HEADER & ACTION ICONS                                      */}
       {/* ----------------------------------------------------------------- */}
-      <div className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide text-slate-300 flex items-center justify-between shrink-0 border-b border-[#242628]">
-        <span className="text-slate-300 font-medium tracking-wide">Explorer</span>
+      <div 
+        className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide flex items-center justify-between shrink-0 border-b"
+        style={{ borderColor: 'var(--theme-border, #242628)' }}
+      >
+        <span className="font-medium tracking-wide" style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}>Explorer</span>
         
         <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
           <button 
             onClick={() => handleInitiateCreate('file')} 
-            className="p-1 hover:bg-[#242628] hover:text-white rounded-md transition-colors text-slate-400 cursor-pointer" 
+            className="p-1 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] rounded-md transition-colors text-[var(--theme-text-muted)] cursor-pointer" 
             title="New File"
           >
             <FilePlus size={13} />
           </button>
           <button 
             onClick={() => handleInitiateCreate('folder')} 
-            className="p-1 hover:bg-[#242628] hover:text-white rounded-md transition-colors text-slate-400 cursor-pointer" 
+            className="p-1 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] rounded-md transition-colors text-[var(--theme-text-muted)] cursor-pointer" 
             title="New Folder"
           >
             <FolderPlus size={13} />
           </button>
           <button 
             onClick={onRefresh} 
-            className="p-1 hover:bg-[#242628] hover:text-white rounded-md transition-colors text-slate-400 cursor-pointer" 
+            className="p-1 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] rounded-md transition-colors text-[var(--theme-text-muted)] cursor-pointer" 
             title="Refresh Explorer"
           >
             <RefreshCw size={12} />
@@ -283,7 +290,7 @@ export default function Sidebar({
               setCollapsedFolders(all); 
               setSelectedPath(null); 
             }} 
-            className="p-1 hover:bg-[#242628] hover:text-white rounded-md transition-colors text-slate-400 cursor-pointer" 
+            className="p-1 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] rounded-md transition-colors text-[var(--theme-text-muted)] cursor-pointer" 
             title="Collapse All Folders"
           >
             <ListCollapse size={13} />
@@ -295,7 +302,8 @@ export default function Sidebar({
       {/* 2. ROOT WORKSPACE FOLDER TOGGLER                                  */}
       {/* ----------------------------------------------------------------- */}
       <div 
-        className="px-2.5 py-1 text-[11px] font-mono font-bold text-slate-200 tracking-wider flex items-center gap-1 shrink-0 hover:bg-[#222426] cursor-pointer transition-colors select-none" 
+        className="px-2.5 py-1 text-[11px] font-mono font-bold tracking-wider flex items-center gap-1 shrink-0 hover:bg-[var(--theme-surface-hover)] cursor-pointer transition-colors select-none" 
+        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
         onClick={() => setIsRootCollapsed(!isRootCollapsed)}
       >
         {isRootCollapsed ? (
@@ -331,9 +339,9 @@ export default function Sidebar({
                   ))}
                   <div className="w-[14px]" />
                   {item.type === 'folder' ? (
-                    <Folder size={13} className="text-[#dcb67a] shrink-0" />
+                    <Folder size={13} style={{ color: 'var(--theme-folder-icon, #dcb67a)' }} className="shrink-0" />
                   ) : (
-                    <FileCode2 size={13} className="text-slate-400 shrink-0" />
+                    <FileCode2 size={13} className="text-[var(--theme-text-muted)] shrink-0" />
                   )}
                   <input 
                     ref={inputRef} 
@@ -344,7 +352,11 @@ export default function Sidebar({
                       if (e.key === 'Enter') commitInlineCreate(inputValue); 
                       if (e.key === 'Escape') setInlineCreate(null); 
                     }} 
-                    className="w-full bg-[#121314] text-[#e2e8f0] text-[11px] font-mono border border-blue-500 outline-none px-1.5 py-0.5 rounded shadow-inner" 
+                    className="w-full text-[11px] font-mono border border-blue-500 outline-none px-1.5 py-0.5 rounded shadow-inner" 
+                    style={{
+                      backgroundColor: 'var(--theme-background, #121314)',
+                      color: 'var(--theme-text-primary, #e2e8f0)'
+                    }}
                   />
                 </div>
               );
@@ -365,29 +377,29 @@ export default function Sidebar({
               gStatus = 'M';
             }
 
-            let gitColor = 'text-slate-300';
+            let gitColor = 'text-[var(--theme-text-primary)]';
             let badgeColor = '';
             
             if (isDirty) {
-              gitColor = 'text-amber-300 font-normal';
-              badgeColor = 'text-amber-400';
+              gitColor = 'text-amber-500 font-normal';
+              badgeColor = 'text-amber-500';
             } else if (gStatus === 'U' || gStatus === 'A') { 
-              gitColor = 'text-emerald-400 font-normal'; 
-              badgeColor = 'text-emerald-400'; // Clean unboxed green
+              gitColor = 'text-emerald-500 font-normal'; 
+              badgeColor = 'text-emerald-500'; // Clean unboxed green
             } else if (gStatus === 'M') { 
-              gitColor = 'text-amber-400 font-normal'; 
-              badgeColor = 'text-amber-400';   // Clean unboxed orange-yellow
+              gitColor = 'text-amber-500 font-normal'; 
+              badgeColor = 'text-amber-500';   // Clean unboxed orange-yellow
             } else if (gStatus === 'D') { 
-              gitColor = 'text-red-400 font-normal'; 
-              badgeColor = 'text-red-400';     // Clean unboxed red
+              gitColor = 'text-red-500 font-normal'; 
+              badgeColor = 'text-red-500';     // Clean unboxed red
             }
 
-            if (isActiveFile && gitColor === 'text-slate-300') {
-              gitColor = 'text-white font-normal';
+            if (isActiveFile && gitColor === 'text-[var(--theme-text-primary)]') {
+              gitColor = 'text-[var(--theme-text-bright)] font-semibold';
             }
 
             if (isIgnored && !isDirty && !isActiveFile) {
-              gitColor = 'text-slate-500/60 font-normal';
+              gitColor = 'text-[var(--theme-text-muted)] opacity-60 font-normal';
               badgeColor = '';
             }
 
@@ -431,12 +443,12 @@ export default function Sidebar({
                   dragOverPath === item.path 
                     ? 'bg-blue-600/30 border border-blue-500/50' 
                     : isSelected 
-                      ? 'bg-[#282a2d] text-white font-normal' 
+                      ? 'bg-[var(--theme-surface-active)] text-[var(--theme-text-bright)] font-medium' 
                       : isActiveFile
-                        ? 'bg-[#202224] text-white font-normal'
+                        ? 'bg-[var(--theme-surface-hover)] text-[var(--theme-text-bright)] font-medium'
                         : isIgnored
-                          ? 'text-slate-500/60 hover:bg-[#202224] hover:text-slate-400 border border-transparent'
-                          : 'hover:bg-[#202224] border border-transparent'
+                          ? 'text-[var(--theme-text-muted)] opacity-60 hover:bg-[var(--theme-surface-hover)] hover:opacity-100 border border-transparent'
+                          : 'text-[var(--theme-text-primary)] hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] border border-transparent'
                 }`}
               >
                 {/* Visual Indentation Guide Lines */}
@@ -444,7 +456,7 @@ export default function Sidebar({
                   <div 
                     key={i} 
                     style={{ left: `${(i * 14) + 14}px` }} 
-                    className="absolute top-0 bottom-0 w-[1px] bg-[#242628] group-hover:bg-[#343638]" 
+                    className="absolute top-0 bottom-0 w-[1px] bg-[var(--theme-border)] group-hover:bg-[var(--theme-border-hover)]" 
                   />
                 ))}
 
@@ -452,21 +464,21 @@ export default function Sidebar({
                   {isFolder ? (
                     <>
                       {collapsedFolders[item.path] ? (
-                        <ChevronRight size={13} className="text-slate-500 shrink-0" />
+                        <ChevronRight size={13} className="text-[var(--theme-text-muted)] shrink-0" />
                       ) : (
-                        <ChevronDown size={13} className="text-slate-500 shrink-0" />
+                        <ChevronDown size={13} className="text-[var(--theme-text-muted)] shrink-0" />
                       )}
-                      <Folder size={13} className={isIgnored ? "text-[#dcb67a]/40 shrink-0" : "text-[#dcb67a] shrink-0"} />
+                      <Folder size={13} style={{ color: isIgnored ? 'var(--theme-text-muted)' : 'var(--theme-folder-icon, #dcb67a)' }} className={`shrink-0 ${isIgnored ? 'opacity-40' : ''}`} />
                     </>
                   ) : (
                     <>
                       <div className="w-[13px] shrink-0" />
                       <FileCode2 size={13} className={
                         isActiveFile 
-                          ? "text-blue-400 shrink-0" 
+                          ? "text-[var(--theme-accent)] shrink-0" 
                           : isIgnored 
-                            ? "text-slate-600 shrink-0" 
-                            : "text-slate-500 shrink-0"
+                            ? "text-[var(--theme-text-muted)]/50 shrink-0" 
+                            : "text-[var(--theme-text-secondary)] shrink-0"
                       } />
                     </>
                   )}
@@ -482,7 +494,11 @@ export default function Sidebar({
                         if (e.key === 'Enter') commitInlineRename(renameValue);
                         if (e.key === 'Escape') setInlineRename(null);
                       }}
-                      className="w-full bg-[#121314] text-[#e2e8f0] text-[11px] font-mono border border-blue-500 outline-none px-1 rounded shadow-inner"
+                      className="w-full text-[11px] font-mono border border-blue-500 outline-none px-1 rounded shadow-inner"
+                      style={{
+                        backgroundColor: 'var(--theme-background, #121314)',
+                        color: 'var(--theme-text-primary, #e2e8f0)'
+                      }}
                     />
                   ) : (
                     <span className={`truncate text-[11px] font-mono font-normal ${gitColor}`}>

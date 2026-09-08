@@ -20,6 +20,8 @@ import { usePhysicsEngine } from './hooks/usePhysicsEngine';
 
 // THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
 import PixiSpatialEngine from './components/canvas/PixiSpatialEngine';
+import SpatialMinimap from './components/canvas/SpatialMinimap';
+import { applyTheme, getCurrentThemeId } from './config/themeConfig';
 
 // Layout & UI
 import CodeEditor from './components/layout/CodeEditor';
@@ -66,6 +68,13 @@ export default function App() {
     stdin, setStdin 
   } = usePersistentState();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState('general');
+
+  const handleOpenSettings = useCallback((tab = 'general') => {
+    setSettingsInitialTab(tab);
+    setIsSettingsOpen(true);
+  }, []);
+
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCompilerReady, setIsCompilerReady] = useState(false);
@@ -90,6 +99,11 @@ export default function App() {
   const [refactorEnabled, setRefactorEnabled] = useState(false);
   const [blastProtectionEnabled, setBlastProtectionEnabled] = useState(() => {
     try {
+      const savedSettings = localStorage.getItem('neuron-settings');
+      if (savedSettings) {
+        const parsed = JSON.parse(savedSettings);
+        if (parsed.blastProtection !== undefined) return Boolean(parsed.blastProtection);
+      }
       return localStorage.getItem('neuron-blast-protection') === 'true';
     } catch {
       return false; // Default OFF ("fault off")
@@ -102,6 +116,11 @@ export default function App() {
       try {
         localStorage.setItem('neuron-blast-protection', String(next));
       } catch {}
+      updateSetting('blastProtection', next);
+      if (!next) {
+        workspace.dismissAgentBatch?.();
+        workspace.setBlastRadius?.(null);
+      }
       if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
         workspace.wsRef.current.send(JSON.stringify({
           event: 'SET_BLAST_PROTECTION',
@@ -118,9 +137,9 @@ export default function App() {
       );
       return next;
     });
-  }, [workspace.wsRef, workspace.addNotification]);
+  }, [workspace.wsRef, workspace.addNotification, workspace.dismissAgentBatch, workspace.setBlastRadius, updateSetting]);
 
-  // Sync blast protection status over WebSocket
+  // Sync blast protection status over WebSocket and with settings
   useEffect(() => {
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
       workspace.wsRef.current.send(JSON.stringify({
@@ -130,13 +149,40 @@ export default function App() {
     }
   }, [workspace.wsRef, workspace.isGraphLoaded, blastProtectionEnabled]);
 
+  // Sync settings.blastProtection with blastProtectionEnabled when changed from SettingsModal
+  useEffect(() => {
+    if (settings?.blastProtection !== undefined && settings.blastProtection !== blastProtectionEnabled) {
+      const next = settings.blastProtection;
+      setBlastProtectionEnabled(next);
+      try {
+        localStorage.setItem('neuron-blast-protection', String(next));
+      } catch {}
+      if (!next) {
+        workspace.dismissAgentBatch?.();
+        workspace.setBlastRadius?.(null);
+      }
+      if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+        workspace.wsRef.current.send(JSON.stringify({
+          event: 'SET_BLAST_PROTECTION',
+          enabled: next
+        }));
+      }
+    }
+  }, [settings?.blastProtection, workspace.dismissAgentBatch, workspace.setBlastRadius]);
+
+  // Apply active theme on mount
+  useEffect(() => {
+    applyTheme(getCurrentThemeId());
+  }, []);
+
   // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
     workspace.nodes || [], 
     workspace.edges || [], 
     workspace.wsRef, 
     workspace.isGraphLoaded, 
-    centerView
+    centerView,
+    settings?.physicsSimulation ?? true
   );
 
   // --- 🛡️ PERMANENT DESKTOP & WEB AUTH RESOLVER ---
@@ -423,15 +469,17 @@ export default function App() {
   // --- NATIVE HARDWARE KEYBINDS (Ctrl+S, Ctrl+K, Alt+I, F, Escape) ---
   useEffect(() => {
     const handleGlobalKeys = (e) => {
+      // Command Palette (Ctrl+K / Cmd+K) - Captures everywhere in the IDE
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { 
+        e.preventDefault(); 
+        e.stopPropagation();
+        setIsCommandPaletteOpen(true); 
+        return;
+      }
       // 🚀 Save Active File (Ctrl+S / Cmd+S)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { 
         e.preventDefault(); 
         handleSaveFile(); 
-      }
-      // Command Palette (Ctrl+K / Cmd+K)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { 
-        e.preventDefault(); 
-        setIsCommandPaletteOpen(true); 
       }
       // AI Impact Analysis (Alt+I)
       if (e.altKey && e.key.toLowerCase() === 'i' && hoveredNodeId) {
@@ -468,8 +516,15 @@ export default function App() {
         } catch (err) {}
       }
     };
-    window.addEventListener('keydown', handleGlobalKeys);
-    return () => window.removeEventListener('keydown', handleGlobalKeys);
+
+    window.addEventListener('keydown', handleGlobalKeys, true);
+    const handleOpenPaletteEvent = () => setIsCommandPaletteOpen(true);
+    window.addEventListener('neuron-open-command-palette', handleOpenPaletteEvent);
+
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeys, true);
+      window.removeEventListener('neuron-open-command-palette', handleOpenPaletteEvent);
+    };
   }, [hoveredNodeId, workspace, centerView, handleSaveFile]);
 
   // --- WEBSOCKET EVENT LISTENER ---
@@ -669,10 +724,11 @@ export default function App() {
 
   const handleDeleteFile = useCallback((f, e) => { 
     if (e) e.stopPropagation(); 
-    if (window.confirm(`Delete ${f}?`)) {
+    const shouldConfirm = settings?.confirmDelete ?? true;
+    if (!shouldConfirm || window.confirm(`Delete ${f}?`)) {
       workspace.wsRef.current?.send(JSON.stringify({ event: 'DELETE_FILE', filename: f })); 
     }
-  }, [workspace]);
+  }, [workspace, settings?.confirmDelete]);
 
   const onDoubleClickNode = useCallback((filePath, line) => {
     if (filePath) {
@@ -728,7 +784,13 @@ export default function App() {
   }
   
   return (
-    <div className="w-screen h-screen bg-[#121314] flex flex-col font-sans text-slate-300 overflow-hidden relative select-none overscroll-none">
+    <div 
+      className="w-screen h-screen flex flex-col font-sans overflow-hidden relative select-none overscroll-none"
+      style={{
+        backgroundColor: 'var(--theme-background, #121314)',
+        color: 'var(--theme-text-primary, #cbd5e1)'
+      }}
+    >
       
       {/* Omni-Search Command Palette */}
       <CommandPalette 
@@ -738,12 +800,18 @@ export default function App() {
         setSearchQuery={setSearchQuery} 
         workspace={workspace} 
         onRunCode={handleRunCode} 
-        onOpenSettings={() => setIsSettingsOpen(true)} 
+        onOpenSettings={() => handleOpenSettings('general')} 
         onWarpToNode={handleWarpToNode}
         onSwitchFile={handleSwitchFile}
       />
       
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} updateSetting={updateSetting} />
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        settings={settings} 
+        updateSetting={updateSetting} 
+        initialTab={settingsInitialTab} 
+      />
       
       {/* 🚀 Sleek Custom TopBar (With Active Save, Auto Save & Open Recent) */}
       <TopBar 
@@ -753,7 +821,7 @@ export default function App() {
         autoSave={settings?.autoSave ?? true}
         onToggleAutoSave={handleToggleAutoSave}
         onCreateFile={() => { const name = prompt("Enter new file name:"); if (name) handleCreateItem(name, 'file'); }} 
-        onOpenSettings={() => setIsSettingsOpen(true)} 
+        onOpenSettings={handleOpenSettings} 
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} 
         layout={layout} 
         setLayout={setLayout} 
@@ -776,7 +844,7 @@ export default function App() {
             const total = staged.length + unstaged.length + extraDirty;
             return total > 0 ? total : Object.values(workspace.gitStatuses || {}).filter(s => s === 'M' || s === 'U' || s === 'A' || s === 'D').length;
           })()}
-          onOpenSettings={() => setIsSettingsOpen(true)} 
+          onOpenSettings={() => handleOpenSettings('general')} 
           session={session}
           onLogin={handleLogin}
           onLogout={handleLogout} 
@@ -784,7 +852,14 @@ export default function App() {
         <Group orientation="horizontal" className="flex-grow overflow-hidden" autoSaveId="neuron-layout-v12">
           {layout.sidebar && (
             <>
-              <Panel id="sidebar" order={1} defaultSize={200} minSize={100} maxSize={500} className="bg-[#191a1b]">
+              <Panel 
+                id="sidebar" 
+                order={1} 
+                defaultSize={200} 
+                minSize={100} 
+                maxSize={500} 
+                style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
+              >
                 {activeSidebarView === 'git' ? (
                   <SourceControlPanel 
                     isGitRepo={workspace.isGitRepo}
@@ -832,27 +907,41 @@ export default function App() {
                 )}
               </Panel>
               {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (Sidebar) */}
-              <Separator className="w-[1px] bg-[#242628] hover:bg-blue-500 cursor-col-resize z-50 flex justify-center transition-colors outline-none" />
+              <Separator 
+                className="w-[1px] hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
+                style={{ backgroundColor: 'var(--theme-border, #242628)' }}
+              />
             </>
           )}
 
-          <Panel id="main-canvas" order={2} className="flex flex-col bg-[#121314]">
+          <Panel id="main-canvas" order={2} className="flex flex-col" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
             <Group orientation="vertical" autoSaveId="neuron-vertical-v12">
-              <Panel id="canvas-area" order={1} className="relative flex flex-col bg-[#121314]">
+              <Panel id="canvas-area" order={1} className="relative flex flex-col" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
                 
                 {/* ----------------------------------------------------------- */}
                 {/* CENTER TAB STRIP (#191a1b & Blue Accent)                    */}
                 {/* ----------------------------------------------------------- */}
-                <div className="h-8 shrink-0 bg-[#191a1b] flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b border-[#242628] z-40 relative select-none">
+                <div 
+                  className="h-8 shrink-0 flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b z-40 relative select-none"
+                  style={{
+                    backgroundColor: 'var(--theme-secondary, #191a1b)',
+                    borderColor: 'var(--theme-border, #242628)'
+                  }}
+                >
                   
                   {/* Spatial Map Tab */}
                   <button 
                     onClick={() => setCenterView('spatial')} 
-                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] font-mono font-medium border-r border-[#242628] transition-colors shrink-0 cursor-pointer ${
+                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
                       centerView === 'spatial' 
-                        ? 'bg-[#121314] text-blue-400 border-t-2 border-t-blue-500 font-semibold' 
-                        : 'bg-[#191a1b] text-slate-400 hover:bg-[#202224] hover:text-slate-200'
+                        ? 'border-t-2 border-t-blue-500 font-semibold' 
+                        : 'hover:text-[var(--theme-text-bright)]'
                     }`}
+                    style={{
+                      backgroundColor: centerView === 'spatial' ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
+                      borderColor: 'var(--theme-border, #242628)',
+                      color: centerView === 'spatial' ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-text-secondary, #94a3b8)'
+                    }}
                   >
                     <Network size={12} /> <span>Spatial Map</span>
                   </button>
@@ -868,40 +957,44 @@ export default function App() {
                     const isDeleted = gStat === 'D';
                     const isActive = centerView === 'editor' && workspace.currentFile === file;
                     
-                    let tabTextColor = "text-slate-400";
-                    let iconColor = "text-slate-500";
+                    let tabTextColor = "text-[var(--theme-text-muted)]";
+                    let iconColor = "text-[var(--theme-text-muted)]";
                     let badgeColor = "";
 
                     if (isDirty) {
-                      tabTextColor = isActive ? "italic text-amber-300 font-semibold" : "italic text-amber-300";
-                      iconColor = "text-amber-400";
-                      badgeColor = "text-amber-400";
+                      tabTextColor = isActive ? "italic text-amber-500 font-semibold" : "italic text-amber-500";
+                      iconColor = "text-amber-500";
+                      badgeColor = "text-amber-500";
                     } else if (isModified) {
-                      tabTextColor = isActive ? "text-amber-300 font-semibold" : "text-amber-400";
-                      iconColor = "text-amber-400";
-                      badgeColor = "text-amber-400";
+                      tabTextColor = isActive ? "text-amber-500 font-semibold" : "text-amber-500";
+                      iconColor = "text-amber-500";
+                      badgeColor = "text-amber-500";
                     } else if (isUntracked || isAdded) {
-                      tabTextColor = isActive ? "text-emerald-300 font-semibold" : "text-emerald-400";
-                      iconColor = "text-emerald-400";
-                      badgeColor = "text-emerald-400";
+                      tabTextColor = isActive ? "text-emerald-500 font-semibold" : "text-emerald-500";
+                      iconColor = "text-emerald-500";
+                      badgeColor = "text-emerald-500";
                     } else if (isDeleted) {
-                      tabTextColor = "text-red-400 line-through";
-                      iconColor = "text-red-400";
-                      badgeColor = "text-red-400";
+                      tabTextColor = "text-red-500 line-through";
+                      iconColor = "text-red-500";
+                      badgeColor = "text-red-500";
                     } else if (isActive) {
-                      tabTextColor = "text-white";
-                      iconColor = "text-blue-400";
+                      tabTextColor = "text-[var(--theme-text-bright)]";
+                      iconColor = "text-[var(--theme-accent)]";
                     }
                     
                     return (
                       <div 
                         key={file} 
                         onClick={() => handleSwitchFile(file)} 
-                        className={`h-full px-3 flex items-center gap-2 text-[11px] font-mono font-medium border-r border-[#242628] transition-colors cursor-pointer shrink-0 group ${
+                        className={`h-full px-3 flex items-center gap-2 text-[11px] font-mono font-medium border-r transition-colors cursor-pointer shrink-0 group ${
                           isActive 
-                            ? 'bg-[#121314] text-white border-t-2 border-t-blue-500 font-semibold' 
-                            : 'bg-[#191a1b] text-slate-400 hover:bg-[#202224] hover:text-slate-200'
+                            ? 'border-t-2 border-t-[var(--theme-accent)] font-semibold' 
+                            : 'hover:text-[var(--theme-text-bright)]'
                         }`}
+                        style={{
+                          backgroundColor: isActive ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
+                          borderColor: 'var(--theme-border, #242628)'
+                        }}
                       >
                         <FileCode2 size={12} className={iconColor} /> 
                         
@@ -916,22 +1009,22 @@ export default function App() {
                         )}
 
                         {workspace.isFileSyncing && workspace.currentFile === file && (
-                          <Loader2 size={11} className="text-blue-400 animate-spin" />
+                          <Loader2 size={11} className="text-[var(--theme-accent)] animate-spin" />
                         )}
                         
                         {/* 🚀 VS CODE-STYLE CLOSE BUTTON OR DIRTY CIRCLE (●) */}
                         <button 
                           onClick={(e) => handleCloseTab(file, e)} 
-                          className="rounded p-0.5 ml-1 transition-all text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center relative w-4 h-4 group/btn"
+                          className="rounded p-0.5 ml-1 transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] flex items-center justify-center relative w-4 h-4 group/btn"
                           title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
                         >
                           {isDirty ? (
                             <>
                               <span className="w-2 h-2 rounded-full bg-amber-400 group-hover/btn:opacity-0 transition-opacity" />
-                              <X size={12} className="opacity-0 group-hover/btn:opacity-100 transition-opacity absolute inset-0 m-auto text-slate-300 hover:text-white" />
+                              <X size={12} className="opacity-0 group-hover/btn:opacity-100 transition-opacity absolute inset-0 m-auto text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)]" />
                             </>
                           ) : (
-                            <X size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-white" />
+                            <X size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]" />
                           )}
                         </button>
                       </div>
@@ -953,7 +1046,10 @@ export default function App() {
 
                 </div>
 
-                <div className="flex-grow relative overflow-hidden bg-[#121314]">
+                <div 
+                  className="flex-grow relative overflow-hidden"
+                  style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+                >
                   {centerView === 'spatial' ? (
                     <div className="relative w-full h-full">
                       {/* 🌌 THE WEBGPU SPATIAL ENGINE 🌌 */}
@@ -972,21 +1068,37 @@ export default function App() {
                         onFileMergeDrop={handleFileMergeDrop}
                         onNodeHover={handleNodeHover}
                         onNodeDoubleClick={onDoubleClickNode}
+                        settings={settings}
                       />
+
+                      {/* 📡 SPATIAL RADAR MINIMAP OVERLAY */}
+                      {(settings?.spatialMinimap ?? true) && (
+                        <SpatialMinimap 
+                          nodes={workspace.nodes || []} 
+                          simDataRef={simDataRef} 
+                        />
+                      )}
                       
                       {/* 🚀 SUPER-MINIMALIST FLOATING AI OVERVIEW PANEL */}
                       {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
-                        <div className="absolute top-4 right-4 max-w-sm bg-[#141516]/95 border border-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.6)] rounded-xl p-3.5 z-[100] backdrop-blur-md pointer-events-none animate-in fade-in duration-150">
+                        <div 
+                          className="absolute top-4 right-4 max-w-sm border rounded-xl p-3.5 z-[100] pointer-events-none animate-in fade-in duration-150"
+                          style={{
+                            backgroundColor: 'var(--theme-surface, #141516)',
+                            borderColor: 'var(--theme-border, #242628)',
+                            boxShadow: '0 8px 30px rgba(0,0,0,0.25)'
+                          }}
+                        >
                           <div className="flex flex-col gap-1.5">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-mono text-xs font-semibold text-blue-400 truncate">
+                              <span className="font-mono text-xs font-semibold text-[var(--theme-accent)] truncate">
                                 {workspace.aiInsight.nodeId.split('::').pop()?.replace('()', '')}
                               </span>
-                              <span className="font-mono text-[10px] text-slate-500 truncate shrink-0">
+                              <span className="font-mono text-[10px] text-[var(--theme-text-muted)] truncate shrink-0">
                                 {workspace.aiInsight.nodeId.split('::')[0]}
                               </span>
                             </div>
-                            <p className="text-slate-300 font-sans text-xs leading-relaxed">
+                            <p className="text-[var(--theme-text-primary)] font-sans text-xs leading-relaxed">
                               {workspace.aiInsight.summary}
                             </p>
                           </div>
@@ -1061,8 +1173,18 @@ export default function App() {
               {layout.terminal && ( 
                 <>
                   {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (Terminal) */}
-                  <Separator className="h-[1px] bg-[#242628] hover:bg-blue-500 cursor-row-resize z-50 flex items-center transition-colors outline-none" />
-                  <Panel id="terminal-area" order={2} defaultSize={250} minSize={15} maxSize={300} className="bg-[#191a1b]">
+                  <Separator 
+                    className="h-[1px] hover:bg-[var(--theme-accent)] cursor-row-resize z-50 flex items-center transition-colors outline-none" 
+                    style={{ backgroundColor: 'var(--theme-border, #242628)' }}
+                  />
+                  <Panel 
+                    id="terminal-area" 
+                    order={2} 
+                    defaultSize={250} 
+                    minSize={15} 
+                    maxSize={300} 
+                    style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
+                  >
                     <TerminalPanel 
                       logs={workspace.terminalLogs} 
                       sessions={workspace.terminalSessions} 
@@ -1083,8 +1205,18 @@ export default function App() {
           {layout.stdin && ( 
             <>
               {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (STDIN) */}
-              <Separator className="w-[1px] bg-[#242628] hover:bg-blue-500 cursor-col-resize z-50 flex justify-center transition-colors outline-none" />
-              <Panel id="stdin-panel" order={4} defaultSize={200} minSize={100} maxSize={500} className="bg-[#191a1b]">
+              <Separator 
+                className="w-[1px] hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
+                style={{ backgroundColor: 'var(--theme-border, #242628)' }}
+              />
+              <Panel 
+                id="stdin-panel" 
+                order={4} 
+                defaultSize={200} 
+                minSize={100} 
+                maxSize={500} 
+                style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
+              >
                 <StdinPanel stdin={stdin} setStdin={setStdin} />
               </Panel>
             </> 
@@ -1093,14 +1225,16 @@ export default function App() {
       </div>
 
       {/* 🚀 HORIZON 3: AI AGENT SUPERVISOR LIVE PR BLAST RADIUS HUD */}
-      <AgentSupervisorHUD 
-        agentBatch={workspace.agentBatch}
-        onRollback={workspace.rollbackAgentBatch}
-        onApprove={workspace.approveAgentBatch}
-        onDismiss={workspace.dismissAgentBatch}
-        onWarpToNode={handleWarpToNode}
-        onSwitchFile={handleSwitchFile}
-      />
+      {blastProtectionEnabled && workspace.agentBatch && (
+        <AgentSupervisorHUD 
+          agentBatch={workspace.agentBatch}
+          onRollback={workspace.rollbackAgentBatch}
+          onApprove={workspace.approveAgentBatch}
+          onDismiss={workspace.dismissAgentBatch}
+          onWarpToNode={handleWarpToNode}
+          onSwitchFile={handleSwitchFile}
+        />
+      )}
 
       {/* 🚀 BOTTOM STATUS BAR (#191a1b Secondary Theme) */}
       <StatusBar 

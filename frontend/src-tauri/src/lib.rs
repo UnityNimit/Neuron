@@ -293,6 +293,14 @@ pub fn run() {
     let state_exit = process_state.clone();
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            log_debug("Another instance was launched. Bringing main window to front.");
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
@@ -322,7 +330,7 @@ pub fn run() {
 
             let tray_menu = Menu::with_items(app, &[&show_i, &status_i, &restart_i, &sep, &quit_i])?;
 
-            let mut tray_builder = TrayIconBuilder::new()
+            let mut tray_builder = TrayIconBuilder::with_id("neuron_main_tray")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .tooltip("Neuron IDE - Spatial Development Platform");
@@ -353,6 +361,7 @@ pub fn run() {
                             });
                         }
                         "quit" => {
+                            log_debug("Quit action selected from system tray.");
                             state_tray.is_quitting.store(true, Ordering::SeqCst);
                             kill_all_backend_processes(&state_tray);
                             app_h.exit(0);
@@ -379,14 +388,11 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(move |window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if !state_event.is_quitting.load(Ordering::SeqCst) {
-                    // Prevent process kill; keep backend running in background
-                    api.prevent_close();
-                    let _ = window.hide();
-                    log_debug("Main window closed to system tray. Backend continues running for instant reopen.");
-                }
+        .on_window_event(move |_window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                log_debug("Main window close requested. Terminating Neuron IDE and backend processes...");
+                state_event.is_quitting.store(true, Ordering::SeqCst);
+                kill_all_backend_processes(&state_event);
             }
         })
         .build(tauri::generate_context!())

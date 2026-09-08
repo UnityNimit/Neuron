@@ -1,6 +1,7 @@
 // src/components/layout/ActivityBar.jsx
 import React, { useState } from 'react';
-import { Files, GitBranch, Palette, Settings, UserCircle, LogOut } from 'lucide-react';
+import { Files, GitBranch, Settings, UserCircle, LogOut } from 'lucide-react';
+import ThemeSelector from './ThemeSelector';
 
 export default function ActivityBar({ 
   layout = {}, 
@@ -48,7 +49,13 @@ export default function ActivityBar({
   const isLoggedIn = Boolean(user && (user.email || metadata.full_name));
 
   return (
-    <div className="w-12 h-full bg-[#191a1b] border-r border-[#242628] flex flex-col items-center justify-between py-3 shrink-0 z-40 select-none">
+    <div 
+      className="w-12 h-full border-r flex flex-col items-center justify-between py-3 shrink-0 z-40 select-none"
+      style={{
+        backgroundColor: 'var(--theme-secondary, #191a1b)',
+        borderColor: 'var(--theme-border, #242628)'
+      }}
+    >
       
       {/* ----------------------------------------------------------------- */}
       {/* 1. TOP NAVIGATION ACTIONS                                         */}
@@ -59,12 +66,20 @@ export default function ActivityBar({
         <button 
           onClick={handleToggleExplorer}
           className={`p-2 rounded-xl transition-all relative group cursor-pointer ${
-            isExplorerActive ? 'text-white bg-[#222426]/50' : 'text-slate-500 hover:text-slate-200 hover:bg-[#222426]'
+            isExplorerActive 
+              ? 'text-[var(--theme-text-bright)] bg-[var(--theme-surface-hover)]' 
+              : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]'
           }`}
           title="Explorer (Ctrl+B)"
         >
           {isExplorerActive && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-500 rounded-r shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+            <div 
+              className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r" 
+              style={{
+                backgroundColor: 'var(--theme-accent, #3b82f6)',
+                boxShadow: '0 0 8px var(--theme-accent, #3b82f6)'
+              }}
+            />
           )}
           <Files size={20} strokeWidth={1.6} />
         </button>
@@ -73,16 +88,27 @@ export default function ActivityBar({
         <button 
           onClick={handleToggleGit}
           className={`p-2 rounded-xl transition-all relative group cursor-pointer ${
-            isGitActive ? 'text-white bg-[#222426]/50' : 'text-slate-500 hover:text-slate-200 hover:bg-[#222426]'
+            isGitActive 
+              ? 'text-[var(--theme-text-bright)] bg-[var(--theme-surface-hover)]' 
+              : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]'
           }`}
           title="Source Control"
         >
           {isGitActive && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-blue-500 rounded-r shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+            <div 
+              className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r" 
+              style={{
+                backgroundColor: 'var(--theme-accent, #3b82f6)',
+                boxShadow: '0 0 8px var(--theme-accent, #3b82f6)'
+              }}
+            />
           )}
           <GitBranch size={20} strokeWidth={1.6} />
           {gitChangeCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 px-1 min-w-[15px] h-[15px] rounded-full bg-blue-600 text-[9px] font-mono font-bold text-white flex items-center justify-center shadow">
+            <span 
+              className="absolute -top-0.5 -right-0.5 px-1 min-w-[15px] h-[15px] rounded-full text-[9px] font-mono font-bold text-white flex items-center justify-center shadow"
+              style={{ backgroundColor: 'var(--theme-accent, #2563eb)' }}
+            >
               {gitChangeCount > 99 ? '99+' : gitChangeCount}
             </span>
           )}
@@ -95,19 +121,13 @@ export default function ActivityBar({
       {/* ----------------------------------------------------------------- */}
       <div className="flex flex-col gap-2.5 w-full items-center">
         
-        {/* Color Palette Info */}
-        <button 
-          onClick={() => alert("Neuron Color System:\n• Primary (TopBar): #121212\n• Secondary (Bars): #191a1b\n• Background (Canvas & Editor): #121314")} 
-          className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-[#222426] transition-colors cursor-pointer" 
-          title="Color Theme Matrix"
-        >
-          <Palette size={20} strokeWidth={1.6} />
-        </button>
+        {/* Dynamic Minimalist Theme Selector */}
+        <ThemeSelector />
 
         {/* Settings */}
         <button 
           onClick={onOpenSettings} 
-          className="p-2 rounded-xl text-slate-500 hover:text-slate-200 hover:bg-[#222426] transition-colors cursor-pointer" 
+          className="p-2 rounded-xl text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] transition-colors cursor-pointer" 
           title="Preferences (Ctrl+,)"
         >
           <Settings size={20} strokeWidth={1.6} />
@@ -141,7 +161,7 @@ export default function ActivityBar({
         ) : (
           <button 
             onClick={onLogin} 
-            className="p-2 rounded-xl text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-all cursor-pointer relative group" 
+            className="p-2 rounded-xl text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] transition-all cursor-pointer relative group" 
             title="Sign In with Google"
           >
             <UserCircle size={20} strokeWidth={1.6} />

@@ -134,33 +134,7 @@ export default function TopBar({
   }, []);
 
   const handleShowShortcuts = () => {
-    alert(`NEURON IDE - KEYBOARD SHORTCUTS REFERENCE
-
-[ FILE COMMANDS ]
-Open Folder          Ctrl+K Ctrl+O
-Save Active File     Ctrl+S
-Preferences          Ctrl+,
-
-[ EDIT & NAVIGATION ]
-Command Palette      Ctrl+K  or  Cmd+K
-Show All Commands    Ctrl+Shift+P
-Toggle Line Comment  Ctrl+/
-Toggle Block Comment Shift+Alt+A
-Undo Canvas Refactor Ctrl+Z
-Redo                 Ctrl+Y
-Find / Replace       Ctrl+F / Ctrl+H
-
-[ VIEW & LAYOUT ]
-Toggle Sidebar       Ctrl+B
-Toggle Terminal      Ctrl+\`
-Run Active Script    F5
-
-[ SPATIAL AST MAP ]
-AI Impact Analysis   Alt+I
-Focus Isolation      F
-Clear Focus / Alerts Esc
-Camera Warp to Node  Command Palette (↵)
-Open Node in Editor  Double Click Node`);
+    if (onOpenSettings) onOpenSettings('reference');
   };
 
   const menuItems = ['File', 'Edit', 'Layout', 'Help'];
@@ -179,8 +153,8 @@ Open Node in Editor  Double Click Node`);
     { separator: true },
     { label: "Preferences", action: onOpenSettings, shortcut: "Ctrl+," },
     { separator: true },
-    { label: "Close to Tray", action: handleClose },
-    { label: "Quit Neuron Completely", action: handleQuitCompletely }
+    { label: "Close Window", action: handleClose, shortcut: "Ctrl+W" },
+    { label: "Exit Neuron", action: handleQuitCompletely, shortcut: "Alt+F4" }
   ], [onOpenFolder, onSave, onToggleAutoSave, autoSave, onOpenSettings, recentProjects]);
 
   // --- EDIT MENU ---
@@ -192,8 +166,7 @@ Open Node in Editor  Double Click Node`);
     { label: "Copy", action: () => document.execCommand('copy'), shortcut: "Ctrl+C" },
     { label: "Paste", action: async () => { try { const text = await navigator.clipboard.readText(); document.execCommand('insertText', false, text); } catch { document.execCommand('paste'); } }, shortcut: "Ctrl+V" },
     { separator: true },
-    { label: "Search Omni-Palette", action: onOpenCommandPalette, shortcut: "Ctrl+K" },
-    { label: "Find in Files", action: onOpenCommandPalette, shortcut: "Ctrl+Shift+F" }
+    { label: "Search", action: onOpenCommandPalette, shortcut: "Ctrl+K" }
   ];
 
   // --- LAYOUT MENU ---
@@ -207,7 +180,6 @@ Open Node in Editor  Double Click Node`);
   const helpDropdownItems = [
     { label: "Documentation", action: () => window.open("https://neuron-website-ruby.vercel.app/docs", "_blank") },
     { label: "Keyboard Shortcuts Reference", action: handleShowShortcuts },
-    { label: "Show All Commands", action: onOpenCommandPalette, shortcut: "Ctrl+Shift+P" },
     { separator: true },
     { label: "About Neuron", action: () => window.open("https://neuron-website-ruby.vercel.app/", "_blank") }
   ];
@@ -222,7 +194,12 @@ Open Node in Editor  Double Click Node`);
   return (
     <div 
       data-tauri-drag-region
-      className="h-[42px] shrink-0 bg-[#121212] border-b border-[#242628] flex items-center justify-between pl-3 pr-0 text-[12px] text-slate-300 font-sans select-none z-[150] relative"
+      className="h-[42px] shrink-0 border-b flex items-center justify-between pl-3 pr-0 text-[12px] font-sans select-none z-[150] relative"
+      style={{
+        backgroundColor: 'var(--theme-primary, #121212)',
+        borderColor: 'var(--theme-border, #242628)',
+        color: 'var(--theme-text-primary, #cbd5e1)'
+      }}
     >
       {/* ----------------------------------------------------------------- */}
       {/* LEFT: Flat Logo & Dropdown Menus                                  */}
@@ -240,7 +217,7 @@ Open Node in Editor  Double Click Node`);
         </div>
 
         {/* Desktop Menu Bar */}
-        <div className="flex items-center text-[#cccccc] text-xs font-mono" ref={menuRef}>
+        <div className="flex items-center text-xs font-mono" ref={menuRef}>
           {menuItems.map((item) => (
             <div key={item} className="relative">
               <button 
@@ -249,7 +226,9 @@ Open Node in Editor  Double Click Node`);
                   setShowRecentSubmenu(false);
                 }}
                 className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
-                  activeMenu === item ? 'bg-[#262626] text-white font-medium' : 'hover:text-white hover:bg-[#1e1e1e]'
+                  activeMenu === item 
+                    ? 'bg-[var(--theme-surface-active)] text-[var(--theme-text-bright)] font-medium' 
+                    : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]'
                 }`}
               >
                 {item}
@@ -258,11 +237,16 @@ Open Node in Editor  Double Click Node`);
               {/* Primary Dropdown Menu */}
               {activeMenu === item && (
                 <div 
-                  className="absolute top-full left-0 mt-1 w-60 bg-[#191a1b]/95 border border-[#2e3032] shadow-2xl rounded-xl py-1.5 text-xs text-slate-300 font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none z-[200]"
+                  className="absolute top-full left-0 mt-1 w-60 border shadow-2xl rounded-xl py-1.5 text-xs font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none z-[200]"
+                  style={{
+                    backgroundColor: 'var(--theme-secondary, #191a1b)',
+                    borderColor: 'var(--theme-border-subtle, #2e3032)',
+                    color: 'var(--theme-text-primary, #cbd5e1)'
+                  }}
                 >
                   {getDropdownItems(item).map((opt, idx) => (
                     opt.separator ? (
-                      <div key={idx} className="my-1 border-t border-[#242628]" />
+                      <div key={idx} className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
                     ) : opt.isSubmenu ? (
                       /* 🚀 OPEN RECENT SUBMENU TRIGGER */
                       <div 
@@ -272,46 +256,51 @@ Open Node in Editor  Double Click Node`);
                       >
                         <button 
                           onClick={(e) => { e.stopPropagation(); setShowRecentSubmenu(!showRecentSubmenu); }}
-                          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left group"
+                          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
                         >
-                          <span className="text-slate-300 group-hover:text-white flex items-center gap-2">
-                            <FolderClock size={12} className="text-blue-400" /> {opt.label}
+                          <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)] flex items-center gap-2">
+                            <FolderClock size={12} className="text-[var(--theme-accent)]" /> {opt.label}
                           </span>
-                          <ChevronRight size={12} className="text-slate-500 group-hover:text-white" />
+                          <ChevronRight size={12} className="text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-bright)]" />
                         </button>
 
                         {/* Recent Projects Flyout Submenu */}
                         {showRecentSubmenu && (
                           <div 
-                            className="absolute top-0 left-full ml-1 w-72 bg-[#191a1b]/95 border border-[#2e3032] shadow-2xl rounded-xl py-1.5 text-xs text-slate-300 font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 z-[210]"
+                            className="absolute top-0 left-full ml-1 w-72 border shadow-2xl rounded-xl py-1.5 text-xs font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 z-[210]"
+                            style={{
+                              backgroundColor: 'var(--theme-secondary, #191a1b)',
+                              borderColor: 'var(--theme-border-subtle, #2e3032)',
+                              color: 'var(--theme-text-primary, #cbd5e1)'
+                            }}
                           >
                             {recentProjects.length === 0 ? (
-                              <div className="px-3 py-2 text-slate-500 text-[11px] text-center">
+                              <div className="px-3 py-2 text-[var(--theme-text-muted)] text-[11px] text-center">
                                 No Recent Projects Found
                               </div>
                             ) : (
                               <>
-                                <div className="max-h-48 overflow-y-auto divide-y divide-[#222426]">
+                                <div className="max-h-48 overflow-y-auto divide-y" style={{ borderColor: 'var(--theme-surface-hover, #222426)' }}>
                                   {recentProjects.map((pPath, pIdx) => (
                                     <button
                                       key={pIdx}
                                       onClick={() => handleSelectRecent(pPath)}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-blue-600/20 hover:text-white transition-colors flex flex-col group cursor-pointer"
+                                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors flex flex-col group cursor-pointer"
                                       title={pPath}
                                     >
-                                      <span className="text-slate-200 group-hover:text-white truncate font-medium">
+                                      <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)] truncate font-medium">
                                         {pPath.split(/[/\\]/).pop()}
                                       </span>
-                                      <span className="text-[10px] text-slate-500 truncate">
+                                      <span className="text-[10px] text-[var(--theme-text-muted)] truncate">
                                         {pPath}
                                       </span>
                                     </button>
                                   ))}
                                 </div>
-                                <div className="my-1 border-t border-[#242628]" />
+                                <div className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
                                 <button
                                   onClick={handleClearRecent}
-                                  className="w-full px-3 py-1 text-left text-slate-500 hover:text-red-400 hover:bg-red-950/20 transition-colors flex items-center gap-1.5 text-[11px] cursor-pointer"
+                                  className="w-full px-3 py-1 text-left text-[var(--theme-text-muted)] hover:text-red-400 hover:bg-red-950/20 transition-colors flex items-center gap-1.5 text-[11px] cursor-pointer"
                                 >
                                   <Trash2 size={11} /> Clear Recently Opened
                                 </button>
@@ -331,20 +320,20 @@ Open Node in Editor  Double Click Node`);
                             setShowRecentSubmenu(false);
                           }
                         }} 
-                        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left group"
+                        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
                       >
-                        <span className="text-slate-300 group-hover:text-white">{opt.label}</span>
+                        <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)]">{opt.label}</span>
 
                         <div className="flex items-center gap-2 shrink-0">
                           {opt.shortcut && (
-                            <span className="text-[10px] text-slate-500 group-hover:text-slate-300 font-mono">
+                            <span className="text-[10px] text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-primary)] font-mono">
                               {opt.shortcut}
                             </span>
                           )}
                           {opt.toggle !== undefined && (
                             <Check 
                               size={12} 
-                              className={opt.toggle ? "text-blue-400 font-bold" : "opacity-0"} 
+                              className={opt.toggle ? "text-[var(--theme-accent)] font-bold" : "opacity-0"} 
                             />
                           )}
                         </div>
@@ -376,7 +365,7 @@ Open Node in Editor  Double Click Node`);
           {/* Minimize */}
           <button 
             onClick={handleMinimize}
-            className="w-11 h-full flex items-center justify-center hover:bg-[#262626] text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+            className="w-11 h-full flex items-center justify-center hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
             title="Minimize"
           >
             <Minus size={13} />
@@ -385,7 +374,7 @@ Open Node in Editor  Double Click Node`);
           {/* Maximize / Restore */}
           <button 
             onClick={handleToggleMaximize}
-            className="w-11 h-full flex items-center justify-center hover:bg-[#262626] text-slate-400 hover:text-slate-100 transition-colors cursor-pointer"
+            className="w-11 h-full flex items-center justify-center hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
             title={isMaximized ? "Restore" : "Maximize"}
           >
             {isMaximized ? <Copy size={11} className="rotate-180" /> : <Square size={11} />}
@@ -394,7 +383,7 @@ Open Node in Editor  Double Click Node`);
           {/* Close */}
           <button 
             onClick={handleClose}
-            className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] text-[var(--theme-text-muted)] hover:text-white transition-colors cursor-pointer"
             title="Close"
           >
             <X size={14} />

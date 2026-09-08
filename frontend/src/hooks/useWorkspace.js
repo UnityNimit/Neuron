@@ -39,6 +39,20 @@ const sanitizeCoordinate = (val, fallback) => {
   return typeof val === 'number' && !isNaN(val) && isFinite(val) ? val : fallback;
 };
 
+// Check if Blast Protection is enabled in local settings
+const isBlastProtectionLocallyEnabled = () => {
+  try {
+    const saved = localStorage.getItem('neuron-settings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.blastProtection !== undefined) return Boolean(parsed.blastProtection);
+    }
+    return localStorage.getItem('neuron-blast-protection') === 'true';
+  } catch {
+    return false;
+  }
+};
+
 export function useWorkspace(session) {
   // --- CORE SYSTEM STATES ---
   const [isGraphLoaded, setIsGraphLoaded] = useState(false);
@@ -281,7 +295,8 @@ export function useWorkspace(session) {
                 setGitGraph(payload.git_graph);
               }
 
-              if (payload.agent_batch) {
+              const isBlastOn = isBlastProtectionLocallyEnabled();
+              if (isBlastOn && payload.agent_batch) {
                 setAgentBatch(payload.agent_batch);
                 if (payload.agent_batch.blastRadiusNodeIds) {
                   setBlastRadius(payload.agent_batch.blastRadiusNodeIds);
@@ -294,6 +309,9 @@ export function useWorkspace(session) {
                     'blast'
                   );
                 }
+              } else {
+                setAgentBatch(null);
+                setBlastRadius(null);
               }
               
               // 🚀 SYNC TERMINAL CWD TO THE OPENED PROJECT FOLDER
@@ -364,11 +382,10 @@ export function useWorkspace(session) {
               if (git_branch) setGitBranch(git_branch);
               if (repo_name) setRepoName(repo_name);
 
-              if (agent_batch) {
+              const isBlastOn = isBlastProtectionLocallyEnabled();
+              if (isBlastOn && agent_batch) {
                 setAgentBatch(agent_batch);
-                if (agent_batch.blastRadiusNodeIds) {
-                  setBlastRadius(agent_batch.blastRadiusNodeIds);
-                }
+                setBlastRadius(agent_batch.blastRadiusNodeIds || null);
                 if (agent_batch.blastProtectionBlocked) {
                   addNotificationRef.current?.(
                     'warning',
@@ -377,6 +394,9 @@ export function useWorkspace(session) {
                     'blast'
                   );
                 }
+              } else if (!isBlastOn || agent_batch === null) {
+                setAgentBatch(null);
+                setBlastRadius(null);
               }
 
               setNodes(prevNodes => {

@@ -40,10 +40,19 @@ export default function UnsupportedFileViewer({
   }, [filename]);
 
   return (
-    <div className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 bg-[#121314] select-none">
-      
+    <div 
+      className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 select-none"
+      style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+    >
       {/* 🚀 TOP BREADCRUMB BAR (Matches CodeEditor.jsx exactly) */}
-      <div className="h-6 shrink-0 bg-[#121314] border-b border-[#242628] px-3 flex items-center gap-1.5 text-[11px] font-mono text-slate-400 select-none overflow-x-auto [&::-webkit-scrollbar]:hidden">
+      <div 
+        className="h-6 shrink-0 border-b px-3 flex items-center gap-1.5 text-[11px] font-mono select-none overflow-x-auto [&::-webkit-scrollbar]:hidden"
+        style={{
+          backgroundColor: 'var(--theme-background, #121314)',
+          borderColor: 'var(--theme-border, #242628)',
+          color: 'var(--theme-text-secondary, #94a3b8)'
+        }}
+      >
         {breadcrumbSegments.map((segment, idx) => {
           const isLast = idx === breadcrumbSegments.length - 1;
           return (
@@ -58,14 +67,29 @@ export default function UnsupportedFileViewer({
       </div>
 
       {/* 🚀 MINIMALIST FALLBACK CARD (Editor Dark Theme) */}
-      <div className="w-full flex-1 min-h-0 flex items-center justify-center p-6 bg-[#121314]">
-        <div className="flex flex-col items-center max-w-sm w-full p-6 bg-[#161719] border border-[#242628] rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] text-center animate-in fade-in zoom-in-95 duration-150">
+      <div 
+        className="w-full flex-1 min-h-0 flex items-center justify-center p-6"
+        style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+      >
+        <div 
+          className="flex flex-col items-center max-w-sm w-full p-6 border rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] text-center animate-in fade-in zoom-in-95 duration-150"
+          style={{
+            backgroundColor: 'var(--theme-surface, #161719)',
+            borderColor: 'var(--theme-border, #242628)'
+          }}
+        >
           
-          <div className="w-11 h-11 rounded-xl bg-[#1d1f22] border border-[#282a2d] flex items-center justify-center text-slate-400 mb-3 shadow-inner">
+          <div 
+            className="w-11 h-11 rounded-xl border flex items-center justify-center text-slate-400 mb-3 shadow-inner"
+            style={{
+              backgroundColor: 'var(--theme-surface-hover, #1d1f22)',
+              borderColor: 'var(--theme-border-subtle, #282a2d)'
+            }}
+          >
             <FileQuestion size={22} strokeWidth={1.75} className="text-slate-400" />
           </div>
 
-          <h3 className="text-sm font-medium text-slate-200 tracking-tight">
+          <h3 className="text-sm font-medium tracking-tight" style={{ color: 'var(--theme-text-bright, #f8fafc)' }}>
             File Not Supported
           </h3>
 
@@ -73,7 +97,13 @@ export default function UnsupportedFileViewer({
             This file type cannot be displayed in the editor.
           </p>
 
-          <div className="mt-3 px-3 py-1 bg-[#121314] border border-[#242628] rounded text-[11px] font-mono text-slate-400 max-w-xs truncate">
+          <div 
+            className="mt-3 px-3 py-1 border rounded text-[11px] font-mono text-slate-400 max-w-xs truncate"
+            style={{
+              backgroundColor: 'var(--theme-background, #121314)',
+              borderColor: 'var(--theme-border, #242628)'
+            }}
+          >
             <span>{baseName}</span>
             {fileMeta?.size_formatted && (
               <span className="text-slate-500 ml-1.5">• {fileMeta.size_formatted}</span>
@@ -82,7 +112,12 @@ export default function UnsupportedFileViewer({
 
           <button
             onClick={() => onRevealExplorer && onRevealExplorer(filename)}
-            className="mt-4 px-3.5 py-1.5 rounded-md bg-[#202224] hover:bg-[#282a2d] border border-[#2e3235] hover:border-[#3e4246] text-slate-200 hover:text-white text-xs font-sans font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+            className="mt-4 px-3.5 py-1.5 rounded-md border text-xs font-sans font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+            style={{
+              backgroundColor: 'var(--theme-surface-hover, #202224)',
+              borderColor: 'var(--theme-border-subtle, #2e3235)',
+              color: 'var(--theme-text-primary, #cbd5e1)'
+            }}
             title="Reveal in Native File Manager"
           >
             <Folder size={13} className="text-slate-400" />

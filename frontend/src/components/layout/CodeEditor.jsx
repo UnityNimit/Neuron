@@ -3,76 +3,13 @@ import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 
+import { registerMonacoThemes, useTheme } from '../../config/themeConfig';
+
 // 🚀 CRITICAL FIX: Direct local bundling (Zero CDN network requests, 100% offline)
 loader.config({ monaco });
 
-// -------------------------------------------------------------------------
-// 1. RICH POLYGLOT OBSIDIAN THEME (C++, C, Java, Python, JS, TS, Web)
-// -------------------------------------------------------------------------
-monaco.editor.defineTheme('neuron-obsidian', {
-  base: 'vs-dark',
-  inherit: true,
-  rules: [
-    // Comments
-    { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
-    
-    // Keywords & Preprocessor Directives (#include, #define, import, package)
-    { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
-    { token: 'keyword.directive', foreground: 'e06c75', fontStyle: 'bold' },
-    { token: 'keyword.directive.include', foreground: 'e06c75', fontStyle: 'bold' },
-    
-    // Types & Classes (int, char, void, class, struct, String, boolean)
-    { token: 'type', foreground: 'e5c07b' },
-    { token: 'type.identifier', foreground: 'e5c07b' },
-    { token: 'type.primitive', foreground: '56b6c2' },
-    { token: 'class', foreground: 'e5c07b', fontStyle: 'bold' },
-    { token: 'struct', foreground: 'e5c07b', fontStyle: 'bold' },
-    { token: 'interface', foreground: 'e5c07b' },
-
-    // Functions & Methods
-    { token: 'function', foreground: '61afef' },
-    { token: 'method', foreground: '61afef' },
-    { token: 'entity.name.function', foreground: '61afef' },
-    
-    // Strings & Characters
-    { token: 'string', foreground: '98c379' },
-    { token: 'string.escape', foreground: '56b6c2' },
-    { token: 'character', foreground: '98c379' },
-
-    // Numbers & Constants
-    { token: 'number', foreground: 'd19a66' },
-    { token: 'constant', foreground: 'd19a66' },
-
-    // Variables & Identifiers
-    { token: 'variable', foreground: 'e06c75' },
-    { token: 'variable.parameter', foreground: 'abb2bf' },
-    { token: 'identifier', foreground: 'abb2bf' },
-
-    // HTML / JSX Tags & Attributes
-    { token: 'tag', foreground: 'e06c75' },
-    { token: 'tag.attribute', foreground: 'd19a66' },
-    { token: 'delimiter', foreground: 'abb2bf' },
-    { token: 'delimiter.bracket', foreground: 'abb2bf' }
-  ],
-  colors: {
-    'editor.background': '#121314',
-    'editor.foreground': '#e2e8f0',
-    'editor.lineHighlightBackground': '#181a1b',
-    'editor.lineHighlightBorder': '#00000000',
-    'editorLineNumber.foreground': '#4b5563',
-    'editorLineNumber.activeForeground': '#60a5fa',
-    'editorGutter.background': '#121314',
-    'editorIndentGuide.background': '#1e2227',
-    'editorIndentGuide.activeBackground': '#3b82f680',
-    'editorCursor.foreground': '#60a5fa',
-    'editor.selectionBackground': '#264f7880',
-    'editor.inactiveSelectionBackground': '#3a3d4140',
-    'scrollbarSlider.background': '#26262660',
-    'scrollbarSlider.hoverBackground': '#3b82f660',
-    'scrollbarSlider.activeBackground': '#3b82f6a0',
-    'minimap.background': '#121314'
-  }
-});
+// Central dynamic Monaco theme registrations (Obsidian Black, Alabaster White, Sakura Rose)
+registerMonacoThemes(monaco);
 
 export default function CodeEditor({ 
   filename = "", 
@@ -84,6 +21,8 @@ export default function CodeEditor({
   onClearFocus,
   isSyncing = false
 }) {
+  const { theme } = useTheme();
+  const monacoTheme = theme?.monacoTheme || 'neuron-obsidian';
   const editorRef = useRef(null);
   const modelsMapRef = useRef(new Map()); // Map<filePath, ITextModel>
   const timerRef = useRef(null);
@@ -203,6 +142,11 @@ export default function CodeEditor({
       }
     });
 
+    // 🚀 BIND CTRL + K / CMD + K (SEARCH / COMMAND PALETTE)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
+      window.dispatchEvent(new CustomEvent('neuron-open-command-palette'));
+    });
+
     // 🚀 BIND CTRL + / (TOGGLE LINE COMMENT) FOR ALL LANGUAGES
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => {
       editor.trigger('keyboard', 'editor.action.commentLine', null);
@@ -242,6 +186,17 @@ export default function CodeEditor({
     }
   }, [focusLine, onClearFocus]);
 
+  // Synchronize Monaco editor theme on dynamic theme switch
+  useEffect(() => {
+    if (editorRef.current && monacoTheme) {
+      try {
+        monaco.editor.setTheme(monacoTheme);
+      } catch {
+        // ignore
+      }
+    }
+  }, [monacoTheme]);
+
   // -------------------------------------------------------------------------
   // 3. FILE PATH BREADCRUMBS (Relative to Workspace Root)
   // -------------------------------------------------------------------------
@@ -251,17 +206,27 @@ export default function CodeEditor({
   }, [filename]);
 
   return (
-    <div className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 bg-[#121314]">
+    <div 
+      className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0"
+      style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+    >
       {/* 🚀 MINIMALIST FILE PATH BREADCRUMB BAR (e.g. frontend > src > App.jsx) */}
       {breadcrumbSegments.length > 0 && (
-        <div className="h-6 shrink-0 bg-[#121314] border-b border-[#242628] px-3 flex items-center justify-between text-[11px] font-mono text-slate-400 select-none z-20">
+        <div 
+          className="h-6 shrink-0 border-b px-3 flex items-center justify-between text-[11px] font-mono select-none z-20"
+          style={{
+            backgroundColor: 'var(--theme-background, #121314)',
+            borderColor: 'var(--theme-border, #242628)',
+            color: 'var(--theme-text-secondary, #94a3b8)'
+          }}
+        >
           <div className="flex items-center gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             {breadcrumbSegments.map((segment, idx) => {
               const isLast = idx === breadcrumbSegments.length - 1;
               return (
                 <React.Fragment key={idx}>
-                  {idx > 0 && <span className="text-slate-600 font-mono text-[10px]">&gt;</span>}
-                  <span className={isLast ? "text-slate-200" : "text-slate-400 hover:text-slate-300 transition-colors"}>
+                  {idx > 0 && <span className="text-[var(--theme-text-muted)] font-mono text-[10px]">&gt;</span>}
+                  <span className={isLast ? "text-[var(--theme-text-bright)] font-medium" : "text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors"}>
                     {segment}
                   </span>
                 </React.Fragment>
@@ -278,7 +243,10 @@ export default function CodeEditor({
 
       {/* 🚀 RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
       {isSyncing && (
-        <div className="h-[1.5px] w-full bg-[#121314] overflow-hidden shrink-0 z-20">
+        <div 
+          className="h-[1.5px] w-full overflow-hidden shrink-0 z-20"
+          style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+        >
           <div className="h-full bg-blue-500/80 animate-pulse w-full" />
         </div>
       )}
@@ -287,10 +255,16 @@ export default function CodeEditor({
         <Editor
           height="100%"
           width="100%"
-          theme="neuron-obsidian"
+          theme={monacoTheme}
           onMount={handleMount}
           loading={
-            <div className="w-full h-full flex items-center justify-center bg-[#121314] text-slate-500 font-mono text-xs">
+            <div 
+              className="w-full h-full flex items-center justify-center font-mono text-xs"
+              style={{
+                backgroundColor: 'var(--theme-background, #121314)',
+                color: 'var(--theme-text-muted, #64748b)'
+              }}
+            >
               Loading Editor...
             </div>
           }
@@ -310,7 +284,8 @@ export default function CodeEditor({
           renderLineHighlight: "all",
           contextmenu: true,
           fixedOverflowWidgets: true,
-          tabSize: 2,
+          tabSize: settings?.tabSize || 2,
+          formatOnPaste: settings?.formatOnPaste ?? true,
           renderWhitespace: "selection"
         }}
       />

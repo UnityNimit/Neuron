@@ -4,6 +4,7 @@ import * as PIXI from 'pixi.js';
 import { Viewport } from 'pixi-viewport';
 import { polygonHull } from 'd3-polygon';
 import { ENGINE_CONFIG } from '../../config/engineConfig';
+import { THEMES, getCurrentThemeId } from '../../config/themeConfig';
 
 const { THEME, LOD } = ENGINE_CONFIG;
 
@@ -45,7 +46,8 @@ export default function PixiSpatialEngine({
   onFileMergeDrop,
   onNodeDoubleClick, 
   onNodeHover,
-  refactorEnabled = false
+  refactorEnabled = false,
+  settings = {}
 }) {
   const containerRef = useRef(null);
   const appRef = useRef(null);
@@ -54,19 +56,19 @@ export default function PixiSpatialEngine({
   const stateRef = useRef({ 
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
-    onRefactorDrop, onFileMergeDrop, refactorEnabled 
+    onRefactorDrop, onFileMergeDrop, refactorEnabled, settings 
   });
   
   useEffect(() => {
     stateRef.current = { 
       activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
       onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
-      onRefactorDrop, onFileMergeDrop, refactorEnabled 
+      onRefactorDrop, onFileMergeDrop, refactorEnabled, settings 
     };
   }, [
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
-    onRefactorDrop, onFileMergeDrop, refactorEnabled
+    onRefactorDrop, onFileMergeDrop, refactorEnabled, settings
   ]);
 
   useEffect(() => {
@@ -81,10 +83,12 @@ export default function PixiSpatialEngine({
 
     const initWebGPU = async () => {
       const app = new PIXI.Application();
+      const currentTheme = THEMES[getCurrentThemeId()] || THEMES.black;
+      const initialBg = currentTheme?.webgl?.canvasBackground ?? 0x121314;
       
       await app.init({
         resizeTo: containerRef.current,
-        backgroundColor: 0x121314,
+        backgroundColor: initialBg,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
         antialias: false,
@@ -502,9 +506,11 @@ export default function PixiSpatialEngine({
         superNodeLayer.visible = macroTransitionAlpha > 0.01;
         superNodeLayer.alpha = macroTransitionAlpha;
 
+        const allowLabels = stateRef.current.settings?.showNodeLabels ?? true;
         const atomicLayerAlpha = 1 - macroTransitionAlpha;
         nodeLayer.alpha = atomicLayerAlpha;
         labelLayer.alpha = atomicLayerAlpha;
+        labelLayer.visible = allowLabels;
 
         if (isMacroView && simDataRef.current.superNodes) {
           const nodeMap = new Map((simDataRef.current.nodes || []).map(n => [n.id, n]));
@@ -530,6 +536,7 @@ export default function PixiSpatialEngine({
               sprites.sprite.y = cy;
               sprites.label.x = cx;
               sprites.label.y = cy + sNode.radius + 8;
+              sprites.label.visible = allowLabels;
             }
           });
         }
@@ -633,7 +640,8 @@ export default function PixiSpatialEngine({
           edgeLayer.stroke({ width: edgeWidth, color: edgeColor, alpha: edgeAlpha });
 
           // 2. 🚀 RENDER TRAVELING ENERGY PHOTONS ON CROSS-STACK BRIDGES (Frontend -> Backend)
-          if (isBridge && edgeSpawnAlpha > 0.4) {
+          const allowPhotons = stateRef.current.settings?.spatialParticles ?? true;
+          if (isBridge && edgeSpawnAlpha > 0.4 && allowPhotons) {
             // Draw Wide Neon Glow Aura for Laser Conduits
             edgeLayer.moveTo(Math.round(sx), Math.round(sy));
             edgeLayer.lineTo(Math.round(tx), Math.round(ty));
@@ -656,9 +664,9 @@ export default function PixiSpatialEngine({
         // ---------------------------------------------------------------------
         // H. ATOMIC CELESTIAL ORBS & LABELS (Hardware Frustum-Culled)
         // ---------------------------------------------------------------------
-        const showFolderText = zoom > (LOD.LABELS?.folder || 0.28);
-        const showFileText = zoom > (LOD.LABELS?.file || 0.45);
-        const showFuncText = zoom > (LOD.LABELS?.function || 0.85);
+        const showFolderText = allowLabels && zoom > (LOD.LABELS?.folder || 0.28);
+        const showFileText = allowLabels && zoom > (LOD.LABELS?.file || 0.45);
+        const showFuncText = allowLabels && zoom > (LOD.LABELS?.function || 0.85);
 
         const blastSet = Array.isArray(currentBlastRadius) && currentBlastRadius.length > 0 ? new Set(currentBlastRadius) : null;
 
@@ -695,9 +703,9 @@ export default function PixiSpatialEngine({
           
           const isFolder = node.data?.nodeType === 'folder';
           const isFile = node.data?.nodeType === 'file';
-          const isTextVisible = (isFolder && showFolderText) || (isFile && showFileText) || (!isFolder && !isFile && showFuncText);
+          const isTextVisible = allowLabels && ((isFolder && showFolderText) || (isFile && showFileText) || (!isFolder && !isFile && showFuncText));
           
-          obj.label.visible = inFrustum && isTextVisible && (node.spawnProgress || 0) > 0.85;
+          obj.label.visible = allowLabels && inFrustum && isTextVisible && (node.spawnProgress || 0) > 0.85;
 
           const isHoveredHighlight = currentActiveRay?.activeN?.has(node.id);
           const isBlastHighlight = blastSet?.has(node.id);
@@ -721,6 +729,17 @@ export default function PixiSpatialEngine({
 
     initWebGPU();
 
+    const handleThemeChange = (e) => {
+      if (appRef.current && appRef.current.renderer && e.detail?.theme?.webgl?.canvasBackground !== undefined) {
+        try {
+          appRef.current.renderer.background.color = e.detail.theme.webgl.canvasBackground;
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener('neuron-theme-change', handleThemeChange);
+
     const resizeObserver = new ResizeObserver(() => {
       if (containerRef.current && appRef.current && appRef.current.renderer) {
         appRef.current.renderer.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
@@ -730,6 +749,7 @@ export default function PixiSpatialEngine({
 
     return () => {
       isMounted = false;
+      window.removeEventListener('neuron-theme-change', handleThemeChange);
       resizeObserver.disconnect();
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });

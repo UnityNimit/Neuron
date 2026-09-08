@@ -1,8 +1,42 @@
 @import "tailwindcss";
 
 /* =========================================================================
-   NEURON SPATIAL IDE - GLOBAL HARDWARE VIEWPORT RESET
+   NEURON SPATIAL IDE - DYNAMIC THEME SYSTEM & HARDWARE VIEWPORT RESET
    ========================================================================= */
+
+:root {
+  /* Default Obsidian Black Theme Values (Exact matches) */
+  --theme-primary: #121212;
+  --theme-secondary: #191a1b;
+  --theme-background: #121314;
+  --theme-surface: #161719;
+  --theme-surface-hover: #222426;
+  --theme-surface-active: #2a2c2e;
+  --theme-border: #242628;
+  --theme-border-subtle: #2e3032;
+  --theme-border-hover: #343638;
+  --theme-text-bright: #f8fafc;
+  --theme-text-primary: #e2e8f0;
+  --theme-text-secondary: #94a3b8;
+  --theme-text-muted: #64748b;
+  --theme-accent: #3b82f6;
+  --theme-accent-hover: #60a5fa;
+  --theme-scrollbar-track: #0f0f0f;
+  --theme-scrollbar-thumb: #262626;
+  --theme-scrollbar-thumb-hover: #3b82f6;
+}
+
+/* Theme Utilities for Clean Markup */
+.bg-theme-primary { background-color: var(--theme-primary) !important; }
+.bg-theme-secondary { background-color: var(--theme-secondary) !important; }
+.bg-theme-background { background-color: var(--theme-background) !important; }
+.bg-theme-surface { background-color: var(--theme-surface) !important; }
+.border-theme-base { border-color: var(--theme-border) !important; }
+.border-theme-subtle { border-color: var(--theme-border-subtle) !important; }
+.text-theme-bright { color: var(--theme-text-bright) !important; }
+.text-theme-primary { color: var(--theme-text-primary) !important; }
+.text-theme-secondary { color: var(--theme-text-secondary) !important; }
+.text-theme-muted { color: var(--theme-text-muted) !important; }
 
 /* 1. Lock Viewport & Eliminate All Page-Level Scrolling */
 html,
@@ -14,8 +48,8 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #0a0a0a;
-  color: #cbd5e1;
+  background-color: var(--theme-background, #121314);
+  color: var(--theme-text-primary, #cbd5e1);
   user-select: none;
   -webkit-user-select: none;
   overscroll-behavior: none;
@@ -30,23 +64,23 @@ a {
   user-drag: none;
 }
 
-/* 3. Global Sleek Dark Scrollbars (Panels, Terminal, Editors) */
+/* 3. Global Sleek Dynamic Scrollbars (Panels, Terminal, Editors) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f0f0f;
+  background: var(--theme-scrollbar-track, #0f0f0f);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #262626;
+  background: var(--theme-scrollbar-thumb, #262626);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b82f6;
+  background: var(--theme-scrollbar-thumb-hover, #3b82f6);
 }
 
 /* 4. Monaco Editor & PixiJS Canvas Hardware Optimization */

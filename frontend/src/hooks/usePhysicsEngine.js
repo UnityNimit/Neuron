@@ -15,7 +15,7 @@ const sanitizeCoordinate = (val, fallback = 0) => {
   return typeof val === 'number' && isFinite(val) && !isNaN(val) ? val : fallback;
 };
 
-export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, centerView) {
+export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, centerView, physicsEnabled = true) {
   const simulationRef = useRef(null);
   const draggedNodeRef = useRef(null);
   const spawnTimerRef = useRef(null);
@@ -382,6 +382,16 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
       }));
     }
   }, [wsRef]);
+
+  // Dynamically pause/resume simulation when physicsEnabled changes
+  useEffect(() => {
+    if (!simulationRef.current) return;
+    if (physicsEnabled === false) {
+      simulationRef.current.stop();
+    } else {
+      simulationRef.current.alpha(0.25).restart();
+    }
+  }, [physicsEnabled]);
 
   return { simDataRef, onDragStart, onDragMove, onDragEnd };
 }

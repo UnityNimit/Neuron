@@ -2,12 +2,24 @@
 import { useState } from 'react';
 
 const defaultSettings = {
+  // General
+  autoSave: true,
+  blastProtection: false,
+  confirmDelete: true,
+
+  // Editor
   fontSize: 13,
+  tabSize: 2,
   wordWrap: 'off',
   lineNumbers: 'on',
   minimap: false,
   formatOnPaste: true,
-  autoSave: true,
+
+  // Spatial Map
+  spatialMinimap: true,
+  showNodeLabels: true,
+  spatialParticles: true,
+  physicsSimulation: true,
 };
 
 export function useSettings() {

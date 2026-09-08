@@ -4,8 +4,8 @@ import { Plus, X, Trash2, Square, ChevronDown } from 'lucide-react';
 import AnsiToHtml from 'ansi-to-html';
 
 const ansiConverter = new AnsiToHtml({ 
-  fg: '#e2e8f0', 
-  bg: '#191a1b', 
+  fg: 'currentColor', 
+  bg: 'transparent', 
   newline: false, 
   escapeXML: true 
 });
@@ -57,6 +57,13 @@ export default function TerminalPanel({
   };
 
   const handleKeyDown = (e) => {
+    // Intercept Ctrl+K to open Omni-Search
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('neuron-open-command-palette'));
+      return;
+    }
+
     // Intercept Ctrl+C to kill running process
     if (e.ctrlKey && e.key.toLowerCase() === 'c' && activeSession?.isRunning) {
       if (onKillProcess) onKillProcess(activeSessionId);
@@ -107,12 +114,24 @@ export default function TerminalPanel({
   };
 
   return (
-    <div className="w-full h-full bg-[#191a1b] flex flex-col font-mono text-sm select-none">
+    <div 
+      className="w-full h-full flex flex-col font-mono text-sm select-none"
+      style={{
+        backgroundColor: 'var(--theme-secondary, #191a1b)',
+        color: 'var(--theme-text-primary, #cbd5e1)'
+      }}
+    >
       
       {/* ----------------------------------------------------------------- */}
       {/* 1. ULTRA-MINIMAL TERMINAL TAB STRIP                               */}
       {/* ----------------------------------------------------------------- */}
-      <div className="h-8 shrink-0 bg-[#191a1b] border-b border-[#242628] flex items-center justify-between px-0 select-none">
+      <div 
+        className="h-8 shrink-0 border-b flex items-center justify-between px-0 select-none"
+        style={{
+          backgroundColor: 'var(--theme-secondary, #191a1b)',
+          borderColor: 'var(--theme-border, #242628)'
+        }}
+      >
         
         {/* Session Tabs */}
         <div className="flex items-center overflow-x-auto flex-grow mr-2 [&::-webkit-scrollbar]:hidden">
@@ -120,11 +139,16 @@ export default function TerminalPanel({
           {/* Output Log Tab */}
           <button 
             onClick={() => onSelectSession && onSelectSession('output')} 
-            className={`h-8 px-3 flex items-center text-[11px] font-mono font-medium border-r border-[#242628] transition-colors shrink-0 cursor-pointer ${
+            className={`h-8 px-3 flex items-center text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
               activeSessionId === 'output' 
-                ? 'bg-[#121314] text-blue-400 font-semibold border-t-2 border-t-blue-500' 
-                : 'bg-[#191a1b] text-slate-400 hover:text-slate-200 hover:bg-[#202224]'
+                ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
+                : 'hover:text-[var(--theme-text-bright)]'
             }`}
+            style={{
+              backgroundColor: activeSessionId === 'output' ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
+              borderColor: 'var(--theme-border, #242628)',
+              color: activeSessionId === 'output' ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-text-secondary, #94a3b8)'
+            }}
           >
             <span>Output</span>
           </button>
@@ -136,20 +160,25 @@ export default function TerminalPanel({
               <div 
                 key={s.id} 
                 onClick={() => onSelectSession && onSelectSession(s.id)} 
-                className={`h-8 px-3 flex items-center gap-1.5 cursor-pointer text-[11px] font-mono font-medium border-r border-[#242628] transition-colors group shrink-0 ${
+                className={`h-8 px-3 flex items-center gap-1.5 cursor-pointer text-[11px] font-mono font-medium border-r transition-colors group shrink-0 ${
                   isActive 
-                    ? 'bg-[#121314] text-blue-400 font-semibold border-t-2 border-t-blue-500' 
-                    : 'bg-[#191a1b] text-slate-400 hover:text-slate-200 hover:bg-[#202224]'
+                    ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
+                    : 'hover:text-[var(--theme-text-bright)]'
                 }`}
+                style={{
+                  backgroundColor: isActive ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
+                  borderColor: 'var(--theme-border, #242628)',
+                  color: isActive ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-text-secondary, #94a3b8)'
+                }}
               >
-                <div className={`w-1.5 h-1.5 rounded-full ${s.isRunning ? 'bg-blue-400 animate-pulse' : 'bg-slate-600'}`} />
+                <div className={`w-1.5 h-1.5 rounded-full ${s.isRunning ? 'bg-[var(--theme-accent)] animate-pulse' : 'bg-[var(--theme-text-muted)]'}`} />
                 <span>{s.name}</span>
                 <button 
                   onClick={(e) => { 
                     e.stopPropagation(); 
                     if (onCloseSession) onCloseSession(s.id); 
                   }} 
-                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1 p-0.5 rounded hover:bg-white/10"
+                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1 p-0.5 rounded hover:bg-[var(--theme-surface-hover)]"
                   title="Close Terminal"
                 >
                   <X size={11} />
@@ -166,7 +195,7 @@ export default function TerminalPanel({
           <div className="relative" ref={dropdownRef}>
             <button 
               onClick={() => setShowShellDropdown(!showShellDropdown)} 
-              className="p-1 hover:bg-[#242628] text-slate-400 hover:text-white rounded transition-colors flex items-center gap-0.5 cursor-pointer" 
+              className="p-1 hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] rounded transition-colors flex items-center gap-0.5 cursor-pointer" 
               title="New Terminal"
             >
               <Plus size={13} />
@@ -174,33 +203,40 @@ export default function TerminalPanel({
             </button>
             
             {showShellDropdown && (
-              <div className="absolute top-7 right-0 z-[200] w-44 bg-[#191a1b] border border-[#2e3032] shadow-2xl rounded-xl py-1 text-slate-300 backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-100 font-mono text-[11px]">
+              <div 
+                className="absolute top-7 right-0 z-[200] w-44 border shadow-2xl rounded-xl py-1 backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-100 font-mono text-[11px]"
+                style={{
+                  backgroundColor: 'var(--theme-surface, #191a1b)',
+                  borderColor: 'var(--theme-border-subtle, #2e3032)',
+                  color: 'var(--theme-text-primary, #cbd5e1)'
+                }}
+              >
                 <button 
                   onClick={() => { 
                     if (onCreateSession) onCreateSession('powershell'); 
                     setShowShellDropdown(false); 
                   }} 
-                  className="w-full px-3 py-1.5 text-left hover:bg-blue-600/20 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
                 >
-                  <span className="text-blue-400 font-bold">PS</span> PowerShell
+                  <span className="text-[var(--theme-accent)] font-bold">PS</span> PowerShell
                 </button>
                 <button 
                   onClick={() => { 
                     if (onCreateSession) onCreateSession('cmd'); 
                     setShowShellDropdown(false); 
                   }} 
-                  className="w-full px-3 py-1.5 text-left hover:bg-blue-600/20 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
                 >
-                  <span className="text-blue-400 font-bold">&gt;_</span> Command Prompt
+                  <span className="text-[var(--theme-accent)] font-bold">&gt;_</span> Command Prompt
                 </button>
                 <button 
                   onClick={() => { 
                     if (onCreateSession) onCreateSession('bash'); 
                     setShowShellDropdown(false); 
                   }} 
-                  className="w-full px-3 py-1.5 text-left hover:bg-blue-600/20 hover:text-white flex items-center gap-2 transition-colors cursor-pointer"
+                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
                 >
-                  <span className="text-blue-400 font-bold">$</span> Bash
+                  <span className="text-[var(--theme-accent)] font-bold">$</span> Bash
                 </button>
               </div>
             )}
@@ -220,7 +256,7 @@ export default function TerminalPanel({
           {/* Clear Console */}
           <button 
             onClick={onClearOutput} 
-            className="p-1 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" 
+            className="p-1 text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer" 
             title="Clear Console Output"
           >
             <Trash2 size={12} />
@@ -241,7 +277,11 @@ export default function TerminalPanel({
             if (onKillProcess) onKillProcess(activeSessionId);
           }
         }}
-        className="flex-grow p-3 overflow-y-auto font-mono text-xs select-text cursor-text outline-none bg-[#191a1b] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-[#191a1b] [&::-webkit-scrollbar-thumb]:bg-[#2a2c2e] [&::-webkit-scrollbar-thumb:hover]:bg-[#3b82f6]"
+        className="flex-grow p-3 overflow-y-auto font-mono text-xs select-text cursor-text outline-none [&::-webkit-scrollbar]:w-1"
+        style={{
+          backgroundColor: 'var(--theme-secondary, #191a1b)',
+          color: 'var(--theme-text-primary, #cbd5e1)'
+        }}
       >
         {/* Output Mode */}
         {activeSessionId === 'output' && (
@@ -250,7 +290,7 @@ export default function TerminalPanel({
               <div 
                 key={index} 
                 className={`${
-                  log.isError ? 'text-red-400' : log.isSystem ? 'text-blue-400/90 font-medium' : 'text-slate-200'
+                  log.isError ? 'text-red-400' : log.isSystem ? 'text-[var(--theme-accent)] font-medium' : 'text-[var(--theme-text-primary)]'
                 } whitespace-pre-wrap select-text leading-relaxed`}
                 dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(log.text || "") }} 
               />
@@ -263,13 +303,13 @@ export default function TerminalPanel({
           <div className="flex flex-col gap-1 select-text">
             {(activeSession.history || []).map((h, i) => (
               <div key={i} className="flex flex-col gap-0.5 mb-2.5">
-                <div className="flex items-center text-slate-400 font-semibold select-text">
-                  <span className="text-blue-400/80 select-text">{h.cwd}&gt;</span>
-                  <span className="text-slate-100 ml-2">{h.command}</span>
+                <div className="flex items-center text-[var(--theme-text-muted)] font-semibold select-text">
+                  <span className="text-[var(--theme-accent)] select-text">{h.cwd}&gt;</span>
+                  <span className="text-[var(--theme-text-bright)] ml-2">{h.command}</span>
                 </div>
                 {h.stdout && (
                   <div 
-                    className="text-slate-300 whitespace-pre-wrap select-text leading-relaxed"
+                    className="text-[var(--theme-text-primary)] whitespace-pre-wrap select-text leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(h.stdout) }}
                   />
                 )}
@@ -284,12 +324,12 @@ export default function TerminalPanel({
 
             {/* Live Prompt / Execution Indicator */}
             {activeSession.isRunning ? (
-              <div className="mt-1 text-blue-400/70 font-mono text-[11px] animate-pulse select-none">
+              <div className="mt-1 text-[var(--theme-accent)] font-mono text-[11px] animate-pulse select-none">
                 Executing... (Press Ctrl+C or Stop to kill)
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-0.5 select-text">
-                <span className="text-blue-400/80 font-semibold select-text">{activeSession.cwd}&gt;</span>
+                <span className="text-[var(--theme-accent)] font-semibold select-text">{activeSession.cwd}&gt;</span>
                 <input 
                   ref={inputRef}
                   type="text" 
@@ -297,7 +337,7 @@ export default function TerminalPanel({
                   value={inputCommand} 
                   onChange={(e) => setInputCommand(e.target.value)} 
                   onKeyDown={handleKeyDown} 
-                  className="flex-grow bg-transparent text-slate-100 font-mono text-xs outline-none border-none caret-blue-400 select-text" 
+                  className="flex-grow bg-transparent text-[var(--theme-text-bright)] font-mono text-xs outline-none border-none caret-[var(--theme-accent)] select-text" 
                 />
               </div>
             )}

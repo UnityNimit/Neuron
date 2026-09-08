@@ -121,10 +121,19 @@ export default function SourceControlPanel({
 
   if (!isGitRepo) {
     return (
-      <div className="w-full h-full bg-[#191a1b] text-slate-300 flex flex-col select-none overflow-hidden font-mono text-[11px]">
+      <div 
+        className="w-full h-full flex flex-col select-none overflow-hidden font-mono text-[11px]"
+        style={{
+          backgroundColor: 'var(--theme-secondary, #191a1b)',
+          color: 'var(--theme-text-primary, #cbd5e1)'
+        }}
+      >
         {/* TOP HEADER MATCHING EXPLORER */}
-        <div className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide text-slate-300 flex items-center justify-between shrink-0 border-b border-[#242628]">
-          <span className="text-slate-300 font-medium tracking-wide">Source Control</span>
+        <div 
+          className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide flex items-center justify-between shrink-0 border-b"
+          style={{ borderColor: 'var(--theme-border, #242628)' }}
+        >
+          <span className="font-medium tracking-wide" style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}>Source Control</span>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-400">
           <GitBranch size={32} className="text-slate-600 mb-3" />
@@ -138,17 +147,26 @@ export default function SourceControlPanel({
   }
 
   return (
-    <div className="w-full h-full bg-[#191a1b] text-slate-300 flex flex-col select-none overflow-hidden font-mono text-[11px]">
+    <div 
+      className="w-full h-full flex flex-col select-none overflow-hidden font-mono text-[11px]"
+      style={{
+        backgroundColor: 'var(--theme-secondary, #191a1b)',
+        color: 'var(--theme-text-primary, #cbd5e1)'
+      }}
+    >
       
       {/* ----------------------------------------------------------------- */}
       {/* 1. TOP HEADER (Identical to Explorer Header)                     */}
       {/* ----------------------------------------------------------------- */}
-      <div className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide text-slate-300 flex items-center justify-between shrink-0 border-b border-[#242628]">
-        <span className="text-slate-300 font-medium tracking-wide">Source Control</span>
+      <div 
+        className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide flex items-center justify-between shrink-0 border-b"
+        style={{ borderColor: 'var(--theme-border, #242628)' }}
+      >
+        <span className="font-medium tracking-wide" style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}>Source Control</span>
         <div className="flex items-center gap-0.5">
           <button 
             onClick={onRefresh}
-            className="p-1 hover:bg-[#242628] hover:text-white rounded-md transition-colors text-slate-400 cursor-pointer"
+            className="p-1 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] rounded-md transition-colors text-[var(--theme-text-muted)] cursor-pointer"
             title="Refresh"
           >
             <RotateCw size={12} />
@@ -159,7 +177,13 @@ export default function SourceControlPanel({
       {/* ----------------------------------------------------------------- */}
       {/* 2. COMMIT SECTION (No sparkles, Working Split Button Dropdown)    */}
       {/* ----------------------------------------------------------------- */}
-      <div className="px-3 py-2.5 border-b border-[#242628] flex flex-col gap-2 shrink-0 bg-[#191a1b]">
+      <div 
+        className="px-3 py-2.5 border-b flex flex-col gap-2 shrink-0"
+        style={{
+          borderColor: 'var(--theme-border, #242628)',
+          backgroundColor: 'var(--theme-secondary, #191a1b)'
+        }}
+      >
         
         {/* Commit Input Field */}
         <textarea
@@ -168,7 +192,12 @@ export default function SourceControlPanel({
           onKeyDown={handleKeyDown}
           placeholder={`Message (Ctrl+Enter to commit on "${gitBranch || 'main'}")`}
           rows={2}
-          className="w-full bg-[#121314] text-slate-200 text-[11px] font-mono rounded border border-[#2e3135] focus:border-blue-500 focus:outline-none p-2 resize-none placeholder-slate-500 transition-colors shadow-inner"
+          className="w-full text-[11px] font-mono rounded border focus:border-blue-500 focus:outline-none p-2 resize-none placeholder-slate-500 transition-colors shadow-inner"
+          style={{
+            backgroundColor: 'var(--theme-background, #121314)',
+            borderColor: 'var(--theme-border-subtle, #2e3135)',
+            color: 'var(--theme-text-primary, #e2e8f0)'
+          }}
         />
 
         {/* Primary Commit Split Button with Working Dropdown */}
@@ -176,7 +205,8 @@ export default function SourceControlPanel({
           <button
             onClick={() => handleExecuteCommit(commitAction)}
             disabled={isCommitting || (!commitMessage.trim() && commitAction !== 'commit_amend')}
-            className="flex-1 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium py-1 px-3 flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-[11px] rounded-l disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 text-white font-medium py-1 px-3 flex items-center justify-center gap-1.5 transition-opacity cursor-pointer text-[11px] rounded-l disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 active:opacity-80"
+            style={{ backgroundColor: 'var(--theme-accent, #2563eb)' }}
           >
             {isCommitting ? (
               <>
@@ -190,11 +220,12 @@ export default function SourceControlPanel({
               </>
             )}
           </button>
-          <div className="w-[1px] bg-blue-700" />
+          <div className="w-[1px] bg-black/20" />
           <button
             onClick={() => setIsDropdownOpen(prev => !prev)}
             disabled={isCommitting}
-            className="bg-blue-600 hover:bg-blue-500 px-2 flex items-center justify-center text-white transition-colors cursor-pointer rounded-r disabled:opacity-50"
+            className="px-2 flex items-center justify-center text-white transition-opacity cursor-pointer rounded-r disabled:opacity-50 hover:opacity-90"
+            style={{ backgroundColor: 'var(--theme-accent, #2563eb)' }}
             title="More Commit Options"
           >
             <ChevronDown size={12} />
@@ -202,26 +233,33 @@ export default function SourceControlPanel({
 
           {/* Working Dropdown Menu */}
           {isDropdownOpen && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-[#1c1e20] border border-[#2e3135] rounded shadow-2xl py-1 z-50 flex flex-col text-[11px] font-mono animate-in fade-in zoom-in-95 duration-100">
+            <div 
+              className="absolute top-full left-0 right-0 mt-1 rounded shadow-2xl py-1 z-50 flex flex-col text-[11px] font-mono animate-in fade-in zoom-in-95 duration-100 border"
+              style={{
+                backgroundColor: 'var(--theme-surface, #1c1e20)',
+                borderColor: 'var(--theme-border-subtle, #2e3135)',
+                color: 'var(--theme-text-primary, #cbd5e1)'
+              }}
+            >
               <button
                 onClick={() => {
                   setCommitAction('commit');
                   handleExecuteCommit('commit');
                 }}
-                className={`px-3 py-1.5 text-left hover:bg-[#282a2d] transition-colors flex items-center justify-between cursor-pointer ${
-                  commitAction === 'commit' ? 'text-blue-400 font-semibold' : 'text-slate-300'
+                className={`px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] transition-colors flex items-center justify-between cursor-pointer ${
+                  commitAction === 'commit' ? 'text-[var(--theme-accent)] font-semibold' : 'text-[var(--theme-text-primary)]'
                 }`}
               >
                 <span>Commit</span>
-                <span className="text-[10px] text-slate-500">Ctrl+Enter</span>
+                <span className="text-[10px] text-[var(--theme-text-muted)]">Ctrl+Enter</span>
               </button>
               <button
                 onClick={() => {
                   setCommitAction('commit_push');
                   handleExecuteCommit('commit_push');
                 }}
-                className={`px-3 py-1.5 text-left hover:bg-[#282a2d] transition-colors flex items-center justify-between cursor-pointer ${
-                  commitAction === 'commit_push' ? 'text-blue-400 font-semibold' : 'text-slate-300'
+                className={`px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] transition-colors flex items-center justify-between cursor-pointer ${
+                  commitAction === 'commit_push' ? 'text-[var(--theme-accent)] font-semibold' : 'text-[var(--theme-text-primary)]'
                 }`}
               >
                 <span>Commit & Push</span>
@@ -231,8 +269,8 @@ export default function SourceControlPanel({
                   setCommitAction('commit_amend');
                   handleExecuteCommit('commit_amend');
                 }}
-                className={`px-3 py-1.5 text-left hover:bg-[#282a2d] transition-colors flex items-center justify-between cursor-pointer ${
-                  commitAction === 'commit_amend' ? 'text-blue-400 font-semibold' : 'text-slate-300'
+                className={`px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] transition-colors flex items-center justify-between cursor-pointer ${
+                  commitAction === 'commit_amend' ? 'text-[var(--theme-accent)] font-semibold' : 'text-[var(--theme-text-primary)]'
                 }`}
               >
                 <span>Commit (Amend)</span>
@@ -245,28 +283,37 @@ export default function SourceControlPanel({
       {/* ----------------------------------------------------------------- */}
       {/* 3. SCROLLABLE ACCORDION: STAGED, CHANGES & GRAPH                   */}
       {/* ----------------------------------------------------------------- */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden divide-y divide-[#242628]/50 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-[#191a1b] [&::-webkit-scrollbar-thumb]:bg-[#2a2c2e] [&::-webkit-scrollbar-thumb:hover]:bg-[#3b82f6]">
+      <div 
+        className="flex-1 overflow-y-auto overflow-x-hidden divide-y divide-[var(--theme-border)] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-[var(--theme-secondary)] [&::-webkit-scrollbar-thumb]:bg-[var(--theme-surface-hover)] [&::-webkit-scrollbar-thumb:hover]:bg-[var(--theme-accent)]"
+        style={{ borderColor: 'var(--theme-border)' }}
+      >
 
         {/* --- STAGED CHANGES SECTION (If Any Staged) --- */}
         {stagedFiles.length > 0 && (
           <div className="flex flex-col">
             <div 
               onClick={() => setIsStagedOpen(prev => !prev)}
-              className="px-2.5 py-1 text-[11px] font-mono font-bold text-slate-200 tracking-wider flex items-center justify-between shrink-0 hover:bg-[#222426] cursor-pointer transition-colors select-none group"
+              className="px-2.5 py-1 text-[11px] font-mono font-bold text-[var(--theme-text-primary)] tracking-wider flex items-center justify-between shrink-0 hover:bg-[var(--theme-surface-hover)] cursor-pointer transition-colors select-none group"
             >
               <div className="flex items-center gap-1 min-w-0">
-                {isStagedOpen ? <ChevronDown size={13} className="text-slate-500 shrink-0" /> : <ChevronRight size={13} className="text-slate-500 shrink-0" />}
+                {isStagedOpen ? <ChevronDown size={13} className="text-[var(--theme-text-muted)] shrink-0" /> : <ChevronRight size={13} className="text-[var(--theme-text-muted)] shrink-0" />}
                 <span className="truncate font-bold">STAGED CHANGES</span>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={(e) => { e.stopPropagation(); onUnstageFile && onUnstageFile("all"); }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#2a2c2e] hover:text-white rounded transition-all text-slate-400"
+                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--theme-surface-active)] hover:text-[var(--theme-text-bright)] rounded transition-all text-[var(--theme-text-muted)]"
                   title="Unstage All Changes"
                 >
                   <Minus size={12} />
                 </button>
-                <span className="px-1.5 py-0.2 rounded-full bg-[#242628] text-slate-300 text-[10px] font-mono font-bold">
+                <span 
+                  className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold"
+                  style={{
+                    backgroundColor: 'var(--theme-surface-hover)',
+                    color: 'var(--theme-text-secondary)'
+                  }}
+                >
                   {stagedFiles.length}
                 </span>
               </div>
@@ -278,19 +325,19 @@ export default function SourceControlPanel({
                   <div 
                     key={file.path}
                     onClick={() => onSwitchFile && onSwitchFile(file.path)}
-                    className="flex items-center justify-between px-3 py-1 hover:bg-[#202224] cursor-pointer group transition-colors"
+                    className="flex items-center justify-between px-3 py-1 hover:bg-[var(--theme-surface-hover)] cursor-pointer group transition-colors"
                   >
                     <div className="flex items-center gap-1.5 overflow-hidden flex-1 mr-2">
                       <FileCode2 size={13} className={`${getFileIconColor(file.name)} shrink-0`} />
-                      <span className="text-slate-200 font-mono text-[11px] truncate">{file.name}</span>
+                      <span className="text-[var(--theme-text-primary)] font-mono text-[11px] truncate">{file.name}</span>
                       {file.dir && (
-                        <span className="text-slate-500 text-[10px] font-mono truncate ml-1 shrink-0">{file.dir}</span>
+                        <span className="text-[var(--theme-text-muted)] text-[10px] font-mono truncate ml-1 shrink-0">{file.dir}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={(e) => { e.stopPropagation(); onUnstageFile && onUnstageFile(file.path); }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-white transition-opacity text-slate-400"
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--theme-text-bright)] transition-opacity text-[var(--theme-text-muted)]"
                         title="Unstage Changes"
                       >
                         <Minus size={12} />
@@ -310,28 +357,34 @@ export default function SourceControlPanel({
         <div className="flex flex-col">
           <div 
             onClick={() => setIsChangesOpen(prev => !prev)}
-            className="px-2.5 py-1 text-[11px] font-mono font-bold text-slate-200 tracking-wider flex items-center justify-between shrink-0 hover:bg-[#222426] cursor-pointer transition-colors select-none group"
+            className="px-2.5 py-1 text-[11px] font-mono font-bold text-[var(--theme-text-primary)] tracking-wider flex items-center justify-between shrink-0 hover:bg-[var(--theme-surface-hover)] cursor-pointer transition-colors select-none group"
           >
             <div className="flex items-center gap-1 min-w-0">
-              {isChangesOpen ? <ChevronDown size={13} className="text-slate-500 shrink-0" /> : <ChevronRight size={13} className="text-slate-500 shrink-0" />}
+              {isChangesOpen ? <ChevronDown size={13} className="text-[var(--theme-text-muted)] shrink-0" /> : <ChevronRight size={13} className="text-[var(--theme-text-muted)] shrink-0" />}
               <span className="truncate font-bold">CHANGES</span>
             </div>
             <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={(e) => { e.stopPropagation(); onDiscardAll && onDiscardAll(); }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#2a2c2e] hover:text-white rounded transition-all text-slate-400"
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--theme-surface-active)] hover:text-[var(--theme-text-bright)] rounded transition-all text-[var(--theme-text-muted)]"
                 title="Discard All Changes"
               >
                 <RotateCcw size={12} />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onStageAll && onStageAll(); }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#2a2c2e] hover:text-white rounded transition-all text-slate-400"
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[var(--theme-surface-active)] hover:text-[var(--theme-text-bright)] rounded transition-all text-[var(--theme-text-muted)]"
                 title="Stage All Changes"
               >
                 <Plus size={13} />
               </button>
-              <span className="px-1.5 py-0.2 rounded-full bg-[#242628] text-slate-300 text-[10px] font-mono font-bold">
+              <span 
+                className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold"
+                style={{
+                  backgroundColor: 'var(--theme-surface-hover)',
+                  color: 'var(--theme-text-secondary)'
+                }}
+              >
                 {unstagedFiles.length}
               </span>
             </div>
@@ -340,7 +393,7 @@ export default function SourceControlPanel({
           {isChangesOpen && (
             <div className="flex flex-col">
               {unstagedFiles.length === 0 ? (
-                <div className="px-4 py-2 text-slate-500 text-[10px] italic">
+                <div className="px-4 py-2 text-[var(--theme-text-muted)] text-[10px] italic">
                   No changes detected
                 </div>
               ) : (
@@ -348,26 +401,26 @@ export default function SourceControlPanel({
                   <div 
                     key={file.path}
                     onClick={() => onSwitchFile && onSwitchFile(file.path)}
-                    className="flex items-center justify-between px-3 py-1 hover:bg-[#202224] cursor-pointer group transition-colors"
+                    className="flex items-center justify-between px-3 py-1 hover:bg-[var(--theme-surface-hover)] cursor-pointer group transition-colors"
                   >
                     <div className="flex items-center gap-1.5 overflow-hidden flex-1 mr-2">
                       <FileCode2 size={13} className={`${getFileIconColor(file.name)} shrink-0`} />
-                      <span className="text-slate-200 font-mono text-[11px] truncate">{file.name}</span>
+                      <span className="text-[var(--theme-text-primary)] font-mono text-[11px] truncate">{file.name}</span>
                       {file.dir && (
-                        <span className="text-slate-500 text-[10px] font-mono truncate ml-1 shrink-0">{file.dir}</span>
+                        <span className="text-[var(--theme-text-muted)] text-[10px] font-mono truncate ml-1 shrink-0">{file.dir}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={(e) => { e.stopPropagation(); onDiscardFile && onDiscardFile(file.path); }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-white transition-opacity text-slate-400"
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--theme-text-bright)] transition-opacity text-[var(--theme-text-muted)]"
                         title="Discard Changes"
                       >
                         <RotateCcw size={12} />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onStageFile && onStageFile(file.path); }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-white transition-opacity text-slate-400"
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--theme-text-bright)] transition-opacity text-[var(--theme-text-muted)]"
                         title="Stage Changes"
                       >
                         <Plus size={13} />
@@ -387,22 +440,22 @@ export default function SourceControlPanel({
         <div className="flex flex-col">
           <div 
             onClick={() => setIsGraphOpen(prev => !prev)}
-            className="px-2.5 py-1 text-[11px] font-mono font-bold text-slate-200 tracking-wider flex items-center justify-between shrink-0 hover:bg-[#222426] cursor-pointer transition-colors select-none group"
+            className="px-2.5 py-1 text-[11px] font-mono font-bold text-[var(--theme-text-primary)] tracking-wider flex items-center justify-between shrink-0 hover:bg-[var(--theme-surface-hover)] cursor-pointer transition-colors select-none group"
           >
             <div className="flex items-center gap-1 min-w-0">
-              {isGraphOpen ? <ChevronDown size={13} className="text-slate-500 shrink-0" /> : <ChevronRight size={13} className="text-slate-500 shrink-0" />}
+              {isGraphOpen ? <ChevronDown size={13} className="text-[var(--theme-text-muted)] shrink-0" /> : <ChevronRight size={13} className="text-[var(--theme-text-muted)] shrink-0" />}
               <span className="truncate font-bold">COMMIT GRAPH</span>
             </div>
-            <div className="flex items-center gap-2 text-slate-400">
-              <span className="flex items-center gap-0.5 text-[10px] hover:text-white">
+            <div className="flex items-center gap-2 text-[var(--theme-text-muted)]">
+              <span className="flex items-center gap-0.5 text-[10px] hover:text-[var(--theme-text-bright)]">
                 <GitBranch size={11} /> Auto
               </span>
-              <Target size={12} className="hover:text-white" />
-              <ArrowDown size={12} className="hover:text-white" />
-              <ArrowUp size={12} className="hover:text-white" />
+              <Target size={12} className="hover:text-[var(--theme-text-bright)]" />
+              <ArrowDown size={12} className="hover:text-[var(--theme-text-bright)]" />
+              <ArrowUp size={12} className="hover:text-[var(--theme-text-bright)]" />
               <button 
                 onClick={(e) => { e.stopPropagation(); onRefresh && onRefresh(); }}
-                className="hover:text-white"
+                className="hover:text-[var(--theme-text-bright)]"
                 title="Refresh Graph"
               >
                 <RotateCw size={12} />
@@ -413,7 +466,7 @@ export default function SourceControlPanel({
           {isGraphOpen && (
             <div className="flex flex-col overflow-x-auto [&::-webkit-scrollbar]:hidden py-1 font-mono text-[11px]">
               {gitGraph.length === 0 ? (
-                <div className="px-4 py-3 text-slate-500 text-[10px] italic">
+                <div className="px-4 py-3 text-[var(--theme-text-muted)] text-[10px] italic">
                   No commit history available
                 </div>
               ) : (
@@ -446,7 +499,7 @@ export default function SourceControlPanel({
                   return (
                     <div 
                       key={row.hash || `row_${idx}`}
-                      className="h-6 flex items-center hover:bg-[#202224] px-2 cursor-pointer transition-colors group select-none whitespace-nowrap overflow-hidden"
+                      className="h-6 flex items-center hover:bg-[var(--theme-surface-hover)] px-2 cursor-pointer transition-colors group select-none whitespace-nowrap overflow-hidden"
                       title={`${row.hash} • ${row.author} • ${row.relative_date}\n${row.message}`}
                     >
                       {/* SVG Branch Graph Rail */}
@@ -462,7 +515,7 @@ export default function SourceControlPanel({
                         {/* Active HEAD: Double-Circle Ring */}
                         {row.is_head ? (
                           <>
-                            <circle cx={dotX} cy="12" r="5.5" fill="#191a1b" stroke="#38bdf8" strokeWidth="2" />
+                            <circle cx={dotX} cy="12" r="5.5" fill="var(--theme-secondary, #191a1b)" stroke="#38bdf8" strokeWidth="2" />
                             <circle cx={dotX} cy="12" r="2.5" fill="#38bdf8" />
                           </>
                         ) : (
@@ -476,8 +529,8 @@ export default function SourceControlPanel({
                         {/* If HEAD commit: show Date, Author, and Branch badge */}
                         {row.is_head ? (
                           <>
-                            <span className="font-semibold text-slate-200 shrink-0">{row.date}</span>
-                            <span className="text-slate-400 shrink-0">{row.author}</span>
+                            <span className="font-semibold text-[var(--theme-text-bright)] shrink-0">{row.date}</span>
+                            <span className="text-[var(--theme-text-muted)] shrink-0">{row.author}</span>
                             <span className="px-1.5 py-0.2 rounded-full border border-cyan-500/60 bg-cyan-950/40 text-cyan-300 text-[10px] flex items-center gap-1 font-mono shrink-0">
                               <GitBranch size={10} /> {row.branch_names?.[0] || 'main'}
                             </span>
@@ -487,10 +540,10 @@ export default function SourceControlPanel({
                           </>
                         ) : (
                           <>
-                            <span className="text-slate-300 truncate group-hover:text-white transition-colors">
+                            <span className="text-[var(--theme-text-primary)] truncate group-hover:text-[var(--theme-text-bright)] transition-colors">
                               {row.message}
                             </span>
-                            <span className="text-slate-500 text-[10px] shrink-0 ml-auto pr-2">
+                            <span className="text-[var(--theme-text-muted)] text-[10px] shrink-0 ml-auto pr-2">
                               {row.author}
                             </span>
                           </>

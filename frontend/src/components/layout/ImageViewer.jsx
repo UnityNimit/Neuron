@@ -142,10 +142,19 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
   }, []);
 
   return (
-    <div className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 bg-[#121314] select-none">
-      
+    <div 
+      className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 select-none"
+      style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+    >
       {/* 🚀 TOP BREADCRUMB & TOOLBAR BAR (Matches CodeEditor.jsx exactly) */}
-      <div className="h-6 shrink-0 bg-[#121314] border-b border-[#242628] px-3 flex items-center justify-between text-[11px] font-mono text-slate-400 select-none z-20">
+      <div 
+        className="h-6 shrink-0 border-b px-3 flex items-center justify-between text-[11px] font-mono select-none z-20"
+        style={{
+          backgroundColor: 'var(--theme-background, #121314)',
+          borderColor: 'var(--theme-border, #242628)',
+          color: 'var(--theme-text-secondary, #94a3b8)'
+        }}
+      >
         
         {/* Left: Path Breadcrumbs */}
         <div className="flex items-center gap-1.5 overflow-x-auto [&::-webkit-scrollbar]:hidden">
@@ -220,7 +229,10 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
 
       {/* 🚀 RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
       {isSyncing && (
-        <div className="h-[1.5px] w-full bg-[#121314] overflow-hidden shrink-0 z-20">
+        <div 
+          className="h-[1.5px] w-full overflow-hidden shrink-0 z-20"
+          style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+        >
           <div className="h-full bg-blue-500/80 animate-pulse w-full" />
         </div>
       )}
@@ -236,14 +248,14 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
         onDoubleClick={handleDoubleClick}
         style={{
           backgroundImage: `
-            linear-gradient(45deg, #151618 25%, transparent 25%),
-            linear-gradient(-45deg, #151618 25%, transparent 25%),
-            linear-gradient(45deg, transparent 75%, #151618 75%),
-            linear-gradient(-45deg, transparent 75%, #151618 75%)
+            linear-gradient(45deg, var(--theme-surface-hover, #151618) 25%, transparent 25%),
+            linear-gradient(-45deg, var(--theme-surface-hover, #151618) 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, var(--theme-surface-hover, #151618) 75%),
+            linear-gradient(-45deg, transparent 75%, var(--theme-surface-hover, #151618) 75%)
           `,
           backgroundSize: '24px 24px',
           backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0px',
-          backgroundColor: '#121314'
+          backgroundColor: 'var(--theme-background, #121314)'
         }}
         className={`w-full flex-1 min-h-0 relative overflow-hidden flex items-center justify-center ${
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
@@ -251,7 +263,10 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
       >
         {/* Loading Spinner */}
         {(loading || isSyncing) && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-10 pointer-events-none bg-[#121314]/80 backdrop-blur-sm">
+          <div 
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-10 pointer-events-none backdrop-blur-sm"
+            style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+          >
             <Loader2 size={18} className="animate-spin text-blue-400" />
             <span className="text-slate-400 font-mono text-[11px]">Loading Image...</span>
           </div>

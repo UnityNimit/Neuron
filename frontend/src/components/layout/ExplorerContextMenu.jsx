@@ -53,31 +53,37 @@ export default function ExplorerContextMenu({
   return (
     <div 
       ref={menuRef}
-      style={{ top: clampedY, left: clampedX }}
-      className="fixed z-[200] w-56 bg-[#191a1b]/95 border border-[#2e3032] shadow-2xl rounded-xl py-1.5 text-xs text-slate-300 font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none"
+      style={{ 
+        top: clampedY, 
+        left: clampedX,
+        backgroundColor: 'var(--theme-surface, #191a1b)',
+        borderColor: 'var(--theme-border-subtle, #2e3032)',
+        color: 'var(--theme-text-primary, #cbd5e1)'
+      }}
+      className="fixed z-[200] w-56 border shadow-2xl rounded-xl py-1.5 text-xs font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none"
       onClick={(e) => e.stopPropagation()}
     >
       {/* 1. Execution & Layout */}
       {!isFolder && onRun && (
         <button 
           onClick={() => { onRun(item.path); onClose(); }} 
-          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left group"
+          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
         >
           <span className="flex items-center gap-2">
-            <Play size={12} fill="currentColor" className="text-emerald-400 group-hover:text-emerald-300" />
+            <Play size={12} fill="currentColor" className="text-emerald-500" />
             <span>Run File</span>
           </span>
-          <span className="text-[10px] text-slate-500">F5</span>
+          <span className="text-[10px] text-[var(--theme-text-muted)]">F5</span>
         </button>
       )}
 
       {!isFolder && onOpenSide && (
         <button 
           onClick={() => { onOpenSide(item.path); onClose(); }} 
-          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left"
+          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left"
         >
           <span className="flex items-center gap-2">
-            <Columns size={12} className="text-blue-400" />
+            <Columns size={12} className="text-[var(--theme-accent)]" />
             <span>Open to Side</span>
           </span>
         </button>
@@ -86,38 +92,38 @@ export default function ExplorerContextMenu({
       {onReveal && (
         <button 
           onClick={() => { onReveal(item.path); onClose(); }} 
-          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left"
+          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left"
         >
           <span className="flex items-center gap-2">
-            <ExternalLink size={12} className="text-slate-400" />
+            <ExternalLink size={12} className="text-[var(--theme-text-muted)]" />
             <span>Reveal in Explorer</span>
           </span>
         </button>
       )}
 
-      <div className="my-1 border-t border-[#242628]" />
+      <div className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
 
       {/* 2. Clipboard Operations (Cut / Copy / Paste) */}
       <button 
         onClick={() => { if (onCut) onCut(item); onClose(); }} 
-        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left"
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left"
       >
         <span className="flex items-center gap-2">
-          <Scissors size={12} className="text-slate-400" />
+          <Scissors size={12} className="text-[var(--theme-text-muted)]" />
           <span>Cut</span>
         </span>
-        <span className="text-[10px] text-slate-500">Ctrl+X</span>
+        <span className="text-[10px] text-[var(--theme-text-muted)]">Ctrl+X</span>
       </button>
 
       <button 
         onClick={() => { if (onCopy) onCopy(item); onClose(); }} 
-        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left"
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left"
       >
         <span className="flex items-center gap-2">
-          <Copy size={12} className="text-slate-400" />
+          <Copy size={12} className="text-[var(--theme-text-muted)]" />
           <span>Copy</span>
         </span>
-        <span className="text-[10px] text-slate-500">Ctrl+C</span>
+        <span className="text-[10px] text-[var(--theme-text-muted)]">Ctrl+C</span>
       </button>
 
       {isFolder && (
@@ -126,64 +132,64 @@ export default function ExplorerContextMenu({
           onClick={() => { if (onPaste) onPaste(item); onClose(); }} 
           className={`w-full px-3 py-1.5 flex items-center justify-between transition-colors text-left ${
             hasClipboard 
-              ? 'hover:bg-blue-600/20 hover:text-white cursor-pointer' 
+              ? 'hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] cursor-pointer' 
               : 'opacity-40 cursor-not-allowed'
           }`}
         >
           <span className="flex items-center gap-2">
-            <Clipboard size={12} className="text-slate-400" />
+            <Clipboard size={12} className="text-[var(--theme-text-muted)]" />
             <span>Paste</span>
           </span>
-          <span className="text-[10px] text-slate-500">Ctrl+V</span>
+          <span className="text-[10px] text-[var(--theme-text-muted)]">Ctrl+V</span>
         </button>
       )}
 
-      <div className="my-1 border-t border-[#242628]" />
+      <div className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
 
       {/* 3. Path Copying */}
       <button 
         onClick={() => { if (onCopyPath) onCopyPath(item.path); onClose(); }} 
-        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left"
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left"
       >
         <span className="flex items-center gap-2">
-          <Link size={12} className="text-slate-400" />
+          <Link size={12} className="text-[var(--theme-text-muted)]" />
           <span>Copy Path</span>
         </span>
       </button>
 
       <button 
         onClick={() => { if (onCopyRelPath) onCopyRelPath(item.path); onClose(); }} 
-        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left"
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left"
       >
         <span className="flex items-center gap-2">
-          <FileCode size={12} className="text-slate-400" />
+          <FileCode size={12} className="text-[var(--theme-text-muted)]" />
           <span>Copy Relative Path</span>
         </span>
       </button>
 
-      <div className="my-1 border-t border-[#242628]" />
+      <div className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
 
       {/* 4. Rename & Delete */}
       <button 
         onClick={() => { if (onRename) onRename(item); onClose(); }} 
-        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600/20 hover:text-white transition-colors cursor-pointer text-left"
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left"
       >
         <span className="flex items-center gap-2">
-          <Edit3 size={12} className="text-blue-400" />
+          <Edit3 size={12} className="text-[var(--theme-accent)]" />
           <span>Rename...</span>
         </span>
-        <span className="text-[10px] text-slate-500">F2</span>
+        <span className="text-[10px] text-[var(--theme-text-muted)]">F2</span>
       </button>
 
       <button 
         onClick={() => { if (onDelete) onDelete(item.path); onClose(); }} 
-        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-red-600 hover:text-white text-red-400 transition-colors cursor-pointer text-left group"
+        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-red-600 hover:text-white text-red-500 transition-colors cursor-pointer text-left group"
       >
         <span className="flex items-center gap-2">
-          <Trash2 size={12} className="text-red-400 group-hover:text-white" />
+          <Trash2 size={12} className="text-red-500 group-hover:text-white" />
           <span>Delete</span>
         </span>
-        <span className="text-[10px] text-slate-500 group-hover:text-white/80">Del</span>
+        <span className="text-[10px] text-[var(--theme-text-muted)] group-hover:text-white/80">Del</span>
       </button>
     </div>
   );

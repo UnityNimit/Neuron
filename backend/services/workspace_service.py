@@ -38,6 +38,7 @@ PREVIOUS_WORKSPACE_STATE: Dict[str, Any] = {}
 PREVIOUS_FILE_CONTENTS: Dict[str, str] = {}
 LAST_WORKSPACE_DIR: str = ""
 GIT_CHURN_CACHE: Dict[str, int] = {}
+WORKSPACE_LOAD_TIME: float = time.time()
 LAST_GIT_CHURN_FETCH: float = 0.0
 
 
@@ -255,18 +256,43 @@ def get_file_list() -> List[dict]:
 # -------------------------------------------------------------------------
 # 3. WORKSPACE STATE & INCREMENTAL DELTA GENERATOR
 # -------------------------------------------------------------------------
-def get_workspace_state() -> dict:
+def reset_workspace_mutation_tracker():
+    """
+    Clears in-memory file baselines and active agent supervisor batches.
+    Guarantees that opening a project or switching workspaces never flags an AI mutation burst.
+    """
+    global PREVIOUS_WORKSPACE_STATE, PREVIOUS_FILE_CONTENTS, LAST_WORKSPACE_DIR, WORKSPACE_LOAD_TIME
+    PREVIOUS_WORKSPACE_STATE = {}
+    PREVIOUS_FILE_CONTENTS = {}
+    LAST_WORKSPACE_DIR = ""
+    WORKSPACE_LOAD_TIME = time.time()
+    agent_supervisor.active_batches.clear()
+    agent_supervisor.current_burst_id = None
+    agent_supervisor.file_content_snapshots.clear()
+
+
+def get_workspace_state(is_initial_load: bool = False) -> dict:
     """
     LIGHTNING-FAST ARCHITECTURAL STATE GENERATOR (<0.05s)
       1. Scans workspace directory tree (Shielded against binaries)
       2. Computes Git metadata, statuses & cached historical code churn
       3. Executes the multi-language AST parser & Graph ML analyzer
     """
-    global PREVIOUS_WORKSPACE_STATE, PREVIOUS_FILE_CONTENTS, LAST_WORKSPACE_DIR
+    global PREVIOUS_WORKSPACE_STATE, PREVIOUS_FILE_CONTENTS, LAST_WORKSPACE_DIR, WORKSPACE_LOAD_TIME
 
     target_dir = os.path.abspath(AppState.TARGET_DIR)
-    is_dir_switch = (LAST_WORKSPACE_DIR != target_dir)
+    is_dir_switch = (LAST_WORKSPACE_DIR != target_dir) or is_initial_load or not PREVIOUS_FILE_CONTENTS
     LAST_WORKSPACE_DIR = target_dir
+
+    if is_dir_switch:
+        PREVIOUS_FILE_CONTENTS.clear()
+        WORKSPACE_LOAD_TIME = time.time()
+        agent_supervisor.active_batches.clear()
+        agent_supervisor.current_burst_id = None
+        agent_supervisor.file_content_snapshots.clear()
+
+    # Startup grace window (3 seconds) to shield against cold start AST reads
+    is_startup_grace = (time.time() - WORKSPACE_LOAD_TIME) < 3.0
 
     items = get_file_list()
     file_paths = [i["path"] for i in items if i["type"] == "file"]
@@ -292,38 +318,40 @@ def get_workspace_state() -> dict:
             content = ndata.get("code", "")
             if fpath:
                 current_contents[fpath] = content
-                if not is_dir_switch:
+                if not is_dir_switch and not is_startup_grace and AppState.BLAST_PROTECTION_ENABLED:
                     old_content = PREVIOUS_FILE_CONTENTS.get(fpath, "")
                     if old_content and old_content != content:
                         mutated_files_buffer.append((fpath, old_content, content))
 
     PREVIOUS_FILE_CONTENTS = current_contents
 
-    # ONLY trigger Agent Supervisor if MULTIPLE (>= 2) files are modified in a burst
+    # STRICT GUARANTEE: ONLY trigger Agent Supervisor if Blast Protection is ENABLED,
+    # NOT in a directory switch, NOT in startup grace, and >= 2 files were mutated simultaneously
     agent_batch_summary = None
-    if len(mutated_files_buffer) >= 2:
+    if not AppState.BLAST_PROTECTION_ENABLED:
+        agent_supervisor.active_batches.clear()
+        agent_supervisor.current_burst_id = None
+        agent_supervisor.file_content_snapshots.clear()
+    elif not is_dir_switch and not is_startup_grace and len(mutated_files_buffer) >= 2:
         agent_batch = agent_supervisor.record_agent_mutation_burst(
             mutated_files=mutated_files_buffer,
             graph_edges=graph_state.get("edges", [])
         )
-        if AppState.BLAST_PROTECTION_ENABLED:
-            # 🛡️ Blast Protection Active: Safely rollback runaway AI multi-file edits on disk
-            success, reason = agent_supervisor.rollback_batch(
-                batch_id=agent_batch.batch_id,
-                workspace_root=AppState.TARGET_DIR
+        # 🛡️ Blast Protection Active: Safely rollback runaway AI multi-file edits on disk
+        success, reason = agent_supervisor.rollback_batch(
+            batch_id=agent_batch.batch_id,
+            workspace_root=AppState.TARGET_DIR
+        )
+        if success:
+            for fpath, old_text, _ in mutated_files_buffer:
+                current_contents[fpath] = old_text
+            agent_batch.is_rolled_back = True
+        agent_batch_summary = agent_supervisor.get_latest_batch_summary()
+        if agent_batch_summary:
+            agent_batch_summary["blastProtectionBlocked"] = True
+            agent_batch_summary["protectionMessage"] = (
+                f"Blast Protection intercepted & neutralized an instant AI mutation burst affecting {len(mutated_files_buffer)} files."
             )
-            if success:
-                for fpath, old_text, _ in mutated_files_buffer:
-                    current_contents[fpath] = old_text
-                agent_batch.is_rolled_back = True
-            agent_batch_summary = agent_supervisor.get_latest_batch_summary()
-            if agent_batch_summary:
-                agent_batch_summary["blastProtectionBlocked"] = True
-                agent_batch_summary["protectionMessage"] = (
-                    f"Blast Protection intercepted & neutralized an instant AI mutation burst affecting {len(mutated_files_buffer)} files."
-                )
-        else:
-            agent_batch_summary = agent_supervisor.get_latest_batch_summary()
 
     from services.git_service import git_get_detailed_status
     git_detailed = git_get_detailed_status(AppState.TARGET_DIR)
@@ -339,7 +367,7 @@ def get_workspace_state() -> dict:
         "git_branch": git_meta.get("git_branch", "main"),
         "is_git_repo": git_meta.get("is_git_repo", False),
         "repo_name": git_meta.get("repo_name", ""),
-        "agent_batch": agent_batch_summary,
+        "agent_batch": agent_batch_summary if AppState.BLAST_PROTECTION_ENABLED else None,
         "blast_protection": AppState.BLAST_PROTECTION_ENABLED
     }
 
@@ -374,7 +402,7 @@ def compute_incremental_graph_delta(old_state: dict, new_state: dict) -> dict:
         "git_branch": new_state.get("git_branch", "main"),
         "is_git_repo": new_state.get("is_git_repo", False),
         "repo_name": new_state.get("repo_name", ""),
-        "agent_batch": new_state.get("agent_batch"),
+        "agent_batch": new_state.get("agent_batch") if AppState.BLAST_PROTECTION_ENABLED else None,
         "active_file": new_state.get("active_file", "")
     }
 

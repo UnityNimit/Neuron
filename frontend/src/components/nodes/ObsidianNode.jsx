@@ -46,28 +46,60 @@ const ObsidianNode = ({ data, selected }) => {
 
       <div className="absolute top-full mt-1.5 flex flex-col items-center pointer-events-none z-20 overflow-visible">
         {(zLevel === 1 || zLevel === 2) && (
-          <span className={`font-sans whitespace-nowrap bg-[#0f0f0f]/95 px-2 py-0.5 rounded border border-[#333] shadow-md transition-opacity duration-200 ${isFolder ? 'text-[#e5e5e5] text-[12px] font-bold tracking-[0.1em] uppercase' : isFile ? 'text-[#cccccc] text-[11px] font-semibold' : 'text-[#a3a3a3] text-[9px]'}`}>
+          <span 
+            className={`font-sans whitespace-nowrap px-2 py-0.5 rounded border shadow-md transition-opacity duration-200 ${isFolder ? 'text-[12px] font-bold tracking-[0.1em] uppercase' : isFile ? 'text-[11px] font-semibold' : 'text-[9px]'}`}
+            style={{
+              backgroundColor: 'var(--theme-surface, #0f0f0f)',
+              borderColor: 'var(--theme-border, #333)',
+              color: isFolder ? 'var(--theme-text-bright, #e5e5e5)' : isFile ? 'var(--theme-text-primary, #cccccc)' : 'var(--theme-text-secondary, #a3a3a3)'
+            }}
+          >
             {zLevel === 2 && isFunction ? `def ${data.label?.replace('()', '')}(...) -> ?` : data.label}
           </span>
         )}
         {zLevel === 2 && data.line && (
-          <span className="text-[#555] font-mono text-[8px] mt-0.5 bg-[#0f0f0f]/95 px-1 rounded border border-[#222]">
+          <span 
+            className="font-mono text-[8px] mt-0.5 px-1 rounded border"
+            style={{
+              backgroundColor: 'var(--theme-surface, #0f0f0f)',
+              borderColor: 'var(--theme-border, #222)',
+              color: 'var(--theme-text-muted, #555)'
+            }}
+          >
             Ln {data.line} {data.risk === 'high' ? '| RISK: CRITICAL' : ''}
           </span>
         )}
         {zLevel === 3 && (
-          <div className="mt-2 w-[340px] bg-[#141414] border border-[#333] rounded-md shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-            <div className="bg-[#1e1e1e] border-b border-[#333] px-3 py-1.5 flex items-center justify-between">
-              <span className="text-white font-mono text-[11px] font-bold">{data.label}</span>
-              <span className="text-[#666] font-mono text-[9px]">Ln {data.line || 1}</span>
+          <div 
+            className="mt-2 w-[340px] border rounded-md shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+            style={{
+              backgroundColor: 'var(--theme-surface, #141414)',
+              borderColor: 'var(--theme-border, #333)'
+            }}
+          >
+            <div 
+              className="border-b px-3 py-1.5 flex items-center justify-between"
+              style={{
+                backgroundColor: 'var(--theme-secondary, #1e1e1e)',
+                borderColor: 'var(--theme-border, #333)'
+              }}
+            >
+              <span className="font-mono text-[11px] font-bold" style={{ color: 'var(--theme-text-bright, #fff)' }}>{data.label}</span>
+              <span className="font-mono text-[9px]" style={{ color: 'var(--theme-text-muted, #666)' }}>Ln {data.line || 1}</span>
             </div>
             {data.aiSummary && (
-              <div className="bg-[#1a202c] border-b border-[#2d3748] px-3 py-2">
-                <span className="text-[#93c5fd] font-sans text-[10px] leading-relaxed">[AI]: {data.aiSummary}</span>
+              <div 
+                className="border-b px-3 py-2"
+                style={{
+                  backgroundColor: 'var(--theme-surface-hover, #1a202c)',
+                  borderColor: 'var(--theme-border, #2d3748)'
+                }}
+              >
+                <span className="font-sans text-[10px] leading-relaxed" style={{ color: 'var(--theme-accent, #93c5fd)' }}>[AI]: {data.aiSummary}</span>
               </div>
             )}
-            <div className="px-3 py-2 bg-[#0f0f0f]">
-              <pre className="text-[#999] font-mono text-[9px] whitespace-pre-wrap leading-tight max-h-48 overflow-y-hidden text-left">
+            <div className="px-3 py-2" style={{ backgroundColor: 'var(--theme-background, #0f0f0f)' }}>
+              <pre className="font-mono text-[9px] whitespace-pre-wrap leading-tight max-h-48 overflow-y-hidden text-left" style={{ color: 'var(--theme-text-secondary, #999)' }}>
                 {data.code || "Function code preview..."}
               </pre>
             </div>
