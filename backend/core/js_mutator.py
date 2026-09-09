@@ -12,7 +12,7 @@ JS_LANGUAGE: Optional[Language] = None
 try:
     import tree_sitter_javascript as tsjavascript
     JS_LANGUAGE = Language(tsjavascript.language())
-except ImportError:
+except Exception:
     pass
 
 TS_LANGUAGE: Optional[Language] = None
@@ -21,7 +21,7 @@ try:
     import tree_sitter_typescript as tstypescript
     TS_LANGUAGE = Language(tstypescript.language_typescript())
     TSX_LANGUAGE = Language(tstypescript.language_tsx())
-except ImportError:
+except Exception:
     pass
 
 

@@ -6,22 +6,29 @@ import posixpath
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-import libcst as cst
+try:
+    import libcst as cst
+except Exception:
+    cst = None
+
 import networkx as nx
 from tree_sitter import Language, Node, Parser
-
-import tree_sitter_python as tspython
 
 # -------------------------------------------------------------------------
 # 1. MULTI-LANGUAGE GRAMMAR INITIALIZATION
 # -------------------------------------------------------------------------
-PY_LANGUAGE = Language(tspython.language())
+PY_LANGUAGE: Optional[Language] = None
+try:
+    import tree_sitter_python as tspython
+    PY_LANGUAGE = Language(tspython.language())
+except Exception:
+    pass
 
 JS_LANGUAGE: Optional[Language] = None
 try:
     import tree_sitter_javascript as tsjavascript
     JS_LANGUAGE = Language(tsjavascript.language())
-except ImportError:
+except Exception:
     pass
 
 TS_LANGUAGE: Optional[Language] = None
@@ -30,7 +37,7 @@ try:
     import tree_sitter_typescript as tstypescript
     TS_LANGUAGE = Language(tstypescript.language_typescript())
     TSX_LANGUAGE = Language(tstypescript.language_tsx())
-except ImportError:
+except Exception:
     pass
 
 
@@ -46,10 +53,16 @@ class CSPValidationResult:
     coupled_symbols: List[str] = field(default_factory=list)
 
 
+if cst is not None:
+    _CSTVisitorBase = cst.CSTVisitor
+else:
+    class _CSTVisitorBase:
+        pass
+
 # -------------------------------------------------------------------------
 # 2. PYTHON AST INSPECTORS (LibCST Engine)
 # -------------------------------------------------------------------------
-class PythonScopeCollector(cst.CSTVisitor):
+class PythonScopeCollector(_CSTVisitorBase):
     """Collects all top-level symbols and inner call dependencies of target symbol."""
     def __init__(self, target_symbol: Optional[str] = None):
         self.target_symbol = target_symbol
@@ -70,7 +83,7 @@ class PythonScopeCollector(cst.CSTVisitor):
             self.target_node = node
 
 
-class PythonInternalReferenceExtractor(cst.CSTVisitor):
+class PythonInternalReferenceExtractor(_CSTVisitorBase):
     """Extracts all function calls, variables, and identifiers referenced inside a CST subtree."""
     def __init__(self):
         self.referenced_identifiers: Set[str] = set()
@@ -274,7 +287,7 @@ def build_import_dependency_graph(file_asts: Dict[str, dict]) -> nx.DiGraph:
             try:
                 tree = cst.parse_module(content)
 
-                class PythonImportExtractor(cst.CSTVisitor):
+                class PythonImportExtractor(_CSTVisitorBase):
                     def __init__(self):
                         self.imported_modules: Set[str] = set()
 

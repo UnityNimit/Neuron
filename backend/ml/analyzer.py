@@ -6,7 +6,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import networkx as nx
 import numpy as np
 from networkx.algorithms.community import louvain_communities
-from sklearn.ensemble import IsolationForest
+
+IsolationForest = None
+try:
+    from sklearn.ensemble import IsolationForest
+except Exception:
+    pass
 
 
 def compute_shannon_entropy(code_str: str) -> float:
@@ -264,17 +269,32 @@ def analyze_graph_ml(nodes: List[dict], edges: List[dict]) -> List[dict]:
 
                 contamination = max(0.02, min(0.12, 6.0 / len(feature_rows)))
                 
-                iso_forest = IsolationForest(
-                    n_estimators=80,
-                    contamination=contamination,
-                    random_state=42,
-                    n_jobs=1
-                )
-                predictions = iso_forest.fit_predict(X_norm)
-                
-                for row_idx, node_array_idx in enumerate(target_node_indices):
-                    node_id = str(nodes[node_array_idx]["id"])
-                    anomaly_flags[node_id] = bool(predictions[row_idx] == -1)
+                if IsolationForest is not None:
+                    try:
+                        iso_forest = IsolationForest(
+                            n_estimators=80,
+                            contamination=contamination,
+                            random_state=42,
+                            n_jobs=1
+                        )
+                        predictions = iso_forest.fit_predict(X_norm)
+                        
+                        for row_idx, node_array_idx in enumerate(target_node_indices):
+                            node_id = str(nodes[node_array_idx]["id"])
+                            anomaly_flags[node_id] = bool(predictions[row_idx] == -1)
+                    except Exception:
+                        pass
+
+                # High-Speed Pure NumPy Robust Outlier Detection Fallback (Zero SciPy/Sklearn Bloat)
+                if not anomaly_flags and len(feature_rows) >= 6:
+                    try:
+                        dist = np.linalg.norm(X_norm - np.median(X_norm, axis=0), axis=1)
+                        cutoff = np.percentile(dist, (1.0 - contamination) * 100)
+                        for row_idx, node_array_idx in enumerate(target_node_indices):
+                            node_id = str(nodes[node_array_idx]["id"])
+                            anomaly_flags[node_id] = bool(dist[row_idx] > cutoff)
+                    except Exception:
+                        pass
             except Exception:
                 pass
 

@@ -321,26 +321,59 @@ pub fn run() {
             // Spawn backend engine
             launch_backend_with_logging(&app_handle, &state_setup);
 
-            // Configure System Tray Menu
+            // Configure System Tray Menu with Real-Time Backend Status & Port Indicators
             let show_i = MenuItem::with_id(app, "show", "Open Neuron IDE", true, None::<&str>)?;
-            let status_i = MenuItem::with_id(app, "status", "● Backend: Running (Port 8000)", false, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let status_i = MenuItem::with_id(app, "status", "○ Backend: Initializing...", false, None::<&str>)?;
+            let port_i = MenuItem::with_id(app, "port", "  Port: 8000 (ws://127.0.0.1:8000)", false, None::<&str>)?;
             let restart_i = MenuItem::with_id(app, "restart", "Restart Backend Engine", true, None::<&str>)?;
-            let sep = PredefinedMenuItem::separator(app)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit Neuron Completely", true, None::<&str>)?;
 
-            let tray_menu = Menu::with_items(app, &[&show_i, &status_i, &restart_i, &sep, &quit_i])?;
+            let tray_menu = Menu::with_items(app, &[&show_i, &sep1, &status_i, &port_i, &restart_i, &sep2, &quit_i])?;
 
             let mut tray_builder = TrayIconBuilder::with_id("neuron_main_tray")
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
-                .tooltip("Neuron IDE - Spatial Development Platform");
+                .tooltip("Neuron IDE — Backend: Initializing (Port 8000)");
 
             // Attach default window icon if available
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());
             }
 
+            let status_item = status_i.clone();
+            let port_item = port_i.clone();
+            let status_item_restart = status_i.clone();
+            let port_item_restart = port_i.clone();
             let state_tray = state_setup.clone();
+
+            // Background Real-Time Status Monitor
+            let monitor_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut last_state: Option<bool> = None;
+                loop {
+                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                    let running = is_backend_running();
+                    if last_state != Some(running) {
+                        last_state = Some(running);
+                        if running {
+                            let _ = status_item.set_text("● Backend: Running (Port 8000)");
+                            let _ = port_item.set_text("  URL: http://127.0.0.1:8000");
+                            if let Some(tray) = monitor_handle.tray_by_id("neuron_main_tray") {
+                                let _ = tray.set_tooltip(Some("Neuron IDE — Backend: Running (Port 8000)"));
+                            }
+                        } else {
+                            let _ = status_item.set_text("✕ Backend: Offline (Stopped)");
+                            let _ = port_item.set_text("  Port: 8000 (Disconnected)");
+                            if let Some(tray) = monitor_handle.tray_by_id("neuron_main_tray") {
+                                let _ = tray.set_tooltip(Some("Neuron IDE — Backend: Offline"));
+                            }
+                        }
+                    }
+                }
+            });
+
             tray_builder
                 .on_menu_event(move |app_h, event| {
                     match event.id.as_ref() {
@@ -354,6 +387,11 @@ pub fn run() {
                         "restart" => {
                             let state_inner = state_tray.clone();
                             let h = app_h.clone();
+                            let _ = status_item_restart.set_text("○ Backend: Restarting...");
+                            let _ = port_item_restart.set_text("  Port: 8000 (Reconnecting...)");
+                            if let Some(tray) = app_h.tray_by_id("neuron_main_tray") {
+                                let _ = tray.set_tooltip(Some("Neuron IDE — Backend: Restarting..."));
+                            }
                             tauri::async_runtime::spawn(async move {
                                 kill_all_backend_processes(&state_inner);
                                 tokio::time::sleep(Duration::from_millis(600)).await;

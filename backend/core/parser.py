@@ -13,13 +13,17 @@ from ml.analyzer import analyze_graph_ml
 # -------------------------------------------------------------------------
 # 1. MULTI-LANGUAGE GRAMMAR LOADERS (Python, JS, TS, C, C++, Java)
 # -------------------------------------------------------------------------
-PY_LANGUAGE = Language(tspython.language())
+PY_LANGUAGE: Optional[Language] = None
+try:
+    PY_LANGUAGE = Language(tspython.language())
+except Exception as e:
+    print(f"[WARN] Failed to load Python grammar: {e}")
 
 JS_LANGUAGE: Optional[Language] = None
 try:
     import tree_sitter_javascript as tsjavascript
     JS_LANGUAGE = Language(tsjavascript.language())
-except ImportError:
+except Exception:
     pass
 
 TS_LANGUAGE: Optional[Language] = None
@@ -28,33 +32,33 @@ try:
     import tree_sitter_typescript as tstypescript
     TS_LANGUAGE = Language(tstypescript.language_typescript())
     TSX_LANGUAGE = Language(tstypescript.language_tsx())
-except ImportError:
+except Exception:
     pass
 
 C_LANGUAGE: Optional[Language] = None
 try:
     import tree_sitter_c as tsc
     C_LANGUAGE = Language(tsc.language())
-except ImportError:
+except Exception:
     pass
 
 CPP_LANGUAGE: Optional[Language] = None
 try:
     import tree_sitter_cpp as tscpp
     CPP_LANGUAGE = Language(tscpp.language())
-except ImportError:
+except Exception:
     pass
 
 JAVA_LANGUAGE: Optional[Language] = None
 try:
     import tree_sitter_java as tsjava
     JAVA_LANGUAGE = Language(tsjava.language())
-except ImportError:
+except Exception:
     pass
 
 # Persistent Global Parsers (instantiated once, reused across calls)
 GLOBAL_PARSERS: Dict[str, Optional[Parser]] = {
-    "py": Parser(PY_LANGUAGE),
+    "py": Parser(PY_LANGUAGE) if PY_LANGUAGE else None,
     "js": Parser(JS_LANGUAGE) if JS_LANGUAGE else None,
     "ts": Parser(TS_LANGUAGE) if TS_LANGUAGE else None,
     "tsx": Parser(TSX_LANGUAGE) if TSX_LANGUAGE else None,

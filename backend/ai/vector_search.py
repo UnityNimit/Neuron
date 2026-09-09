@@ -13,13 +13,16 @@ _cosine_similarity = None
 
 
 def _get_sklearn_tools():
-    """Lazily imports Scikit-Learn tools on first query/index to keep server startup instant."""
+    """Lazily imports Scikit-Learn tools on first query/index if available."""
     global _TfidfVectorizer, _cosine_similarity
     if _TfidfVectorizer is None or _cosine_similarity is None:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.metrics.pairwise import cosine_similarity
-        _TfidfVectorizer = TfidfVectorizer
-        _cosine_similarity = cosine_similarity
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            from sklearn.metrics.pairwise import cosine_similarity
+            _TfidfVectorizer = TfidfVectorizer
+            _cosine_similarity = cosine_similarity
+        except Exception:
+            return None, None
     return _TfidfVectorizer, _cosine_similarity
 
 
@@ -101,20 +104,35 @@ class VectorSearchEngine:
                 )
                 documents.append(doc_text)
 
-            # 3. Fit Fast Sublinear TF-IDF Matrix (1-3 N-Grams)
+            # 3. Fit Sublinear TF-IDF Matrix (or pure Python index)
+            self._doc_tokens = []
+            self._idf = {}
+            for doc in documents:
+                tokens = [t.lower() for t in re.findall(r'[a-zA-Z0-9_]+', doc) if len(t) > 1]
+                self._doc_tokens.append(tokens)
+
+            n_docs = len(self._doc_tokens)
+            doc_freq = {}
+            for tokens in self._doc_tokens:
+                for word in set(tokens):
+                    doc_freq[word] = doc_freq.get(word, 0) + 1
+            self._idf = {word: math.log((n_docs + 1) / (df + 1)) + 1.0 for word, df in doc_freq.items()}
+
             if documents:
                 try:
                     TfidfVecClass, _ = _get_sklearn_tools()
-                    self.tfidf_vectorizer = TfidfVecClass(
-                        ngram_range=(1, 3),
-                        sublinear_tf=True,
-                        stop_words="english",
-                        token_pattern=r'(?u)\b\w+\b|[a-zA-Z_][a-zA-Z0-9_]*',
-                        max_features=12000
-                    )
-                    self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(documents)
+                    if TfidfVecClass:
+                        self.tfidf_vectorizer = TfidfVecClass(
+                            ngram_range=(1, 3),
+                            sublinear_tf=True,
+                            stop_words="english",
+                            token_pattern=r'(?u)\b\w+\b|[a-zA-Z_][a-zA-Z0-9_]*',
+                            max_features=12000
+                        )
+                        self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(documents)
                 except Exception as e:
-                    print(f"[WARN] TF-IDF matrix fitting failed: {e}")
+                    self.tfidf_vectorizer = None
+                    self.tfidf_matrix = None
 
     def query(self, query_text: str, top_k: int = 8) -> List[dict]:
         """
@@ -132,21 +150,36 @@ class VectorSearchEngine:
 
             candidate_scores: Dict[str, float] = {}
 
-            # 1. TF-IDF Sparse Cosine Similarity
+            # 1. TF-IDF Cosine Similarity (Scikit-Learn or Pure-Python Sublinear Fallback)
             if self.tfidf_vectorizer and self.tfidf_matrix is not None:
                 try:
                     _, cosine_sim_fn = _get_sklearn_tools()
-                    query_vec = self.tfidf_vectorizer.transform([clean_query])
-                    tfidf_sims = cosine_sim_fn(query_vec, self.tfidf_matrix).flatten()
-                    top_indices = tfidf_sims.argsort()[::-1][:top_k * 3]
+                    if cosine_sim_fn:
+                        query_vec = self.tfidf_vectorizer.transform([clean_query])
+                        tfidf_sims = cosine_sim_fn(query_vec, self.tfidf_matrix).flatten()
+                        top_indices = tfidf_sims.argsort()[::-1][:top_k * 3]
 
-                    for idx in top_indices:
-                        score = float(tfidf_sims[idx])
-                        if score > 0.002:
-                            node = self.indexed_nodes_cache[idx]
-                            candidate_scores[node["id"]] = score * 100.0
+                        for idx in top_indices:
+                            score = float(tfidf_sims[idx])
+                            if score > 0.002:
+                                node = self.indexed_nodes_cache[idx]
+                                candidate_scores[node["id"]] = score * 100.0
                 except Exception as e:
-                    print(f"[WARN] TF-IDF query error: {e}")
+                    pass
+            elif getattr(self, '_doc_tokens', None):
+                for idx, tokens in enumerate(self._doc_tokens):
+                    if not tokens:
+                        continue
+                    tf_score = 0.0
+                    for q_tok in query_tokens:
+                        count = tokens.count(q_tok)
+                        if count > 0:
+                            tf = 1.0 + math.log(count)
+                            idf = self._idf.get(q_tok, 1.0)
+                            tf_score += (tf * idf)
+                    if tf_score > 0.0:
+                        node = self.indexed_nodes_cache[idx]
+                        candidate_scores[node["id"]] = tf_score * 20.0
 
             # 2. Exact Lexical & AST Identifier Boosting
             for node in self.indexed_nodes_cache:

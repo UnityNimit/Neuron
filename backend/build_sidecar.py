@@ -107,10 +107,8 @@ def build_sidecar():
         "--collect-all", "tree_sitter_cpp",
         "--collect-all", "tree_sitter_java",
         "--collect-all", "libcst",
-        # 3. Graph ML
+        # 3. Graph ML & Mathematics (Lean & Fast, Zero Bloat)
         "--collect-all", "networkx",
-        "--collect-all", "sklearn",
-        "--collect-all", "scipy",
         "--collect-all", "numpy",
         "--collect-all", "watchdog",
         # 4. Hidden Imports
@@ -122,7 +120,10 @@ def build_sidecar():
         "--hidden-import", "anyio",
         "--hidden-import", "sniffio",
         "--hidden-import", "pydantic",
-        # 5. Exclude Unused Heavy Third-Party Packages & Bloat
+        # 5. Exclude Heavy Third-Party Bloat (SciPy & Sklearn ~45MB saved, zero cyutility crash)
+        "--exclude-module", "scipy",
+        "--exclude-module", "sklearn",
+        "--exclude-module", "scikit-learn",
         "--exclude-module", "matplotlib",
         "--exclude-module", "torch",
         "--exclude-module", "pandas",
