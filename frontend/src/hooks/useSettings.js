@@ -20,6 +20,11 @@ const defaultSettings = {
   showNodeLabels: true,
   spatialParticles: true,
   physicsSimulation: true,
+
+  // Google Antigravity AI
+  antigravityApiKey: '',
+  defaultAiModel: 'gemini-3.8-flash',
+  requireRefactorApproval: true,
 };
 
 export function useSettings() {

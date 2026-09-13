@@ -1,5 +1,6 @@
 # backend/services/terminal_service.py
 import asyncio
+import codecs
 import os
 import posixpath
 import re
@@ -38,6 +39,8 @@ def resolve_shell_command(command: str, shell_type: str, cwd: str) -> Tuple[List
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUNBUFFERED"] = "1"
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONLEGACYWINDOWSSTDIO"] = "0"
     env["FORCE_COLOR"] = "1"
     env["CLICOLOR_FORCE"] = "1"
     env["COLORTERM"] = "truecolor"
@@ -46,11 +49,16 @@ def resolve_shell_command(command: str, shell_type: str, cwd: str) -> Tuple[List
     # WINDOWS
     if sys.platform == "win32":
         if shell_type.lower() == "cmd":
-            full_cmd = f"{command} & echo __NEURON_CWD__:%cd%"
+            full_cmd = f"chcp 65001 >nul & {command} & echo __NEURON_CWD__:%cd%"
             args = ["cmd.exe", "/c", full_cmd]
         else:
             ps_exe = "pwsh.exe" if shutil.which("pwsh.exe") else "powershell.exe"
-            full_cmd = f'{command}; Write-Output "__NEURON_CWD__:$((Get-Location).Path)"'
+            ps_utf8_init = (
+                "$OutputEncoding = [System.Text.Encoding]::UTF8; "
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+                "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; "
+            )
+            full_cmd = f'{ps_utf8_init}{command}; Write-Output "__NEURON_CWD__:$((Get-Location).Path)"'
             args = [ps_exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", full_cmd]
 
     # MACOS & LINUX
@@ -103,24 +111,26 @@ async def stream_terminal_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=custom_env,
-            text=True,
             bufsize=0,
-            encoding='utf-8',
-            errors='replace',
             creationflags=creation_flags,
             start_new_session=start_session
         )
         AppState.PROCESSES[session_id] = process
 
         def read_stream_chunks(stream, is_err: bool):
-            """Reads unbuffered output chunks so prompts without newlines stream immediately."""
+            """Reads unbuffered raw chunks via low-level os.read so data streams immediately without waiting for EOF."""
             try:
+                decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+                fd = stream.fileno()
                 while True:
-                    chunk = stream.read(2048)
-                    if not chunk:
+                    raw = os.read(fd, 4096)
+                    if not raw:
                         break
 
-                    text = chunk
+                    text = decoder.decode(raw)
+                    if not text:
+                        continue
+
                     if "__NEURON_CWD__:" in text:
                         parts = text.split("__NEURON_CWD__:")
                         text = parts[0]
@@ -145,6 +155,19 @@ async def stream_terminal_command(
                             }),
                             loop
                         )
+
+                # Flush any remaining decoded text at EOF
+                remainder = decoder.decode(b"", final=True)
+                if remainder:
+                    asyncio.run_coroutine_threadsafe(
+                        safe_send(websocket, {
+                            "event": "TERMINAL_STREAM",
+                            "session_id": session_id,
+                            "text": remainder,
+                            "is_error": is_err
+                        }),
+                        loop
+                    )
             except Exception:
                 pass
 
@@ -155,8 +178,8 @@ async def stream_terminal_command(
 
         return_code = await asyncio.to_thread(process.wait)
 
-        t_out.join(timeout=0.2)
-        t_err.join(timeout=0.2)
+        t_out.join(timeout=0.5)
+        t_err.join(timeout=0.5)
 
         await safe_send(websocket, {
             "event": "TERMINAL_STREAM",
@@ -194,7 +217,10 @@ def write_terminal_stdin(session_id: str, input_text: str) -> bool:
         proc = AppState.PROCESSES[session_id]
         if proc and proc.stdin and not proc.stdin.closed:
             try:
-                proc.stdin.write(input_text)
+                if isinstance(input_text, str):
+                    proc.stdin.write(input_text.encode('utf-8', errors='replace'))
+                else:
+                    proc.stdin.write(input_text)
                 proc.stdin.flush()
                 return True
             except Exception:

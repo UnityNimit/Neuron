@@ -17,11 +17,13 @@ import { useWorkspace } from './hooks/useWorkspace';
 import { useSettings } from './hooks/useSettings';
 import { usePersistentState } from './hooks/usePersistentState';
 import { usePhysicsEngine } from './hooks/usePhysicsEngine';
+import { useAiStudio } from './hooks/useAiStudio';
 
 // THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
 import PixiSpatialEngine from './components/canvas/PixiSpatialEngine';
 import SpatialMinimap from './components/canvas/SpatialMinimap';
 import { applyTheme, getCurrentThemeId } from './config/themeConfig';
+import AntigravitySidebar from './components/ai/AntigravitySidebar';
 
 // Layout & UI
 import CodeEditor from './components/layout/CodeEditor';
@@ -34,7 +36,7 @@ import SourceControlPanel from './components/layout/SourceControlPanel';
 import SettingsModal from './components/layout/SettingsModal';
 import StatusBar from './components/layout/StatusBar';
 import TerminalPanel from './components/layout/TerminalPanel';
-import StdinPanel from './components/layout/StdinPanel';
+import RightPanelContainer from './components/layout/RightPanelContainer';
 import CommandPalette from './components/layout/CommandPalette';
 import AgentSupervisorHUD from './components/layout/AgentSupervisorHUD';
 import SplashScreen from './components/layout/SplashScreen'; 
@@ -375,6 +377,47 @@ export default function App() {
       }, 750);
     }
   }, [workspace.currentFile, settings?.autoSave, handleSaveFile]);
+
+  // AI Refactor Live Mutator & Persister
+  const handleApplyCodeFromAi = useCallback((filePath, newCode) => {
+    const file = filePath || workspace.currentFile;
+    if (!file) return;
+
+    // 1. Dispatch event to Monaco Editor to immediately update the in-memory model
+    window.dispatchEvent(new CustomEvent('neuron-update-editor-code', {
+      detail: { filePath: file, code: newCode }
+    }));
+
+    // 2. Synchronize currentCodeBufferRef immediately
+    currentCodeBufferRef.current[file] = newCode;
+
+    // 3. Mark dirty and trigger atomic save
+    handleCodeChange(newCode, file);
+    handleSaveFile(file, newCode);
+
+    // 4. Update node's code in workspace.nodes so AST and mini-map sync reactively
+    if (workspace.setNodes) {
+      workspace.setNodes(prev => prev.map(n => {
+        if (n.id === file && n.data) {
+          return { ...n, data: { ...n.data, code: newCode } };
+        }
+        return n;
+      }));
+    }
+
+    workspace.addNotification?.('success', 'Refactor Applied', `Updated ${file} successfully.`, 'ai');
+  }, [workspace, handleCodeChange, handleSaveFile]);
+
+  // Centralized Google Antigravity Studio State Controller
+  const aiStudio = useAiStudio({
+    wsRef: workspace.wsRef,
+    isWsConnected: workspace.isWsConnected,
+    settings,
+    addNotification: workspace.addNotification,
+    activeFile: workspace.currentFile,
+    fileContent: currentCodeBufferRef.current[workspace.currentFile] ?? activeCodeStr,
+    onApplyCode: handleApplyCodeFromAi
+  });
 
   const handleToggleAutoSave = useCallback(() => {
     const nextVal = !(settings?.autoSave ?? true);
@@ -878,6 +921,35 @@ export default function App() {
                     onDiscardAll={workspace.discardAllGit}
                     onRefresh={workspace.refreshGitGraph}
                   />
+                ) : activeSidebarView === 'ai' ? (
+                  <AntigravitySidebar 
+                    conversations={aiStudio.conversations}
+                    activeConversationId={aiStudio.activeConversationId}
+                    isStreaming={aiStudio.isStreaming}
+                    onSelectConversation={(id) => {
+                      if (aiStudio.isStreaming) {
+                        workspace.addNotification?.('warning', 'Agent Busy', 'Please wait for current generation to finish or click Stop before switching conversations.', 'ai');
+                        return;
+                      }
+                      aiStudio.handleSelectConversation(id);
+                      setLayout(prev => ({ ...prev, stdin: true }));
+                      window.dispatchEvent(new CustomEvent('neuron-switch-right-panel-tab', { detail: 'ai' }));
+                    }}
+                    onCreateConversation={() => {
+                      if (aiStudio.isStreaming) {
+                        workspace.addNotification?.('warning', 'Agent Busy', 'Please wait for current generation to finish or click Stop before creating a new conversation.', 'ai');
+                        return;
+                      }
+                      aiStudio.handleCreateConversation();
+                      setLayout(prev => ({ ...prev, stdin: true }));
+                      window.dispatchEvent(new CustomEvent('neuron-switch-right-panel-tab', { detail: 'ai' }));
+                    }}
+                    onDeleteConversation={aiStudio.handleDeleteConversation}
+                    projectName={workspace.repoName || (workspace.absTargetDir ? workspace.absTargetDir.split(/[\\/]/).pop() : "Neuron")}
+                    isCollapsed={false}
+                    onToggleCollapse={() => setActiveSidebarView('explorer')}
+                    onOpenSettings={() => handleOpenSettings('ai')}
+                  />
                 ) : (
                   <Sidebar 
                     items={workspace.items} 
@@ -1212,12 +1284,20 @@ export default function App() {
               <Panel 
                 id="stdin-panel" 
                 order={4} 
-                defaultSize={200} 
-                minSize={100} 
-                maxSize={500} 
+                defaultSize={320} 
+                minSize={180} 
+                maxSize={700} 
                 style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
               >
-                <StdinPanel stdin={stdin} setStdin={setStdin} />
+                <RightPanelContainer 
+                  stdin={stdin} 
+                  setStdin={setStdin} 
+                  activeFile={workspace.currentFile}
+                  fileContent={currentCodeBufferRef.current[workspace.currentFile] ?? activeCodeStr}
+                  aiStudio={aiStudio}
+                  projectName={workspace.repoName || (workspace.absTargetDir ? workspace.absTargetDir.split(/[\\/]/).pop() : "Neuron")}
+                  onOpenSettings={handleOpenSettings}
+                />
               </Panel>
             </> 
           )}

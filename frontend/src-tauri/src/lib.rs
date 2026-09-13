@@ -426,11 +426,16 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(move |_window, event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                log_debug("Main window close requested. Terminating Neuron IDE and backend processes...");
-                state_event.is_quitting.store(true, Ordering::SeqCst);
-                kill_all_backend_processes(&state_event);
+        .on_window_event(move |window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if state_event.is_quitting.load(Ordering::SeqCst) {
+                    log_debug("Main window close requested during explicit quit. Terminating Neuron IDE and backend processes...");
+                    kill_all_backend_processes(&state_event);
+                } else {
+                    log_debug("Main window close requested. Hiding window to system tray; keeping backend daemon alive.");
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .build(tauri::generate_context!())

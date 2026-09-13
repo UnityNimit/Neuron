@@ -149,6 +149,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
   const [selectedThemeId, setSelectedThemeId] = useState(currentThemeId);
   const [tokenEdits, setTokenEdits] = useState({});
   const [saveStatus, setSaveStatus] = useState(null);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   // Sync activeTab when initialTab changes or modal opens
   useEffect(() => {
@@ -261,6 +262,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
   const categories = [
     { id: 'general', label: 'General', desc: 'Workspace preferences, auto-saving, and system safety' },
+    { id: 'ai', label: 'AI & Models', desc: 'Google Antigravity SDK, Gemini API key, and model options' },
     { id: 'editor', label: 'Editor', desc: 'Code editing, typography, formatting, and layout' },
     { id: 'spatial', label: 'Spatial Map', desc: '3D celestial canvas, radar minimap, and physics simulation' },
     { id: 'appearance', label: 'Appearance', desc: 'Visual theme, color palettes, and custom theme token overrides' },
@@ -468,6 +470,162 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     checked={settings?.confirmDelete ?? true} 
                     onChange={(val) => updateSetting('confirmDelete', val)} 
                   />
+                </div>
+              </>
+            )}
+
+            {/* ============================================================= */}
+            {/* 1.5. AI & MODELS SETTINGS                                     */}
+            {/* ============================================================= */}
+            {activeTab === 'ai' && (
+              <>
+                {/* Google Antigravity / Gemini API Key */}
+                <div 
+                  className="py-3.5 flex flex-col gap-2"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex items-center justify-between gap-6">
+                    <div className="flex flex-col gap-0.5 max-w-[380px]">
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="text-[12px] font-medium"
+                          style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                        >
+                          Google Antigravity / Gemini API Key
+                        </span>
+                        {settings?.antigravityApiKey ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            Offline Fallback
+                          </span>
+                        )}
+                      </div>
+                      <span 
+                        className="text-[11px] leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Powers Gemini 3.8 Flash, Claude 4.6 Thinking, and GPT-OSS 120B via google-antigravity SDK.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="text-[10px] font-mono px-2 py-1 rounded border transition-colors hover:border-[var(--theme-accent)]"
+                      style={{
+                        backgroundColor: 'var(--theme-surface, #161719)',
+                        borderColor: 'var(--theme-border, #242628)',
+                        color: 'var(--theme-text-secondary, #94a3b8)'
+                      }}
+                    >
+                      {showApiKey ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={settings?.antigravityApiKey || ""}
+                    onChange={(e) => updateSetting('antigravityApiKey', e.target.value)}
+                    placeholder="AIzaSy..."
+                    spellCheck={false}
+                    className="w-full text-[11px] font-mono rounded-lg px-3 py-1.5 border outline-none focus:border-[var(--theme-accent)] transition-colors"
+                    style={{
+                      backgroundColor: 'var(--theme-surface, #161719)',
+                      borderColor: 'var(--theme-border, #242628)',
+                      color: 'var(--theme-text-primary, #e2e8f0)'
+                    }}
+                  />
+                </div>
+
+                {/* Default Model */}
+                <div 
+                  className="py-3.5 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                    <span 
+                      className="text-[12px] font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Default Model Target
+                    </span>
+                    <span 
+                      className="text-[11px] leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Active model used when opening new conversations or refactoring.
+                    </span>
+                  </div>
+                  <MinimalSelect 
+                    value={settings?.defaultAiModel || 'gemini-3.8-flash'} 
+                    options={[
+                      { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (High | Fast)' },
+                      { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash (Medium | Fast)' },
+                      { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (Medium | Fast)' },
+                      { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro (Low Quota)' },
+                      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
+                      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 (Thinking)' },
+                      { value: 'gpt-oss-120b', label: 'GPT-OSS 120B (Medium)' },
+                    ]} 
+                    onChange={(val) => updateSetting('defaultAiModel', val)} 
+                  />
+                </div>
+
+                {/* Require Approval for Code Refactors & Terminal Commands */}
+                <div 
+                  className="py-3.5 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                    <span 
+                      className="text-[12px] font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Require Tool Execution Approval
+                    </span>
+                    <span 
+                      className="text-[11px] leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      When enabled, the AI pauses and asks for confirmation before executing terminal commands or modifying files. When disabled, the AI operates in full autonomous Auto-Pilot mode.
+                    </span>
+                  </div>
+                  <MinimalToggle 
+                    checked={settings?.requireRefactorApproval ?? true} 
+                    onChange={(val) => updateSetting('requireRefactorApproval', val)} 
+                  />
+                </div>
+
+                {/* Local Fallback Status */}
+                <div 
+                  className="py-3.5 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                    <span 
+                      className="text-[12px] font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Local Engine Endpoint
+                    </span>
+                    <span 
+                      className="text-[11px] leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Automatic zero-latency fallback when offline or without API key.
+                    </span>
+                  </div>
+                  <span 
+                    className="text-[11px] font-mono px-2 py-0.5 rounded border"
+                    style={{
+                      backgroundColor: 'var(--theme-surface, #161719)',
+                      borderColor: 'var(--theme-border, #242628)',
+                      color: 'var(--theme-text-muted, #64748b)'
+                    }}
+                  >
+                    127.0.0.1:11434 (Ollama)
+                  </span>
                 </div>
               </>
             )}

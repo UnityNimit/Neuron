@@ -1,6 +1,5 @@
-// src/components/layout/ActivityBar.jsx
 import React, { useState } from 'react';
-import { Files, GitBranch, Settings, UserCircle, LogOut } from 'lucide-react';
+import { Files, GitBranch, Sparkles, Settings, UserCircle, LogOut } from 'lucide-react';
 import ThemeSelector from './ThemeSelector';
 
 export default function ActivityBar({ 
@@ -17,6 +16,7 @@ export default function ActivityBar({
   const isSidebarOpen = Boolean(layout?.sidebar);
   const isExplorerActive = isSidebarOpen && activeSidebarView === 'explorer';
   const isGitActive = isSidebarOpen && activeSidebarView === 'git';
+  const isAiActive = isSidebarOpen && activeSidebarView === 'ai';
   const [imgError, setImgError] = useState(false);
 
   const handleToggleExplorer = () => {
@@ -38,6 +38,17 @@ export default function ActivityBar({
       setLayout && setLayout(prev => ({ ...prev, sidebar: false }));
     } else {
       setActiveSidebarView && setActiveSidebarView('git');
+    }
+  };
+
+  const handleToggleAi = () => {
+    if (!isSidebarOpen) {
+      setLayout && setLayout(prev => ({ ...prev, sidebar: true }));
+      setActiveSidebarView && setActiveSidebarView('ai');
+    } else if (activeSidebarView === 'ai') {
+      setLayout && setLayout(prev => ({ ...prev, sidebar: false }));
+    } else {
+      setActiveSidebarView && setActiveSidebarView('ai');
     }
   };
 
@@ -112,6 +123,28 @@ export default function ActivityBar({
               {gitChangeCount > 99 ? '99+' : gitChangeCount}
             </span>
           )}
+        </button>
+
+        {/* Antigravity AI Studio */}
+        <button 
+          onClick={handleToggleAi}
+          className={`p-2 rounded-xl transition-all relative group cursor-pointer ${
+            isAiActive 
+              ? 'text-[var(--theme-text-bright)] bg-[var(--theme-surface-hover)]' 
+              : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]'
+          }`}
+          title="Antigravity AI (Ctrl+Shift+A)"
+        >
+          {isAiActive && (
+            <div 
+              className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r" 
+              style={{
+                backgroundColor: 'var(--theme-accent, #3b82f6)',
+                boxShadow: '0 0 8px var(--theme-accent, #3b82f6)'
+              }}
+            />
+          )}
+          <Sparkles size={20} strokeWidth={1.6} />
         </button>
 
       </div>

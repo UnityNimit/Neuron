@@ -574,7 +574,7 @@ export function useWorkspace(session) {
                   const key = data.is_error ? 'stderr' : 'stdout';
                   updatedHistory[lastIdx] = { 
                     ...updatedHistory[lastIdx], 
-                    [key]: (updatedHistory[lastIdx][key] + data.text).slice(-10000) 
+                    [key]: (updatedHistory[lastIdx][key] + data.text).slice(-200000) 
                   };
                   return { ...s, history: updatedHistory };
                 }

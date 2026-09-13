@@ -1,9 +1,12 @@
 # backend/api/websocket_router.py
 import asyncio
+from datetime import datetime
 import json
 import os
 import subprocess
-from typing import Any, Dict, List, Optional, Set
+import time
+from typing import Any, Dict, List, Optional, Set, Tuple
+import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import networkx as nx
@@ -13,7 +16,17 @@ from ai.vector_search import vector_engine
 from core.js_mutator import execute_js_file_merge
 from core.state import AppState
 from ml.analyzer import sanitize_for_json
-from services.ai_service import fetch_ast_summary
+from services.ai_service import (
+    fetch_ast_summary,
+    load_conversations,
+    get_conversation,
+    create_conversation,
+    update_conversation,
+    delete_conversation,
+    stream_antigravity_chat,
+    apply_refactor_code,
+    rollback_all_snapshots
+)
 from services.file_service import (
     create_item, delete_item, edit_code, move_item, 
     pick_folder_sync, refactor_symbol_move_service, 
@@ -31,6 +44,10 @@ from services.workspace_service import broadcast_workspace, get_workspace_state,
 
 router = APIRouter()
 _RECENT_SAVE_TIMESTAMPS: list = []
+
+ACTIVE_AI_TASKS: Dict[str, asyncio.Task] = {}
+ACTIVE_AI_CANCEL_CTX: Dict[str, Dict[str, Any]] = {}
+ACTIVE_AI_APPROVALS: Dict[str, asyncio.Future] = {}
 
 
 async def safe_send_json(websocket: WebSocket, payload: dict) -> bool:
@@ -679,6 +696,298 @@ async def websocket_endpoint(websocket: WebSocket):
                 graph = await asyncio.to_thread(git_get_log_graph, AppState.TARGET_DIR, 40)
                 await safe_send_json(websocket, {"event": "GIT_DETAILED_STATUS", "payload": detailed})
                 await safe_send_json(websocket, {"event": "GIT_GRAPH_DATA", "payload": graph})
+
+            # -----------------------------------------------------------------
+            # 10. GOOGLE ANTIGRAVITY AGENT & MULTI-SESSION STUDIO
+            # -----------------------------------------------------------------
+            elif evt == "AI_LIST_CONVERSATIONS":
+                convs = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
+                await safe_send_json(websocket, {
+                    "event": "AI_CONVERSATIONS_LIST",
+                    "payload": convs
+                })
+
+            elif evt == "AI_CREATE_CONVERSATION":
+                title = message.get("title", "New Conversation")
+                model = message.get("model", "gemini-3.8-flash")
+                project = os.path.basename(AppState.TARGET_DIR) if AppState.TARGET_DIR else "Neuron"
+                new_conv = await asyncio.to_thread(
+                    create_conversation, title, project, model, AppState.TARGET_DIR
+                )
+                await safe_send_json(websocket, {
+                    "event": "AI_CONVERSATION_CREATED",
+                    "payload": new_conv
+                })
+                all_convs = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
+                await safe_send_json(websocket, {
+                    "event": "AI_CONVERSATIONS_LIST",
+                    "payload": all_convs
+                })
+
+            elif evt == "AI_SELECT_CONVERSATION":
+                conv_id = message.get("conversation_id", "")
+                conv = await asyncio.to_thread(get_conversation, conv_id, AppState.TARGET_DIR)
+                await safe_send_json(websocket, {
+                    "event": "AI_CONVERSATION_DATA",
+                    "payload": conv
+                })
+
+            elif evt == "AI_SAVE_CONVERSATION":
+                conv_id = message.get("conversation_id", "")
+                messages_list = message.get("messages", [])
+                title = message.get("title")
+                model = message.get("model")
+                updated = await asyncio.to_thread(
+                    update_conversation, conv_id, messages_list, title, model, AppState.TARGET_DIR
+                )
+                await safe_send_json(websocket, {
+                    "event": "AI_CONVERSATION_SAVED",
+                    "payload": updated
+                })
+                all_convs = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
+                await safe_send_json(websocket, {
+                    "event": "AI_CONVERSATIONS_LIST",
+                    "payload": all_convs
+                })
+
+            elif evt == "AI_DELETE_CONVERSATION":
+                conv_id = message.get("conversation_id", "")
+                await asyncio.to_thread(delete_conversation, conv_id, AppState.TARGET_DIR)
+                all_convs = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
+                await safe_send_json(websocket, {
+                    "event": "AI_CONVERSATIONS_LIST",
+                    "payload": all_convs
+                })
+
+            elif evt == "AI_CHAT_STREAM":
+                try:
+                    prompt = message.get("prompt", "")
+                    conversation_id = message.get("conversation_id", f"conv_{int(time.time() * 1000)}")
+                    model = message.get("model", "gemini-3.8-flash")
+                    api_key = message.get("api_key")
+                    approval_mode = message.get("approval_mode", "auto")
+                    context_code = message.get("context_code")
+                    file_path = message.get("file_path") or AppState.ACTIVE_FILE
+
+                    # 1. Immediately register user prompt to disk
+                    user_msg = {
+                        "id": f"msg_{int(time.time() * 1000)}",
+                        "role": "user",
+                        "content": prompt,
+                        "timestamp": datetime.utcnow().isoformat() + "Z"
+                    }
+                    conv = await asyncio.to_thread(get_conversation, conversation_id, AppState.TARGET_DIR)
+                    current_messages = list(conv.get("messages", [])) if conv else []
+                    current_messages.append(user_msg)
+                    conv_title = conv.get("title") if conv else None
+                    if not conv_title or conv_title in {"New Conversation", "Welcome to Antigravity Studio"}:
+                        conv_title = prompt[:32]
+                    await asyncio.to_thread(
+                        update_conversation, conversation_id, current_messages, conv_title, model, AppState.TARGET_DIR
+                    )
+                    # Broadcast updated conversation list immediately so left sidebar updates in real time
+                    all_convs = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
+                    await safe_send_to_active(websocket, {
+                        "event": "AI_CONVERSATIONS_LIST",
+                        "payload": all_convs
+                    })
+                except Exception as setup_err:
+                    print(f"[ERROR] Failed to initialize AI chat stream: {setup_err}")
+                    await safe_send_to_active(websocket, {
+                        "event": "AI_CHAT_ERROR",
+                        "conversation_id": message.get("conversation_id", ""),
+                        "error": f"Failed to initialize AI stream: {str(setup_err)}"
+                    })
+                    continue
+
+                # Setup cancellation context
+                cancel_ctx = {"is_cancelled": False, "proc": None}
+                ACTIVE_AI_CANCEL_CTX[conversation_id] = cancel_ctx
+
+                async def execute_ai_chat():
+                    accumulated_content = []
+                    accumulated_thoughts = []
+                    collected_steps = []
+                    final_refactor = None
+
+                    async def approval_handler(c_id: str, tool_name: str, tool_args: dict, step_desc: str) -> Tuple[bool, str]:
+                        action_id = f"act_{uuid.uuid4().hex[:8]}"
+                        loop = asyncio.get_running_loop()
+                        fut = loop.create_future()
+                        ACTIVE_AI_APPROVALS[c_id] = fut
+
+                        await safe_send_to_active(websocket, {
+                            "event": "AI_APPROVAL_REQUIRED",
+                            "conversation_id": c_id,
+                            "action_id": action_id,
+                            "tool": tool_name,
+                            "args": tool_args,
+                            "description": step_desc
+                        })
+
+                        try:
+                            approved, feedback = await fut
+                            return approved, feedback
+                        except asyncio.CancelledError:
+                            return False, "Cancelled"
+                        finally:
+                            ACTIVE_AI_APPROVALS.pop(c_id, None)
+
+                    try:
+                        async for chunk in stream_antigravity_chat(
+                            prompt=prompt,
+                            conversation_id=conversation_id,
+                            model=model,
+                            api_key=api_key,
+                            context_code=context_code,
+                            file_path=file_path,
+                            target_dir=AppState.TARGET_DIR,
+                            cancel_ctx=cancel_ctx,
+                            approval_mode=approval_mode,
+                            approval_handler=approval_handler
+                        ):
+                            chunk_type = chunk.get("type")
+                            if chunk_type == "step":
+                                step_name = chunk.get("step", "")
+                                status = chunk.get("status", "running")
+                                collected_steps.append({"step": step_name, "status": status})
+                                await safe_send_to_active(websocket, {
+                                    "event": "AI_CHAT_STEP",
+                                    "conversation_id": conversation_id,
+                                    "step": step_name,
+                                    "status": status
+                                })
+                            elif chunk_type == "thought":
+                                th = chunk.get("content", "")
+                                accumulated_thoughts.append(th)
+                                await safe_send_to_active(websocket, {
+                                    "event": "AI_CHAT_THOUGHT",
+                                    "conversation_id": conversation_id,
+                                    "thought": th
+                                })
+                            elif chunk_type == "token":
+                                tok = chunk.get("content", "")
+                                accumulated_content.append(tok)
+                                await safe_send_to_active(websocket, {
+                                    "event": "AI_CHAT_DELTA",
+                                    "conversation_id": conversation_id,
+                                    "delta": tok
+                                })
+                            elif chunk_type == "done":
+                                final_refactor = chunk.get("refactor")
+                                done_content = chunk.get("content") or "".join(accumulated_content)
+                                await safe_send_to_active(websocket, {
+                                    "event": "AI_CHAT_DONE",
+                                    "conversation_id": conversation_id,
+                                    "content": done_content,
+                                    "refactor": final_refactor
+                                })
+
+                        # 2. Save assistant response to disk immediately
+                        full_assistant_text = "".join(accumulated_content).strip()
+                        if full_assistant_text:
+                            assistant_msg = {
+                                "id": f"msg_{int(time.time() * 1000)}",
+                                "role": "assistant",
+                                "content": full_assistant_text,
+                                "thoughts": "".join(accumulated_thoughts).strip() or None,
+                                "steps": collected_steps,
+                                "refactor": final_refactor,
+                                "timestamp": datetime.utcnow().isoformat() + "Z"
+                            }
+                            updated_messages = current_messages + [assistant_msg]
+                            await asyncio.to_thread(
+                                update_conversation, conversation_id, updated_messages, conv_title, model, AppState.TARGET_DIR
+                            )
+                            updated_all = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
+                            await safe_send_to_active(websocket, {
+                                "event": "AI_CONVERSATIONS_LIST",
+                                "payload": updated_all
+                            })
+
+                        # Sync workspace if tools modified or created files
+                        await broadcast_workspace(force_full_sync=False)
+
+                    except asyncio.CancelledError:
+                        print(f"[INFO] AI Chat task cancelled for conversation {conversation_id}")
+                    except Exception as err:
+                        print(f"[ERROR] AI Chat Stream exception: {err}")
+                        await safe_send_to_active(websocket, {
+                            "event": "AI_CHAT_ERROR",
+                            "conversation_id": conversation_id,
+                            "error": str(err)
+                        })
+                    finally:
+                        ACTIVE_AI_TASKS.pop(conversation_id, None)
+                        ACTIVE_AI_CANCEL_CTX.pop(conversation_id, None)
+                        ACTIVE_AI_APPROVALS.pop(conversation_id, None)
+
+                task = asyncio.create_task(execute_ai_chat())
+                ACTIVE_AI_TASKS[conversation_id] = task
+
+            elif evt == "AI_APPROVE_ACTION":
+                conv_id = message.get("conversation_id", "")
+                approved = message.get("approved", True)
+                feedback = message.get("feedback", "")
+                fut = ACTIVE_AI_APPROVALS.get(conv_id)
+                if fut and not fut.done():
+                    fut.set_result((approved, feedback))
+
+            elif evt == "AI_STOP_GENERATION":
+                conv_id = message.get("conversation_id", "")
+                if conv_id in ACTIVE_AI_CANCEL_CTX:
+                    ACTIVE_AI_CANCEL_CTX[conv_id]["is_cancelled"] = True
+                    running_proc = ACTIVE_AI_CANCEL_CTX[conv_id].get("proc")
+                    if running_proc:
+                        try:
+                            running_proc.kill()
+                        except Exception:
+                            pass
+                fut = ACTIVE_AI_APPROVALS.get(conv_id)
+                if fut and not fut.done():
+                    fut.set_result((False, "Execution stopped by user"))
+                if conv_id in ACTIVE_AI_TASKS:
+                    ACTIVE_AI_TASKS[conv_id].cancel()
+                    ACTIVE_AI_TASKS.pop(conv_id, None)
+
+                await safe_send_to_active(websocket, {
+                    "event": "AI_CHAT_STOPPED",
+                    "conversation_id": conv_id
+                })
+                all_convs = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
+                await safe_send_to_active(websocket, {
+                    "event": "AI_CONVERSATIONS_LIST",
+                    "payload": all_convs
+                })
+
+            elif evt == "AI_ROLLBACK_CHANGES":
+                restored = await asyncio.to_thread(rollback_all_snapshots, AppState.TARGET_DIR)
+                await safe_send_json(websocket, {
+                    "event": "AI_ROLLBACK_SUCCESS",
+                    "payload": restored
+                })
+                await broadcast_workspace(force_full_sync=False)
+                trigger_background_indexing()
+
+            elif evt == "AI_APPLY_REFACTOR":
+                target_file = message.get("filePath", "")
+                proposed_code = message.get("proposedCode", "")
+                try:
+                    res = await asyncio.to_thread(
+                        apply_refactor_code, target_file, proposed_code, AppState.TARGET_DIR
+                    )
+                    await safe_send_json(websocket, {
+                        "event": "AI_REFACTOR_APPLIED",
+                        "payload": res
+                    })
+                    await broadcast_workspace(force_full_sync=False)
+                    trigger_background_indexing()
+                except Exception as err:
+                    print(f"[ERROR] Applying AI refactor failed: {err}")
+                    await safe_send_json(websocket, {
+                        "event": "AI_REFACTOR_ERROR",
+                        "error": str(err)
+                    })
 
     except WebSocketDisconnect:
         AppState.CONNECTIONS.discard(websocket)

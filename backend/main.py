@@ -617,6 +617,20 @@ if __name__ == "__main__":
 
     is_frozen = getattr(sys, "frozen", False)
 
+    import socket
+
+    def is_port_in_use(port: int) -> bool:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.4)
+                return s.connect_ex(("127.0.0.1", port)) == 0
+        except Exception:
+            return False
+
+    if is_port_in_use(args.port):
+        print(f"[NEURON BACKEND] Port {args.port} is already active and serving. Existing daemon running. Exiting cleanly.")
+        sys.exit(0)
+
     import uvicorn
 
     if is_frozen:
@@ -631,8 +645,8 @@ if __name__ == "__main__":
         )
     else:
         uvicorn.run(
-            "main:app",
+            app,
             host="127.0.0.1",
             port=args.port,
-            reload=True
+            log_level="info"
         )

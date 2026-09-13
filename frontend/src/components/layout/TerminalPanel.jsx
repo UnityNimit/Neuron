@@ -33,7 +33,9 @@ export default function TerminalPanel({
   const containerRef = useRef(null);
 
   useEffect(() => { 
-    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
   }, [logs, sessions, activeSessionId]);
 
   useEffect(() => {
@@ -280,7 +282,8 @@ export default function TerminalPanel({
         className="flex-grow p-3 overflow-y-auto font-mono text-xs select-text cursor-text outline-none [&::-webkit-scrollbar]:w-1"
         style={{
           backgroundColor: 'var(--theme-secondary, #191a1b)',
-          color: 'var(--theme-text-primary, #cbd5e1)'
+          color: 'var(--theme-text-primary, #cbd5e1)',
+          fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace"
         }}
       >
         {/* Output Mode */}
@@ -291,7 +294,8 @@ export default function TerminalPanel({
                 key={index} 
                 className={`${
                   log.isError ? 'text-red-400' : log.isSystem ? 'text-[var(--theme-accent)] font-medium' : 'text-[var(--theme-text-primary)]'
-                } whitespace-pre-wrap select-text leading-relaxed`}
+                } whitespace-pre-wrap select-text leading-none font-mono`}
+                style={{ fontVariantLigatures: 'none' }}
                 dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(log.text || "") }} 
               />
             ))}
@@ -309,13 +313,15 @@ export default function TerminalPanel({
                 </div>
                 {h.stdout && (
                   <div 
-                    className="text-[var(--theme-text-primary)] whitespace-pre-wrap select-text leading-relaxed"
+                    className="text-[var(--theme-text-primary)] whitespace-pre-wrap select-text leading-none font-mono"
+                    style={{ fontVariantLigatures: 'none' }}
                     dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(h.stdout) }}
                   />
                 )}
                 {h.stderr && (
                   <div 
-                    className="text-red-400 whitespace-pre-wrap select-text leading-relaxed"
+                    className="text-red-400 whitespace-pre-wrap select-text leading-none font-mono"
+                    style={{ fontVariantLigatures: 'none' }}
                     dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(h.stderr) }}
                   />
                 )}
