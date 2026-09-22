@@ -33,14 +33,17 @@ from services.file_service import (
     rename_item, reveal_in_explorer
 )
 from services.terminal_service import (
-    kill_terminal_process, run_code_polyglot_sync, run_python_script_sync, 
+    kill_all_terminal_processes, kill_terminal_process, run_code_polyglot_sync, run_python_script_sync, 
     stream_terminal_command, write_terminal_stdin
 )
 from services.git_service import (
     git_commit, git_push, git_stage, git_unstage, git_discard,
     git_get_detailed_status, git_get_log_graph
 )
-from services.workspace_service import broadcast_workspace, get_workspace_state, reset_workspace_mutation_tracker
+from services.workspace_service import (
+    broadcast_workspace, get_workspace_state, reset_workspace_mutation_tracker, 
+    restart_workspace_watcher
+)
 
 router = APIRouter()
 _RECENT_SAVE_TIMESTAMPS: list = []
@@ -181,6 +184,16 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "KILL_TERMINAL_PROCESS":
                 session_id = message.get("session_id", "default")
                 kill_terminal_process(session_id)
+                await broadcast_to_all({
+                    "event": "TERMINAL_STREAM",
+                    "session_id": session_id,
+                    "text": "\r\n[Process terminated by user]\r\n",
+                    "is_error": True
+                })
+                await broadcast_to_all({
+                    "event": "TERMINAL_STREAM_END",
+                    "session_id": session_id
+                })
 
             # -----------------------------------------------------------------
             # 2. WORKSPACE DIRECTORY & FILE OPERATIONS
@@ -192,9 +205,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     chosen_dir = await asyncio.to_thread(pick_folder_sync)
                 if chosen_dir and os.path.exists(chosen_dir):
+                    # 🚀 Cleanly terminate all running background terminal processes before project switch
+                    kill_all_terminal_processes()
                     AppState.TARGET_DIR = os.path.abspath(chosen_dir)
                     AppState.ACTIVE_FILE = ""
                     reset_workspace_mutation_tracker()
+                    restart_workspace_watcher(AppState.TARGET_DIR)
                     # 🚀 Instantly notify frontend to display the minimalist loading screen
                     await broadcast_to_all({
                         "event": "WORKSPACE_LOADING",
@@ -210,9 +226,12 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "OPEN_FOLDER":
                 folder_path = message.get("path") or message.get("target_dir", "")
                 if folder_path and os.path.exists(folder_path):
+                    # 🚀 Cleanly terminate all running background terminal processes before project switch
+                    kill_all_terminal_processes()
                     AppState.TARGET_DIR = os.path.abspath(folder_path)
                     AppState.ACTIVE_FILE = ""
                     reset_workspace_mutation_tracker()
+                    restart_workspace_watcher(AppState.TARGET_DIR)
                     # 🚀 Instantly notify frontend to display the minimalist loading screen
                     await broadcast_to_all({
                         "event": "WORKSPACE_LOADING",
@@ -220,6 +239,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     await broadcast_workspace(force_full_sync=True)
                     trigger_background_indexing()
+
+            elif evt == "SYNC_WORKSPACE":
+                await broadcast_workspace(force_full_sync=False)
 
             elif evt == "SWITCH_FILE":
                 new_file = message.get("filename", "")

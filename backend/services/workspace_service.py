@@ -423,10 +423,15 @@ async def broadcast_workspace(force_full_sync: bool = False):
     old_state = dict(PREVIOUS_WORKSPACE_STATE)
     new_state = await asyncio.to_thread(get_workspace_state)
 
+    old_files = old_state.get("files", [])
+    new_files = new_state.get("files", [])
+    old_items = old_state.get("items", [])
+    new_items = new_state.get("items", [])
+
     is_structural_change = (
         force_full_sync or
-        len(old_state.get("files", [])) != len(new_state.get("files", [])) or
-        len(old_state.get("items", [])) != len(new_state.get("items", [])) or
+        set(old_files) != set(new_files) or
+        len(old_items) != len(new_items) or
         not old_state
     )
 
@@ -434,6 +439,8 @@ async def broadcast_workspace(force_full_sync: bool = False):
         message = json.dumps({"event": "SYNC", "payload": new_state})
     else:
         delta_payload = compute_incremental_graph_delta(old_state, new_state)
+        delta_payload["items"] = new_items
+        delta_payload["files"] = new_files
         message = json.dumps({"event": "GRAPH_DELTA", "payload": delta_payload})
 
     PREVIOUS_WORKSPACE_STATE = new_state
@@ -494,3 +501,68 @@ class CodeWatcher(FileSystemEventHandler):
             self.loop.call_soon_threadsafe(self._schedule_debounced_broadcast)
         except Exception:
             pass
+
+
+# -------------------------------------------------------------------------
+# 6. DYNAMIC WATCHDOG OBSERVER CONTROLLER
+# -------------------------------------------------------------------------
+class WatchdogManager:
+    observer: Optional[Any] = None
+    watcher: Optional[CodeWatcher] = None
+    loop: Optional[asyncio.AbstractEventLoop] = None
+    watched_dir: Optional[str] = None
+
+_WATCHDOG_MGR = WatchdogManager()
+
+
+def start_workspace_watcher(loop: asyncio.AbstractEventLoop, directory: str) -> None:
+    """Initializes and starts the file system observer on the given directory."""
+    from watchdog.observers import Observer
+
+    stop_workspace_watcher()
+    abs_dir = os.path.abspath(directory)
+    if not os.path.exists(abs_dir):
+        return
+
+    _WATCHDOG_MGR.loop = loop
+    _WATCHDOG_MGR.watched_dir = abs_dir
+    _WATCHDOG_MGR.watcher = CodeWatcher(loop)
+    _WATCHDOG_MGR.observer = Observer()
+    try:
+        _WATCHDOG_MGR.observer.schedule(_WATCHDOG_MGR.watcher, path=abs_dir, recursive=True)
+        _WATCHDOG_MGR.observer.start()
+        print(f"[WATCHER] File system observer active on: {abs_dir}")
+    except Exception as e:
+        print(f"[WARN] Failed to start watchdog observer on {abs_dir}: {e}")
+
+
+def restart_workspace_watcher(new_directory: str) -> None:
+    """Dynamically migrates the file watcher to a newly opened workspace folder."""
+    abs_dir = os.path.abspath(new_directory)
+    if not os.path.exists(abs_dir):
+        return
+
+    if _WATCHDOG_MGR.observer and _WATCHDOG_MGR.watched_dir == abs_dir:
+        return
+
+    loop = _WATCHDOG_MGR.loop
+    if not loop:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+    start_workspace_watcher(loop, abs_dir)
+
+
+def stop_workspace_watcher() -> None:
+    """Gracefully terminates the watchdog observer thread."""
+    if _WATCHDOG_MGR.observer:
+        try:
+            _WATCHDOG_MGR.observer.stop()
+            _WATCHDOG_MGR.observer.join(timeout=1.0)
+        except Exception:
+            pass
+        _WATCHDOG_MGR.observer = None
+        _WATCHDOG_MGR.watcher = None
+        _WATCHDOG_MGR.watched_dir = None

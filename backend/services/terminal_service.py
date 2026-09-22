@@ -19,13 +19,31 @@ from core.state import AppState
 # 1. UTILITY: SAFE ASYNC WEBSOCKET DISPATCHER
 # -------------------------------------------------------------------------
 async def safe_send(websocket: Any, data: dict) -> None:
-    """Safely dispatches a JSON packet to the client, suppressing dropped socket errors."""
-    try:
-        if websocket in AppState.CONNECTIONS:
-            await websocket.send_json(data)
-    except Exception:
-        if websocket in AppState.CONNECTIONS:
-            AppState.CONNECTIONS.remove(websocket)
+    """
+    Safely dispatches a JSON packet to the client.
+    If the originating websocket disconnected (e.g. during PC sleep/wake),
+    seamlessly broadcasts to any active connection in AppState.CONNECTIONS
+    so stream chunks and exit signals are never lost.
+    """
+    from ml.analyzer import sanitize_for_json
+    sanitized = sanitize_for_json(data)
+    sent = False
+    if websocket and websocket in AppState.CONNECTIONS:
+        try:
+            await websocket.send_json(sanitized)
+            sent = True
+        except Exception:
+            AppState.CONNECTIONS.discard(websocket)
+
+    if not sent and AppState.CONNECTIONS:
+        disconnected = set()
+        for ws in list(AppState.CONNECTIONS):
+            try:
+                await ws.send_json(sanitized)
+            except Exception:
+                disconnected.add(ws)
+        for ws in disconnected:
+            AppState.CONNECTIONS.discard(ws)
 
 
 # -------------------------------------------------------------------------
@@ -231,11 +249,20 @@ def write_terminal_stdin(session_id: str, input_text: str) -> bool:
 def kill_terminal_process(session_id: str) -> bool:
     """Terminates the entire process tree cleanly without zombie tasks."""
     if session_id in AppState.PROCESSES:
-        proc = AppState.PROCESSES[session_id]
+        proc = AppState.PROCESSES.get(session_id)
         if not proc:
+            AppState.PROCESSES.pop(session_id, None)
             return False
 
         try:
+            # 1. Close stdin immediately to unblock any waiting readline/pipes
+            if proc.stdin and not proc.stdin.closed:
+                try:
+                    proc.stdin.close()
+                except Exception:
+                    pass
+
+            # 2. Terminate the process tree
             if sys.platform == "win32":
                 try:
                     os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
@@ -247,19 +274,41 @@ def kill_terminal_process(session_id: str) -> bool:
                     stderr=subprocess.DEVNULL,
                     check=False
                 )
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
             else:
                 try:
                     pgid = os.getpgid(proc.pid)
-                    os.killpg(pgid, signal.SIGTERM)
+                    os.killpg(pgid, signal.SIGKILL)
                 except Exception:
-                    proc.kill()
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
             return True
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] Error killing terminal process {session_id}: {e}")
+            try:
+                proc.kill()
+            except Exception:
+                pass
             return False
         finally:
             AppState.PROCESSES.pop(session_id, None)
 
     return False
+
+
+def kill_all_terminal_processes() -> int:
+    """Terminates all running terminal processes across all sessions."""
+    killed_count = 0
+    session_ids = list(AppState.PROCESSES.keys())
+    for s_id in session_ids:
+        if kill_terminal_process(s_id):
+            killed_count += 1
+    return killed_count
 
 
 # -------------------------------------------------------------------------

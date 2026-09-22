@@ -560,27 +560,37 @@ export const applyTheme = (themeId) => {
   const target = currentThemes[themeId] || currentThemes[DEFAULT_THEME_ID];
   const root = document.documentElement;
 
-  // Foundation colors
+  // Foundation colors (Both kebab-case and camelCase aliases for 100% component compatibility)
   root.style.setProperty('--theme-primary', target.primary);
   root.style.setProperty('--theme-secondary', target.secondary);
   root.style.setProperty('--theme-background', target.background);
   root.style.setProperty('--theme-surface', target.surface);
   root.style.setProperty('--theme-surface-hover', target.surfaceHover);
+  root.style.setProperty('--theme-surfaceHover', target.surfaceHover);
   root.style.setProperty('--theme-surface-active', target.surfaceActive);
+  root.style.setProperty('--theme-surfaceActive', target.surfaceActive);
   root.style.setProperty('--theme-border', target.border);
   root.style.setProperty('--theme-border-subtle', target.borderSubtle);
+  root.style.setProperty('--theme-borderSubtle', target.borderSubtle);
   root.style.setProperty('--theme-border-hover', target.borderHover);
+  root.style.setProperty('--theme-borderHover', target.borderHover);
 
   // Typography
   root.style.setProperty('--theme-text-bright', target.textBright);
+  root.style.setProperty('--theme-textBright', target.textBright);
   root.style.setProperty('--theme-text-primary', target.textPrimary);
+  root.style.setProperty('--theme-textPrimary', target.textPrimary);
   root.style.setProperty('--theme-text-secondary', target.textSecondary);
+  root.style.setProperty('--theme-textSecondary', target.textSecondary);
   root.style.setProperty('--theme-text-muted', target.textMuted);
+  root.style.setProperty('--theme-textMuted', target.textMuted);
 
   // Accent & Folder
   root.style.setProperty('--theme-accent', target.accent);
   root.style.setProperty('--theme-accent-hover', target.accentHover);
+  root.style.setProperty('--theme-accentHover', target.accentHover);
   root.style.setProperty('--theme-folder-icon', target.folderIcon || target.accent);
+  root.style.setProperty('--theme-folderIcon', target.folderIcon || target.accent);
 
   // Scrollbars
   root.style.setProperty('--theme-scrollbar-track', target.scrollbarTrack);

@@ -348,6 +348,7 @@ export default function App() {
         next.delete(target);
         return next;
       });
+      delete currentCodeBufferRef.current[target];
 
       // Reset saving indicator after brief visual feedback
       setTimeout(() => setIsSaving(false), 500);
@@ -760,10 +761,13 @@ export default function App() {
     } 
   }, [workspace]);
 
-  const handleCreateItem = useCallback((name, type) => { 
+  const handleCreateItem = useCallback((name, type = 'file') => { 
     workspace.setIsFileSyncing(true); 
     workspace.wsRef.current?.send(JSON.stringify({ event: 'CREATE_ITEM', item_name: name, item_type: type })); 
-  }, [workspace]);
+    if (type === 'file' || !type) {
+      handleSwitchFile(name);
+    }
+  }, [workspace, handleSwitchFile]);
 
   const handleDeleteFile = useCallback((f, e) => { 
     if (e) e.stopPropagation(); 
@@ -1143,6 +1147,37 @@ export default function App() {
                         settings={settings}
                       />
 
+                      {/* 🚀 EMPTY WORKSPACE ONBOARDING HERO CARD */}
+                      {(workspace.files || []).length === 0 && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-30 select-none">
+                          <div 
+                            className="pointer-events-auto flex flex-col items-center text-center max-w-sm px-6 py-5 rounded-2xl border backdrop-blur-md shadow-2xl transition-all"
+                            style={{
+                              backgroundColor: 'rgba(18, 19, 20, 0.75)',
+                              borderColor: 'var(--theme-border, rgba(255, 255, 255, 0.08))'
+                            }}
+                          >
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-[var(--theme-accent)]/10 text-[var(--theme-accent)] border border-[var(--theme-accent)]/20">
+                              <Network size={20} />
+                            </div>
+                            <h3 className="text-sm font-semibold text-white tracking-wide">
+                              {workspace.repoName || (workspace.absTargetDir ? workspace.absTargetDir.split(/[\\/]/).pop() : "Workspace")}
+                            </h3>
+                            <p className="text-xs text-slate-400 mt-1 mb-4 leading-relaxed font-sans">
+                              Workspace loaded. Create your first code file in the Explorer or click below to build your celestial map.
+                            </p>
+                            <button
+                              onClick={() => {
+                                handleCreateItem('main.py', 'file');
+                              }}
+                              className="px-3.5 py-1.5 rounded-lg text-xs font-mono font-medium transition-all cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 bg-[var(--theme-accent, #3b82f6)] text-white hover:brightness-110"
+                            >
+                              <span>+ Create First File</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* 📡 SPATIAL RADAR MINIMAP OVERLAY */}
                       {(settings?.spatialMinimap ?? true) && (
                         <SpatialMinimap 
@@ -1232,6 +1267,7 @@ export default function App() {
                     <CodeEditor 
                       filename={workspace.currentFile} 
                       initialCode={activeCodeStr} 
+                      isDirty={dirtyFiles.has(workspace.currentFile)}
                       settings={settings} 
                       focusLine={editorFocusLine} 
                       isSyncing={workspace.isFileSyncing}
@@ -1266,8 +1302,9 @@ export default function App() {
                       onCreateSession={workspace.createTerminalSession} 
                       onCloseSession={workspace.closeTerminalSession} 
                       onSendTerminalCommand={workspace.sendTerminalCommand} 
+                      onSendStdin={workspace.sendTerminalStdin}
                       onKillProcess={workspace.killTerminalProcess} 
-                      onClearOutput={() => workspace.setTerminalLogs([])} 
+                      onClearOutput={() => workspace.clearTerminalSession(workspace.activeSessionId)} 
                     />
                   </Panel>
                 </> 

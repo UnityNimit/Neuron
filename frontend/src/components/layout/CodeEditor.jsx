@@ -4,6 +4,7 @@ import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 
 import { registerMonacoThemes, useTheme } from '../../config/themeConfig';
+import FindReplaceWidget from './FindReplaceWidget';
 
 // 🚀 CRITICAL FIX: Direct local bundling (Zero CDN network requests, 100% offline)
 loader.config({ monaco });
@@ -14,6 +15,7 @@ registerMonacoThemes(monaco);
 export default function CodeEditor({ 
   filename = "", 
   initialCode = "", 
+  isDirty = false,
   settings = {}, 
   focusLine, 
   onCodeChange, 
@@ -26,10 +28,16 @@ export default function CodeEditor({
   const editorRef = useRef(null);
   const modelsMapRef = useRef(new Map()); // Map<filePath, ITextModel>
   const timerRef = useRef(null);
+  const isDirtyRef = useRef(isDirty);
+  const isExternalSyncRef = useRef(false);
 
   const onCodeChangeRef = useRef(onCodeChange);
   const onSaveRef = useRef(onSave);
   const filenameRef = useRef(filename);
+
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
 
   useEffect(() => {
     onCodeChangeRef.current = onCodeChange;
@@ -90,14 +98,24 @@ export default function CodeEditor({
         model = monaco.editor.createModel(codeContent || "", lang, uri);
       } else {
         if (codeContent !== undefined && model.getValue() !== codeContent) {
-          model.setValue(codeContent);
+          isExternalSyncRef.current = true;
+          try {
+            model.setValue(codeContent);
+          } finally {
+            isExternalSyncRef.current = false;
+          }
         }
       }
       modelsMapRef.current.set(file, model);
     } else {
-      // Sync model if initial code updated externally and model is untouched
-      if (codeContent !== undefined && model.getValue() !== codeContent && model.getAlternativeVersionId() === 1) {
-        model.setValue(codeContent);
+      // Sync model if code updated externally and file is not dirty
+      if (codeContent !== undefined && model.getValue() !== codeContent && !isDirtyRef.current) {
+        isExternalSyncRef.current = true;
+        try {
+          model.setValue(codeContent);
+        } finally {
+          isExternalSyncRef.current = false;
+        }
       }
     }
     
@@ -106,15 +124,25 @@ export default function CodeEditor({
     return model;
   }, []);
 
-  // Switch Monaco Models on Tab Switch (0ms execution, Isolated Undo Stack)
+  // Switch Monaco Models on Tab Switch (0ms execution, Isolated Undo Stack) or live external sync
   useEffect(() => {
     if (!editorRef.current || !filename) return;
 
     const targetModel = getOrCreateModel(filename, initialCode, language);
-    if (targetModel && editorRef.current.getModel() !== targetModel) {
-      editorRef.current.setModel(targetModel);
+    if (targetModel) {
+      if (editorRef.current.getModel() !== targetModel) {
+        editorRef.current.setModel(targetModel);
+      } else if (!isDirty && initialCode !== undefined && targetModel.getValue() !== initialCode) {
+        // Live external update while viewing the file (and file has no unsaved in-memory edits)
+        isExternalSyncRef.current = true;
+        try {
+          targetModel.setValue(initialCode);
+        } finally {
+          isExternalSyncRef.current = false;
+        }
+      }
     }
-  }, [filename, initialCode, language, getOrCreateModel]);
+  }, [filename, initialCode, language, isDirty, getOrCreateModel]);
 
   // 🚀 CRITICAL FIX: External Code Update Dispatcher (e.g. AI Refactor Applied)
   useEffect(() => {
@@ -173,6 +201,24 @@ export default function CodeEditor({
       }
     });
 
+    // 🚀 BIND CTRL + F / CMD + F (CUSTOM THEMED FIND WIDGET)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => {
+      const selection = editor.getSelection();
+      const selectedText = selection && !selection.isEmpty() ? editor.getModel()?.getValueInRange(selection) : "";
+      window.dispatchEvent(new CustomEvent('neuron-open-find-widget', { 
+        detail: { mode: 'find', initialText: selectedText } 
+      }));
+    });
+
+    // 🚀 BIND CTRL + H / CMD + H (CUSTOM THEMED REPLACE WIDGET)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => {
+      const selection = editor.getSelection();
+      const selectedText = selection && !selection.isEmpty() ? editor.getModel()?.getValueInRange(selection) : "";
+      window.dispatchEvent(new CustomEvent('neuron-open-find-widget', { 
+        detail: { mode: 'replace', initialText: selectedText } 
+      }));
+    });
+
     // 🚀 BIND CTRL + K / CMD + K (SEARCH / COMMAND PALETTE)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
       window.dispatchEvent(new CustomEvent('neuron-open-command-palette'));
@@ -190,6 +236,8 @@ export default function CodeEditor({
 
     // Listen for model content changes (Notify parent instantly so dirty indicator is 0ms)
     editor.onDidChangeModelContent(() => {
+      if (isExternalSyncRef.current) return;
+
       const currentVal = editor.getValue();
       const currentFile = filenameRef.current;
       
@@ -283,6 +331,7 @@ export default function CodeEditor({
       )}
 
       <div className="w-full flex-1 min-h-0 relative">
+        <FindReplaceWidget editor={editorRef.current} />
         <Editor
           height="100%"
           width="100%"
@@ -317,7 +366,12 @@ export default function CodeEditor({
           fixedOverflowWidgets: true,
           tabSize: settings?.tabSize || 2,
           formatOnPaste: settings?.formatOnPaste ?? true,
-          renderWhitespace: "selection"
+          renderWhitespace: "selection",
+          find: {
+            addExtraSpaceOnTop: false,
+            autoFindInSelection: 'never',
+            seedSearchStringFromSelection: 'never'
+          }
         }}
       />
       </div>

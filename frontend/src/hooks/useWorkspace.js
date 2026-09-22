@@ -111,6 +111,8 @@ export function useWorkspace(session) {
   const reconnectAttemptsRef = useRef(0);
   const pingTimestampRef = useRef(Date.now());
   const hasNotifiedConnectedRef = useRef(false);
+  const terminalStreamBufferRef = useRef({});
+  const terminalStreamTimerRef = useRef(null);
   
   // --- REAL-TIME SYSTEM ALERTS & NOTIFICATIONS ---
   const [notifications, setNotifications] = useState([
@@ -188,6 +190,8 @@ export function useWorkspace(session) {
     let ws = null;
     let reconnectTimer = null;
     let heartbeatTimer = null;
+    let sleepWatcherTimer = null;
+    let lastTick = Date.now();
     let isUnmounted = false;
 
     const connectWebSocket = () => {
@@ -314,11 +318,35 @@ export function useWorkspace(session) {
                 setBlastRadius(null);
               }
               
-              // 🚀 SYNC TERMINAL CWD TO THE OPENED PROJECT FOLDER
-              setTerminalSessions(prev => prev.map(s => ({
-                ...s, 
-                cwd: newTargetDir || s.cwd 
-              })));
+              // 🚀 CLEANLY RESET TERMINALS ON WORKSPACE SWITCH
+              if (isDirSwitch) {
+                // Terminate any running processes known from previous workspace
+                terminalSessions.forEach(s => {
+                  if (s.isRunning && ws?.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ event: 'KILL_TERMINAL_PROCESS', session_id: s.id }));
+                  }
+                });
+
+                setTerminalSessions([
+                  { 
+                    id: "term_1", 
+                    name: "PowerShell 1", 
+                    shellType: "powershell", 
+                    cwd: newTargetDir, 
+                    isRunning: false, 
+                    history: [] 
+                  }
+                ]);
+                setActiveSessionId("term_1");
+                setTerminalLogs([
+                  { text: `Workspace switched to ${newTargetDir}`, isError: false, isSystem: true }
+                ]);
+              } else {
+                setTerminalSessions(prev => prev.map(s => ({
+                  ...s, 
+                  cwd: newTargetDir || s.cwd 
+                })));
+              }
               
               const rawNodes = payload.graph?.nodes || [];
               
@@ -368,6 +396,8 @@ export function useWorkspace(session) {
                 nodes_remove = [], 
                 edges_upsert = [], 
                 edges_remove = [], 
+                items: deltaItems,
+                files: deltaFiles,
                 git_statuses, 
                 git_detailed_status,
                 git_branch,
@@ -376,6 +406,8 @@ export function useWorkspace(session) {
                 agent_batch 
               } = data.payload || {};
 
+              if (deltaItems) setItems(deltaItems);
+              if (deltaFiles) setFiles(deltaFiles);
               if (git_statuses) setGitStatuses(git_statuses);
               if (git_detailed_status) setGitDetailedStatus(git_detailed_status);
               if (typeof is_git_repo !== 'undefined') setIsGitRepo(Boolean(is_git_repo));
@@ -567,24 +599,61 @@ export function useWorkspace(session) {
               )));
             }
             else if (data.event === 'TERMINAL_STREAM') {
+              const sId = data.session_id;
+              if (!terminalStreamBufferRef.current[sId]) {
+                terminalStreamBufferRef.current[sId] = { stdout: "", stderr: "" };
+              }
+              const key = data.is_error ? 'stderr' : 'stdout';
+              terminalStreamBufferRef.current[sId][key] += data.text;
+
+              if (!terminalStreamTimerRef.current) {
+                terminalStreamTimerRef.current = setTimeout(() => {
+                  terminalStreamTimerRef.current = null;
+                  const chunks = terminalStreamBufferRef.current;
+                  terminalStreamBufferRef.current = {};
+
+                  setTerminalSessions(prev => prev.map(s => {
+                    const chunk = chunks[s.id];
+                    if (!chunk || s.history.length === 0) return s;
+                    const lastIdx = s.history.length - 1;
+                    const updatedHistory = [...s.history];
+                    const item = updatedHistory[lastIdx];
+                    updatedHistory[lastIdx] = {
+                      ...item,
+                      stdout: (item.stdout + chunk.stdout).slice(-200000),
+                      stderr: (item.stderr + chunk.stderr).slice(-50000)
+                    };
+                    return { ...s, history: updatedHistory };
+                  }));
+                }, 25);
+              }
+            }
+            else if (data.event === 'TERMINAL_STREAM_END') {
+              if (terminalStreamTimerRef.current) {
+                clearTimeout(terminalStreamTimerRef.current);
+                terminalStreamTimerRef.current = null;
+              }
+              const chunks = terminalStreamBufferRef.current;
+              terminalStreamBufferRef.current = {};
+
               setTerminalSessions(prev => prev.map(s => {
-                if (s.id === data.session_id && s.history.length > 0) {
-                  const lastIdx = s.history.length - 1;
-                  const updatedHistory = [...s.history];
-                  const key = data.is_error ? 'stderr' : 'stdout';
-                  updatedHistory[lastIdx] = { 
-                    ...updatedHistory[lastIdx], 
-                    [key]: (updatedHistory[lastIdx][key] + data.text).slice(-200000) 
-                  };
-                  return { ...s, history: updatedHistory };
+                if (s.id === data.session_id) {
+                  let updatedHistory = s.history;
+                  const chunk = chunks[s.id];
+                  if (chunk && s.history.length > 0) {
+                    const lastIdx = s.history.length - 1;
+                    updatedHistory = [...s.history];
+                    const item = updatedHistory[lastIdx];
+                    updatedHistory[lastIdx] = {
+                      ...item,
+                      stdout: (item.stdout + chunk.stdout).slice(-200000),
+                      stderr: (item.stderr + chunk.stderr).slice(-50000)
+                    };
+                  }
+                  return { ...s, isRunning: false, history: updatedHistory };
                 }
                 return s;
               }));
-            }
-            else if (data.event === 'TERMINAL_STREAM_END') {
-              setTerminalSessions(prev => prev.map(s => (
-                s.id === data.session_id ? { ...s, isRunning: false } : s
-              )));
             }
 
             // 8. GIT SOURCE CONTROL REAL-TIME EVENT BUS
@@ -633,10 +702,51 @@ export function useWorkspace(session) {
 
     connectWebSocket();
 
+    // ⚡ System Sleep / Wake Detector
+    sleepWatcherTimer = setInterval(() => {
+      const now = Date.now();
+      // If gap > 5000ms on a 2000ms interval, PC was asleep / suspended
+      if (now - lastTick > 5000) {
+        console.log("⚡ PC wake detected after sleep/hibernation. Refreshing socket & terminal sync...");
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          connectWebSocket();
+        } else {
+          try {
+            ws.send(JSON.stringify({ event: 'PING' }));
+          } catch (e) {
+            try { ws.close(); } catch (_) {}
+          }
+        }
+      }
+      lastTick = now;
+    }, 2000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const now = Date.now();
+        if (now - lastTick > 5000) {
+          if (!ws || ws.readyState !== WebSocket.OPEN) {
+            connectWebSocket();
+          }
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const handleWindowFocus = () => {
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event: 'SYNC_WORKSPACE' }));
+      }
+    };
+    window.addEventListener('focus', handleWindowFocus);
+
     return () => {
       isUnmounted = true;
       clearTimeout(reconnectTimer);
       clearInterval(heartbeatTimer);
+      clearInterval(sleepWatcherTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
       if (ws) {
         ws.onclose = null;
         ws.onerror = null;
@@ -763,6 +873,40 @@ export function useWorkspace(session) {
         session_id: sessionId 
       }));
     }
+    // 🚀 Optimistically unlock terminal state immediately
+    if (terminalStreamTimerRef.current) {
+      clearTimeout(terminalStreamTimerRef.current);
+      terminalStreamTimerRef.current = null;
+    }
+    terminalStreamBufferRef.current[sessionId] = { stdout: "", stderr: "" };
+
+    setTerminalSessions(prev => prev.map(s => {
+      if (s.id === sessionId) {
+        const updatedHistory = [...(s.history || [])];
+        if (updatedHistory.length > 0) {
+          const lastIdx = updatedHistory.length - 1;
+          const currentOut = updatedHistory[lastIdx].stdout || "";
+          if (!currentOut.includes("[Process terminated")) {
+            updatedHistory[lastIdx] = {
+              ...updatedHistory[lastIdx],
+              stdout: currentOut + "\r\n[Process terminated by user]\r\n"
+            };
+          }
+        }
+        return { ...s, isRunning: false, history: updatedHistory };
+      }
+      return s;
+    }));
+  }, []);
+
+  const clearTerminalSession = useCallback((sessionId) => {
+    if (sessionId === 'output') {
+      setTerminalLogs([]);
+    } else {
+      setTerminalSessions(prev => prev.map(s => (
+        s.id === sessionId ? { ...s, history: [] } : s
+      )));
+    }
   }, []);
 
   const commitGitChanges = useCallback((message, options = {}) => {
@@ -837,7 +981,7 @@ export function useWorkspace(session) {
     terminalLogs, setTerminalLogs,
     terminalSessions, activeSessionId, setActiveSessionId,
     createTerminalSession, closeTerminalSession, 
-    sendTerminalCommand, sendTerminalStdin, killTerminalProcess,
+    sendTerminalCommand, sendTerminalStdin, killTerminalProcess, clearTerminalSession,
     refreshWorkspace, wsRef,
     notifications, addNotification, dismissNotification, clearNotifications, markAllNotificationsRead,
     remoteAuthSession, setRemoteAuthSession

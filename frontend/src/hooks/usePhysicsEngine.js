@@ -43,7 +43,26 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
   }, [edges]);
 
   useEffect(() => {
-    if (!isGraphLoaded || !nodes || nodes.length === 0) return;
+    if (!isGraphLoaded) return;
+
+    if (!nodes || nodes.length === 0) {
+      if (spawnTimerRef.current) {
+        clearTimeout(spawnTimerRef.current);
+        spawnTimerRef.current = null;
+      }
+      if (simulationRef.current) {
+        simulationRef.current.stop();
+        simulationRef.current = null;
+      }
+      simDataRef.current = {
+        nodes: [],
+        edges: [],
+        superNodes: [],
+        activeNodeCount: 0,
+        isSpawningComplete: true
+      };
+      return;
+    }
 
     if (spawnTimerRef.current) {
       clearTimeout(spawnTimerRef.current);

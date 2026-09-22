@@ -441,6 +441,55 @@ def parse_workspace(target_dir: str, items: list, git_churn: dict = None) -> dic
                 created_edge_ids.add(edge_id)
 
     # -------------------------------------------------------------------------
+    # 4b. ENSURE EXPLICIT FOLDERS IN ITEMS ARE REPRESENTED
+    # -------------------------------------------------------------------------
+    for item in items:
+        if item.get("type") == "folder":
+            folder_path = normalize_rel_path(item.get("path", ""))
+            if not folder_path or folder_path == ".":
+                continue
+            parts = folder_path.split("/")
+            cur = ""
+            for i, p in enumerate(parts):
+                parent_p = cur
+                cur = f"{cur}/{p}" if cur else p
+                if cur not in created_node_ids:
+                    nodes.append({
+                        "id": cur,
+                        "type": "obsidianNode",
+                        "data": {"label": p, "nodeType": "folder", "loc": 0}
+                    })
+                    created_node_ids.add(cur)
+                if parent_p:
+                    edge_id = f"hierarchy-{parent_p}-{cur}"
+                    if edge_id not in created_edge_ids:
+                        edges.append({
+                            "id": edge_id,
+                            "source": parent_p,
+                            "target": cur,
+                            "type": "hierarchy"
+                        })
+                        created_edge_ids.add(edge_id)
+
+    # -------------------------------------------------------------------------
+    # 4c. CELESTIAL ROOT WORKSPACE NODE FOR EMPTY WORKSPACES
+    # -------------------------------------------------------------------------
+    if not nodes:
+        project_name = os.path.basename(os.path.abspath(target_dir)) or "Workspace"
+        nodes.append({
+            "id": project_name,
+            "type": "obsidianNode",
+            "position": {"x": 0, "y": 0},
+            "data": {
+                "label": project_name,
+                "nodeType": "folder",
+                "loc": 0,
+                "isRoot": True
+            }
+        })
+        created_node_ids.add(project_name)
+
+    # -------------------------------------------------------------------------
     # 5. AST RECURSIVE SYMBOL & SCOPE EXTRACTION ACROSS LANGUAGES
     # -------------------------------------------------------------------------
     for filepath, ast_data in file_asts.items():

@@ -1,7 +1,7 @@
 // src/components/layout/TopBar.jsx
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { 
-  Minus, Square, Copy, X, Check, ChevronRight, FolderClock, Trash2 
+  Minus, Square, Copy, X, Check 
 } from 'lucide-react';
 
 export default function TopBar({ 
@@ -258,51 +258,63 @@ export default function TopBar({
                           onClick={(e) => { e.stopPropagation(); setShowRecentSubmenu(!showRecentSubmenu); }}
                           className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
                         >
-                          <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)] flex items-center gap-2">
-                            <FolderClock size={12} className="text-[var(--theme-accent)]" /> {opt.label}
+                          <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)]">
+                            {opt.label}
                           </span>
-                          <ChevronRight size={12} className="text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-bright)]" />
+                          <span className="text-[10px] text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-bright)]">
+                            &gt;
+                          </span>
                         </button>
 
                         {/* Recent Projects Flyout Submenu */}
                         {showRecentSubmenu && (
                           <div 
-                            className="absolute top-0 left-full ml-1 w-72 border shadow-2xl rounded-xl py-1.5 text-xs font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 z-[210]"
+                            className="absolute top-0 left-full ml-1.5 w-80 border shadow-2xl rounded-2xl p-1.5 text-xs font-mono backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 z-[210]"
                             style={{
-                              backgroundColor: 'var(--theme-secondary, #191a1b)',
-                              borderColor: 'var(--theme-border-subtle, #2e3032)',
-                              color: 'var(--theme-text-primary, #cbd5e1)'
+                              backgroundColor: 'var(--theme-surface, #161719)',
+                              borderColor: 'var(--theme-border, #242628)',
+                              color: 'var(--theme-text-primary, #cbd5e1)',
+                              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--theme-border, #242628)'
                             }}
                           >
+                            <div className="px-2.5 py-1 text-[9px] uppercase font-semibold tracking-wider border-b mb-1 flex items-center justify-between" style={{ borderColor: 'var(--theme-border, #242628)', color: 'var(--theme-text-muted, #64748b)' }}>
+                              <span>Recent Workspaces</span>
+                              <span className="opacity-50">{recentProjects.length}</span>
+                            </div>
+
                             {recentProjects.length === 0 ? (
-                              <div className="px-3 py-2 text-[var(--theme-text-muted)] text-[11px] text-center">
-                                No Recent Projects Found
+                              <div className="px-3 py-4 text-[var(--theme-text-muted)] text-[11px] text-center italic">
+                                No recent workspaces found
                               </div>
                             ) : (
                               <>
-                                <div className="max-h-48 overflow-y-auto divide-y" style={{ borderColor: 'var(--theme-surface-hover, #222426)' }}>
-                                  {recentProjects.map((pPath, pIdx) => (
-                                    <button
-                                      key={pIdx}
-                                      onClick={() => handleSelectRecent(pPath)}
-                                      className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors flex flex-col group cursor-pointer"
-                                      title={pPath}
-                                    >
-                                      <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)] truncate font-medium">
-                                        {pPath.split(/[/\\]/).pop()}
-                                      </span>
-                                      <span className="text-[10px] text-[var(--theme-text-muted)] truncate">
-                                        {pPath}
-                                      </span>
-                                    </button>
-                                  ))}
+                                <div className="max-h-56 overflow-y-auto flex flex-col gap-0.5 [&::-webkit-scrollbar]:w-1">
+                                  {recentProjects.map((pPath, pIdx) => {
+                                    const baseName = pPath.split(/[/\\]/).pop();
+                                    return (
+                                      <button
+                                        key={pIdx}
+                                        onClick={() => handleSelectRecent(pPath)}
+                                        className="w-full px-2.5 py-2 text-left rounded-xl hover:bg-[var(--theme-surface-hover)] transition-all flex flex-col gap-0.5 group cursor-pointer"
+                                        title={pPath}
+                                      >
+                                        <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)] truncate font-semibold text-[11px]">
+                                          {baseName}
+                                        </span>
+                                        <span className="text-[9.5px] text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-secondary)] truncate opacity-70">
+                                          {pPath}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
                                 </div>
                                 <div className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
                                 <button
                                   onClick={handleClearRecent}
-                                  className="w-full px-3 py-1 text-left text-[var(--theme-text-muted)] hover:text-red-400 hover:bg-red-950/20 transition-colors flex items-center gap-1.5 text-[11px] cursor-pointer"
+                                  className="w-full px-2.5 py-1.5 text-center text-[10px] font-mono rounded-lg transition-colors hover:bg-rose-500/10 hover:text-rose-400 cursor-pointer"
+                                  style={{ color: 'var(--theme-text-muted, #64748b)' }}
                                 >
-                                  <Trash2 size={11} /> Clear Recently Opened
+                                  Clear Recent History
                                 </button>
                               </>
                             )}

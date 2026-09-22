@@ -67,12 +67,10 @@ from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
-from watchdog.observers import Observer
-
 from api.websocket_router import router as ws_router
 from core.state import AppState
 from services.terminal_service import kill_terminal_process
-from services.workspace_service import CodeWatcher
+from services.workspace_service import start_workspace_watcher, stop_workspace_watcher
 
 
 @asynccontextmanager
@@ -91,10 +89,7 @@ async def lifespan(app: FastAPI):
 
     # 2. Launch Watchdog File System Observer
     loop = asyncio.get_running_loop()
-    observer = Observer()
-    watcher = CodeWatcher(loop)
-    observer.schedule(watcher, path=AppState.TARGET_DIR, recursive=True)
-    observer.start()
+    start_workspace_watcher(loop, AppState.TARGET_DIR)
 
     is_frozen = getattr(sys, "frozen", False)
     mode_label = "Production Desktop Sidecar" if is_frozen else "Local Development Engine"
@@ -115,8 +110,7 @@ async def lifespan(app: FastAPI):
     print("\n[INFO] Shutting down Neuron Backend services...")
 
     try:
-        observer.stop()
-        observer.join(timeout=2.0)
+        stop_workspace_watcher()
     except Exception:
         pass
 

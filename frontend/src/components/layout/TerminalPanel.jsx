@@ -19,6 +19,7 @@ export default function TerminalPanel({
   onCreateSession, 
   onCloseSession, 
   onSendTerminalCommand, 
+  onSendStdin,
   onKillProcess, 
   onClearOutput 
 }) {
@@ -50,11 +51,42 @@ export default function TerminalPanel({
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
+  // Global Ctrl+C handler when terminal is active/focused
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.ctrlKey && e.key.toLowerCase() === 'c' && activeSession?.isRunning) {
+        const selection = window.getSelection();
+        if (selection && selection.toString().length > 0) {
+          // User is highlighting text - allow standard clipboard copy
+          return;
+        }
+        if (
+          containerRef.current &&
+          (containerRef.current.contains(document.activeElement) ||
+           document.activeElement === containerRef.current ||
+           document.activeElement === document.body ||
+           document.activeElement === inputRef.current)
+        ) {
+          e.preventDefault();
+          if (onKillProcess) {
+            onKillProcess(activeSessionId);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [activeSession?.isRunning, activeSessionId, onKillProcess]);
+
   // Focus input when clicking anywhere inside the terminal background
   const handleTerminalClick = () => {
     const selection = window.getSelection();
-    if (selection.toString().length === 0 && inputRef.current) {
+    if (selection && selection.toString().length > 0) return;
+    if (inputRef.current) {
       inputRef.current.focus();
+    } else if (containerRef.current) {
+      containerRef.current.focus();
     }
   };
 
@@ -68,18 +100,28 @@ export default function TerminalPanel({
 
     // Intercept Ctrl+C to kill running process
     if (e.ctrlKey && e.key.toLowerCase() === 'c' && activeSession?.isRunning) {
+      e.preventDefault();
       if (onKillProcess) onKillProcess(activeSessionId);
       return;
     }
     
     if (e.key === 'Enter') {
       e.preventDefault();
+
+      // If process is running, feed keystrokes into stdin
+      if (activeSession?.isRunning) {
+        if (onSendStdin) {
+          onSendStdin(activeSessionId, inputCommand + '\n');
+        }
+        setInputCommand("");
+        return;
+      }
+
       if (!inputCommand.trim()) return;
 
       if (inputCommand.trim() === 'clear' || inputCommand.trim() === 'cls') {
-        if (activeSessionId === 'output') {
-          if (onClearOutput) onClearOutput();
-        } else if (onSendTerminalCommand) {
+        if (onClearOutput) onClearOutput();
+        if (activeSessionId !== 'output' && onSendTerminalCommand) {
           onSendTerminalCommand(activeSessionId, 'cls');
         }
         setInputCommand("");
@@ -328,10 +370,27 @@ export default function TerminalPanel({
               </div>
             ))}
 
-            {/* Live Prompt / Execution Indicator */}
+            {/* Live Prompt / Execution Indicator & Interactive Input */}
             {activeSession.isRunning ? (
-              <div className="mt-1 text-[var(--theme-accent)] font-mono text-[11px] animate-pulse select-none">
-                Executing... (Press Ctrl+C or Stop to kill)
+              <div className="flex items-center gap-2 mt-1 select-text">
+                <span className="text-[var(--theme-accent)] font-semibold select-text animate-pulse">Running &gt;</span>
+                <input 
+                  ref={inputRef}
+                  type="text" 
+                  autoFocus 
+                  value={inputCommand} 
+                  placeholder="Program running... Press Ctrl+C or click Stop to terminate"
+                  onChange={(e) => setInputCommand(e.target.value)} 
+                  onKeyDown={handleKeyDown} 
+                  className="flex-grow bg-transparent text-[var(--theme-text-bright)] font-mono text-xs outline-none border-none caret-[var(--theme-accent)] select-text placeholder:text-[var(--theme-text-muted)] placeholder:text-[11px] placeholder:italic" 
+                />
+                <button 
+                  onClick={() => onKillProcess && onKillProcess(activeSessionId)} 
+                  className="flex items-center gap-1 bg-red-950/50 hover:bg-red-900/80 text-red-300 px-2 py-0.5 rounded text-[10px] font-mono border border-red-800/50 transition-colors shrink-0 cursor-pointer"
+                  title="Stop Running Process (Ctrl+C)"
+                >
+                  <Square size={8} fill="currentColor" /> Stop
+                </button>
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-0.5 select-text">

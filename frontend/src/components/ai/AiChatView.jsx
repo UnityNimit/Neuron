@@ -238,10 +238,11 @@ export default function AiChatView({
 
               {/* Message Content Bubble */}
               <div 
-                className={`max-w-[95%] rounded-xl p-3 border leading-relaxed select-text flex flex-col gap-2.5 ${
-                  isUser ? 'bg-[var(--theme-surfaceActive,#282a2d)]' : 'bg-[var(--theme-surface,#161719)]'
-                }`}
+                className="max-w-[95%] rounded-xl p-3 border leading-relaxed select-text flex flex-col gap-2.5 transition-colors"
                 style={{
+                  backgroundColor: isUser 
+                    ? 'var(--theme-surface-active, var(--theme-surfaceActive, #282a2d))' 
+                    : 'var(--theme-surface, #161719)',
                   borderColor: 'var(--theme-border, #242628)',
                   color: 'var(--theme-text-primary, #cbd5e1)'
                 }}
@@ -397,8 +398,9 @@ export default function AiChatView({
             </div>
 
             <div 
-              className="max-w-[95%] rounded-xl p-3 border leading-relaxed select-text flex flex-col gap-2.5 bg-[var(--theme-surface,#161719)]"
+              className="max-w-[95%] rounded-xl p-3 border leading-relaxed select-text flex flex-col gap-2.5 transition-colors"
               style={{
+                backgroundColor: 'var(--theme-surface, #161719)',
                 borderColor: 'var(--theme-border, #242628)',
                 color: 'var(--theme-text-primary, #cbd5e1)'
               }}

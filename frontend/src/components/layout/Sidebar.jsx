@@ -37,6 +37,90 @@ export default function Sidebar({
   
   const inputRef = useRef(null);
   const renameInputRef = useRef(null);
+  const loadedDirRef = useRef(null);
+
+  // Storage key per workspace directory to remember expanded/collapsed folder states
+  const storageKey = useMemo(() => {
+    return absTargetDir ? `neuron_explorer_collapsed_${absTargetDir.replace(/[\\/]/g, '_')}` : null;
+  }, [absTargetDir]);
+
+  // Load from localStorage or initialize with VS Code-like default (all subfolders collapsed)
+  useEffect(() => {
+    if (!absTargetDir) return;
+    
+    // Check if switching workspace directory
+    if (loadedDirRef.current !== absTargetDir) {
+      loadedDirRef.current = absTargetDir;
+      let restored = null;
+      if (storageKey) {
+        try {
+          const saved = localStorage.getItem(storageKey);
+          if (saved) restored = JSON.parse(saved);
+        } catch (e) {}
+      }
+
+      if (restored && typeof restored === 'object') {
+        setCollapsedFolders(restored);
+      } else if (items && items.length > 0) {
+        // VS Code Default: collapse all folders initially so top level is clean
+        const initial = {};
+        items.forEach(i => {
+          if (i.type === 'folder') {
+            initial[i.path] = true;
+          }
+        });
+        setCollapsedFolders(initial);
+      }
+    } else if (items && items.length > 0 && Object.keys(collapsedFolders).length === 0) {
+      // First load when items arrive for current workspace
+      let restored = null;
+      if (storageKey) {
+        try {
+          const saved = localStorage.getItem(storageKey);
+          if (saved) restored = JSON.parse(saved);
+        } catch (e) {}
+      }
+      if (restored && typeof restored === 'object') {
+        setCollapsedFolders(restored);
+      } else {
+        const initial = {};
+        items.forEach(i => {
+          if (i.type === 'folder') {
+            initial[i.path] = true;
+          }
+        });
+        setCollapsedFolders(initial);
+      }
+    }
+  }, [absTargetDir, storageKey, items]);
+
+  // Persist collapsedFolders to localStorage on changes
+  useEffect(() => {
+    if (storageKey && Object.keys(collapsedFolders).length > 0) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(collapsedFolders));
+      } catch (e) {}
+    }
+  }, [collapsedFolders, storageKey]);
+
+  // Auto-expand ancestors when currentFile is active
+  useEffect(() => {
+    if (!currentFile || !currentFile.includes('/')) return;
+    const parts = currentFile.split('/');
+    let changed = false;
+    const toExpand = {};
+    let cur = "";
+    for (let i = 0; i < parts.length - 1; i++) {
+      cur = cur ? `${cur}/${parts[i]}` : parts[i];
+      if (collapsedFolders[cur]) {
+        toExpand[cur] = false;
+        changed = true;
+      }
+    }
+    if (changed) {
+      setCollapsedFolders(prev => ({ ...prev, ...toExpand }));
+    }
+  }, [currentFile]);
 
   const rootFolderName = useMemo(() => {
     return absTargetDir ? absTargetDir.split(/[/\\]/).pop().toUpperCase() : "WORKSPACE";
@@ -161,6 +245,17 @@ export default function Sidebar({
       const fullItemPath = inlineCreate.parentPath 
         ? `${inlineCreate.parentPath}/${name.trim()}` 
         : name.trim();
+      if (inlineCreate.parentPath) {
+        const parts = fullItemPath.split('/');
+        const toExpand = {};
+        let cur = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          cur = cur ? `${cur}/${parts[i]}` : parts[i];
+          toExpand[cur] = false;
+        }
+        setCollapsedFolders(prev => ({ ...prev, ...toExpand }));
+      }
+      setSelectedPath(fullItemPath);
       onCreateItem(fullItemPath, inlineCreate.type);
     }
     setInlineCreate(null);
