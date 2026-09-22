@@ -1,0 +1,29 @@
+name: Supabase Keep-Alive Ping
+
+on:
+  schedule:
+    # Runs every 3 days at 00:00 UTC (well within the 7-day inactivity pause window)
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab in browser
+
+jobs:
+  ping-supabase:
+    name: Ping Supabase Database & Auth
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Auth Health API
+        run: |
+          echo "Pinging Supabase Auth Health..."
+          curl -s -f -X GET \
+            "https://dmrtbxgvzugcumndtgdu.supabase.co/auth/v1/health?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcnRieGd2enVnY3VtbmR0Z2R1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0Njc5NDUsImV4cCI6MjEwMjA0Mzk0NX0.Pmp0CeNjp-z7ZNZQiFWqFDEI6JIq5s3HxQxUOZZmo7I" \
+            || echo "Auth ping warning (check status)"
+
+      - name: Ping Supabase Postgres Database RPC (resets 7-day inactivity pause)
+        run: |
+          echo "Pinging Supabase Database RPC..."
+          curl -s -f -X GET \
+            "https://dmrtbxgvzugcumndtgdu.supabase.co/rest/v1/rpc/ping?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtcnRieGd2enVnY3VtbmR0Z2R1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0Njc5NDUsImV4cCI6MjEwMjA0Mzk0NX0.Pmp0CeNjp-z7ZNZQiFWqFDEI6JIq5s3HxQxUOZZmo7I" \
+            || echo "RPC ping (ensure public.ping() function is created in Supabase SQL editor)"
+
+      - name: Done
+        run: echo "Supabase keep-alive ping routine finished."

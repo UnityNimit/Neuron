@@ -178,6 +178,49 @@ async def health_check():
     }
 
 
+@app.get("/api/supabase/ping")
+async def ping_supabase():
+    """
+    Pings Supabase Auth and PostgREST endpoints to verify connectivity
+    and keep the cloud project active.
+    """
+    results = {}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # 1. Ping Auth Gateway Health
+        try:
+            r_auth = await client.get(
+                f"{SUPABASE_URL}/auth/v1/health",
+                headers={"apikey": SUPABASE_ANON_KEY}
+            )
+            results["auth_gateway"] = {
+                "status_code": r_auth.status_code,
+                "ok": r_auth.status_code == 200,
+                "data": r_auth.json() if r_auth.status_code == 200 else r_auth.text[:100]
+            }
+        except Exception as e:
+            results["auth_gateway"] = {"error": str(e)}
+
+        # 2. Ping Database RPC (executes real SQL to prevent 7-day pause)
+        try:
+            r_db = await client.get(
+                f"{SUPABASE_URL}/rest/v1/rpc/ping",
+                headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"}
+            )
+            results["database_rpc"] = {
+                "status_code": r_db.status_code,
+                "ok": r_db.status_code == 200,
+                "data": r_db.json() if r_db.status_code == 200 else r_db.text[:120]
+            }
+        except Exception as e:
+            results["database_rpc"] = {"error": str(e)}
+
+    return {
+        "status": "ok",
+        "supabase_url": SUPABASE_URL,
+        "results": results
+    }
+
+
 # -------------------------------------------------------------------------
 # 3.5 RAW STATIC FILE SERVING (Images, Media, Binary Assets)
 # -------------------------------------------------------------------------
