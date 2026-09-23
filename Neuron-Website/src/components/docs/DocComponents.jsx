@@ -1,5 +1,4 @@
-// src/components/docs/DocComponents.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Copy, Check, Info, AlertTriangle, Zap, Terminal } from 'lucide-react';
 
 // ==========================================

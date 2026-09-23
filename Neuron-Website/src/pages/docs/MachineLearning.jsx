@@ -1,85 +1,154 @@
-// src/pages/docs/MachineLearning.jsx
-import React from 'react';
 import { DocSection, Callout, CodeBlock, Step } from '../../components/docs/DocComponents';
 
-export default function Reference({ activeSection }) {
+export default function MachineLearning({ activeSection }) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       
-      {activeSection === 'shortcuts' && (
+      {activeSection === 'ml-overview' && (
         <>
           <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-white mb-6">
-            Keyboard Shortcuts
+            AI & Machine Learning Engine
           </h1>
           <p className="text-slate-400 text-lg leading-relaxed mb-12">
-            Neuron is designed for absolute power users. Every action in the IDE can be executed without moving your hands from the keyboard. Below is the complete reference matrix for the Spatial Engine.
+            Traditional IDEs treat code as static flat-files. Neuron operates on a completely different paradigm. It ingests your codebase as a living, mathematical ecosystem, applying unsupervised machine learning and graph theory to instantly diagnose tech debt, uncover hidden microservices, and map fragility.
           </p>
 
-          <Callout type="info" title="Cross-Platform Support">
-            On macOS, substitute <kbd className="font-mono text-xs">Ctrl</kbd> with <kbd className="font-mono text-xs">Cmd (⌘)</kbd>, and <kbd className="font-mono text-xs">Alt</kbd> with <kbd className="font-mono text-xs">Option (⌥)</kbd>.
-          </Callout>
+          <DocSection id="multi-modal-ast" title="Multi-Modal AST Extraction">
+            <Callout type="info" title="Beyond Regex">
+              Neuron utilizes <strong>Tree-Sitter</strong> to build a fully typed Abstract Syntax Tree (AST) of every file in milliseconds. It does not search for strings; it understands the absolute structural logic of your code.
+            </Callout>
 
-          <DocSection id="spatial-commands" title="🌌 Spatial Map Engine">
-            <div className="bg-[#0f0f0f] border border-white/10 rounded-xl px-5 py-2 shadow-xl mb-8">
-              <Shortcut description="Trigger AI Impact Analysis (Blast Radius)" keys={['Alt', 'I']} />
-              <Shortcut description="Isolate execution path (Focus Mode)" keys={['F']} />
-              <Shortcut description="Clear Impact / Focus Isolation" keys={['Esc']} />
-              <Shortcut description="Open Node in Full Monaco Editor" keys={['Double Click']} />
-              <Shortcut description="Drag to Pan Camera" keys={['Left Click', 'Drag']} />
-              <Shortcut description="Zoom Camera" keys={['Scroll Wheel']} />
-            </div>
-          </DocSection>
+            <Step number="1" title="Cyclomatic Complexity & Density">
+              The engine recursively traverses the AST to count mathematical branching pathways (<code>if</code>, <code>while</code>, <code>for</code>, <code>except</code>, <code>match</code>). It then divides this complexity by the physical Lines of Code (LOC) to generate an <strong>AST Density Score</strong>. High density indicates tightly packed, unreadable spaghetti logic.
+            </Step>
 
-          <DocSection id="file-commands" title="📄 File Operations">
-            <div className="bg-[#0f0f0f] border border-white/10 rounded-xl px-5 py-2 shadow-xl mb-8">
-              <Shortcut description="Create New File" keys={['Ctrl', 'N']} />
-              <Shortcut description="Open New IDE Window" keys={['Ctrl', 'Shift', 'N']} />
-              <Shortcut description="Open Target Folder..." keys={['Ctrl', 'K', 'Ctrl', 'O']} />
-              <Shortcut description="Save Current File" keys={['Ctrl', 'S']} />
-            </div>
-          </DocSection>
-
-          <DocSection id="edit-commands" title="✏️ Edit & Navigation">
-            <div className="bg-[#0f0f0f] border border-white/10 rounded-xl px-5 py-2 shadow-xl mb-8">
-              <Shortcut description="Find inside current file" keys={['Ctrl', 'F']} />
-              <Shortcut description="Replace inside current file" keys={['Ctrl', 'H']} />
-              <Shortcut description="Find across entire workspace" keys={['Ctrl', 'Shift', 'F']} />
-              <Shortcut description="Replace across entire workspace" keys={['Ctrl', 'Shift', 'H']} />
-              <Shortcut description="Toggle Line Comment" keys={['Ctrl', '/']} />
-              <Shortcut description="Toggle Block Comment" keys={['Shift', 'Alt', 'A']} />
-            </div>
-          </DocSection>
-
-          <DocSection id="view-commands" title="👁️ View & Layout Controls">
-            <div className="bg-[#0f0f0f] border border-white/10 rounded-xl px-5 py-2 shadow-xl mb-8">
-              <Shortcut description="Open Command Palette (Omnibar)" keys={['Ctrl', 'K']} />
-              <Shortcut description="Show All Commands" keys={['Ctrl', 'Shift', 'P']} />
-              <Shortcut description="Toggle Explorer Sidebar" keys={['Ctrl', 'B']} />
-              <Shortcut description="Toggle Terminal Panel" keys={['Ctrl', '`']} />
-            </div>
+            <Step number="2" title="Semantic Import Resolution">
+              The engine traces <code>import</code> statements across files to build macro-edges. This connects isolated files into a massive global call-graph, allowing the ML algorithms to traverse entire repositories mathematically.
+            </Step>
           </DocSection>
         </>
       )}
 
-      {activeSection === 'terminal-cli' && (
+      {activeSection === 'louvain' && (
         <>
           <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-white mb-6">
-            Terminal & CLI Guide
+            Louvain Community Nebulas
           </h1>
           <p className="text-slate-400 text-lg leading-relaxed mb-12">
-            Neuron bridges your local operating system with the WebAssembly runtime. You can execute standard bash commands, run infinite loops, and kill processes seamlessly.
+            Folders are a human construct. In enterprise codebases, business logic is rarely confined to a single directory. Neuron uses Unsupervised Machine Learning to discover the <em>true</em> architecture of your software.
           </p>
 
-          <DocSection id="terminal-basics" title="Terminal Emulation">
-            <Step number="1" title="Interactive Subprocesses">
-              The terminal panel connects directly to a Python <code>subprocess.Popen</code> backend via WebSockets. This means standard commands like <code>npm run dev</code> or <code>python script.py</code> execute natively on your host machine and stream <code>stdout</code> and <code>stderr</code> in real-time.
+          <DocSection id="louvain-detection" title="Unsupervised Microservice Discovery">
+            <Callout type="terminal" title="The Modularity Maximization Formula">
+              The backend leverages the <strong>Louvain method for community detection</strong> (via NetworkX) on the AST Call-Graph. It maximizes a modularity score, iteratively moving nodes between communities until it finds dense clusters of highly interacting functions.
+            </Callout>
+
+            <p className="text-slate-300 leading-relaxed mt-4 mb-6">
+              To ensure the AI categorizes by <em>Execution Logic</em> rather than folder proximity, Neuron mathematically weights function-to-function neural pathways <strong>50x heavier</strong> than folder hierarchy edges.
+            </p>
+
+            <CodeBlock 
+              title="analyzer.py"
+              language="python"
+              code={`# The Weighted ML Execution Graph
+for e in edges:
+    if e["source"] != e["target"]:
+        # ML WEIGHTING: Force the AI to group by Business Logic, not folders!
+        weight = 50.0 if e.get("type") == "call" else 1.0
+        G.add_edge(e["source"], e["target"], weight=weight)
+
+# Unsupervised Clustering Algorithm
+communities = louvain_communities(G, weight='weight', resolution=1.0)`} 
+            />
+
+            <p className="text-slate-300 leading-relaxed mt-6">
+              The resulting communities are assigned unique IDs. The WebGPU engine reads these IDs in real-time, calculates a mathematical <strong>Convex Hull</strong> around the nodes using <code>d3-polygon</code>, and wraps them in a massive, glowing, hardware-blurred Gas Nebula.
+            </p>
+          </DocSection>
+        </>
+      )}
+
+      {activeSection === 'risk-model' && (
+        <>
+          <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-white mb-6">
+            Random Forest Risk Heuristics
+          </h1>
+          <p className="text-slate-400 text-lg leading-relaxed mb-12">
+            Not all complex code is dangerous. A highly complex algorithm written 5 years ago that hasn't been touched since is mathematically safe. Neuron merges Graph Theory, AST Topology, and Git Velocity to calculate absolute systemic risk.
+          </p>
+
+          <DocSection id="risk-formula" title="The Ensemble Risk Equation">
+            <Callout type="danger" title="Real-Time Fragility Detection">
+              By merging <strong>PageRank</strong> (authority) and <strong>Betweenness Centrality</strong> (bottlenecks) with Git Churn (modification velocity), Neuron physically flags code that is on the verge of breaking.
+            </Callout>
+
+            <Step number="1" title="The 4-Dimensional Equation">
+              The AI calculates a combined risk scalar using the following weighted algorithm:
             </Step>
-            <Step number="2" title="Force Killing Processes">
-              Because Neuron tracks the PID of the spawned shell, hitting <kbd className="font-mono text-[10px] px-1 bg-slate-800 rounded text-slate-300">Ctrl+C</kbd> while the terminal is in focus will instantly send a <code>SIGTERM</code> (or <code>CTRL_BREAK_EVENT</code> on Windows) to safely kill infinite loops without crashing the backend server.
+
+            <CodeBlock 
+              title="analyzer.py"
+              language="python"
+              code={`# W1: Base AST Complexity
+# W2: Git Churn (Velocity of edits exponentially multiplies complexity danger)
+# W3: Density (Branching logic crammed into too few lines)
+# W4: Betweenness Centrality (If this breaks, microservices lose communication)
+
+risk_score = (complexity * 0.3) + (churn * 1.5) + (density * 10.0) + (betweenness * 5.0)`} 
+            />
+
+            <Step number="2" title="Code Smell Diagnosis">
+              Based on the geometric spread of these factors, the AI categorizes the exact type of tech debt:
+              <ul className="list-disc list-inside mt-3 space-y-2 text-slate-300">
+                <li><strong className="text-blue-400">God Object:</strong> Extreme LOC + Extreme PageRank.</li>
+                <li><strong className="text-orange-400">Spaghetti Logic:</strong> Extreme AST Density.</li>
+                <li><strong className="text-red-400">Fragile Hotspot:</strong> High Git Churn + High Complexity.</li>
+                <li><strong className="text-purple-400">System Bottleneck:</strong> High Betweenness Centrality.</li>
+              </ul>
             </Step>
-            <Step number="3" title="Multi-Shell Support">
-              Clicking the <strong>+</strong> icon allows you to spawn concurrent, independent terminal tabs in PowerShell, Command Prompt (CMD), or Unix Bash.
+            
+            <p className="text-slate-300 leading-relaxed mt-6">
+              These diagnoses are immediately injected into the WebGPU engine. Orbs turn Radioactive Red, and zooming into Z-Level 3 reveals the exact AI diagnosis natively on the canvas.
+            </p>
+          </DocSection>
+        </>
+      )}
+
+      {activeSection === 'llm-peel' && (
+        <>
+          <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-white mb-6">
+            Local LLM Semantic Peel
+          </h1>
+          <p className="text-slate-400 text-lg leading-relaxed mb-12">
+            Zooming into any function orb transitions the WebGPU camera into the Level-of-Detail (LOD) Semantic Peel. An on-device open-weights LLM interprets AST context in real time, explaining invariants, call contracts, and refactor targets.
+          </p>
+
+          <DocSection id="semantic-zoom" title="Z-Level 3 Semantic Zoom">
+            <Callout type="info" title="Zero Cloud Data Exfiltration">
+              All semantic peel queries execute strictly through the local Python daemon using local weights (Llama-3, Qwen, or local Ollama endpoints). Code never leaves your workstation.
+            </Callout>
+
+            <Step number="1" title="Context Extraction Slices">
+              When the camera passes the zoom threshold ($Z &gt; 2.8$), Neuron slices the active function AST, its incoming call edges, and parent class declarations into a focused prompt envelope.
             </Step>
+
+            <Step number="2" title="In-Memory Annotation Overlay">
+              The daemon returns structural insights (expected input ranges, potential side-effects, tech debt remediations). These annotations are rendered directly above the node as an illuminated glass tooltip on the canvas.
+            </Step>
+
+            <CodeBlock 
+              title="agent_supervisor.py"
+              language="python"
+              code={`# Real-time local architectural explanation
+async def generate_semantic_peel(node_id: str, ast_slice: dict):
+    prompt = f"""Analyze the following AST function for architectural risks:
+Function: {ast_slice['name']}
+LOC: {ast_slice['loc']}, Density: {ast_slice['density']}
+Callers: {ast_slice['callers']}
+
+Generate a 2-sentence semantic diagnosis and immediate refactor target."""
+    return await local_llm.generate(prompt, max_tokens=90)`} 
+            />
           </DocSection>
         </>
       )}

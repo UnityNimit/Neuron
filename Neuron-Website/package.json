@@ -11,9 +11,13 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "d3-force": "^3.0.0",
+    "d3-polygon": "^3.0.1",
     "gsap": "^3.15.0",
     "lucide-react": "^1.31.0",
     "ogl": "^1.0.11",
+    "pixi-viewport": "^6.0.3",
+    "pixi.js": "^8.21.0",
     "postprocessing": "^6.39.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

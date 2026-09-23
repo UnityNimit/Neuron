@@ -1,3 +1,13 @@
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+  width: 0px;
+  height: 0px;
+}
+
 .counter {
   font-size: 16px;
   padding: 5px 10px;

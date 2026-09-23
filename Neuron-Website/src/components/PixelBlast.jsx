@@ -167,7 +167,7 @@ float Bayer2(vec2 a) {
 #define Bayer4(a) (Bayer2(.5*(a))*0.25 + Bayer2(a))
 #define Bayer8(a) (Bayer4(.5*(a))*0.25 + Bayer2(a))
 
-#define FBM_OCTAVES     5
+#define FBM_OCTAVES     3
 #define FBM_LACUNARITY  1.25
 #define FBM_GAIN        1.0
 
@@ -306,7 +306,7 @@ const PixelBlast = ({
   color = '#B497CF',
   className,
   style,
-  antialias = true,
+  antialias = false,
   patternScale = 2,
   patternDensity = 1,
   liquid = false,
@@ -348,6 +348,7 @@ const PixelBlast = ({
     if (mustReinit) {
       if (threeRef.current) {
         const t = threeRef.current;
+        if (t.onWindowPointerDown) window.removeEventListener('pointerdown', t.onWindowPointerDown);
         t.resizeObserver?.disconnect();
         cancelAnimationFrame(t.raf);
         t.quad?.geometry.dispose();
@@ -367,7 +368,7 @@ const PixelBlast = ({
       });
       renderer.domElement.style.width = '100%';
       renderer.domElement.style.height = '100%';
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setPixelRatio(1);
       container.appendChild(renderer.domElement);
       if (transparent) renderer.setClearAlpha(0);
       else renderer.setClearColor(0x000000, 1);
@@ -477,31 +478,53 @@ const PixelBlast = ({
           h: renderer.domElement.height
         };
       };
-      const onPointerDown = e => {
+      const getScrollTop = () => window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+
+      const onWindowPointerDown = e => {
         const { fx, fy } = mapToPixels(e);
         const ix = threeRef.current?.clickIx ?? 0;
         uniforms.uClickPos.value[ix].set(fx, fy);
         uniforms.uClickTimes.value[ix] = uniforms.uTime.value;
         if (threeRef.current) threeRef.current.clickIx = (ix + 1) % MAX_CLICKS;
       };
-      const onPointerMove = e => {
-        if (!touch) return;
-        const { fx, fy, w, h } = mapToPixels(e);
-        touch.addTouch({ x: fx / w, y: fy / h });
-      };
-      renderer.domElement.addEventListener('pointerdown', onPointerDown, {
+      if (touch) {
+        const onPointerMove = e => {
+          const { fx, fy, w, h } = mapToPixels(e);
+          touch.addTouch({ x: fx / w, y: fy / h });
+        };
+        renderer.domElement.addEventListener('pointermove', onPointerMove, {
+          passive: true
+        });
+      }
+      window.addEventListener('pointerdown', onWindowPointerDown, {
         passive: true
       });
-      renderer.domElement.addEventListener('pointermove', onPointerMove, {
-        passive: true
-      });
+
       let raf = 0;
+      let isPaused = false;
+
+      const onVisibilityChange = () => {
+        if (document.hidden) {
+          isPaused = true;
+          cancelAnimationFrame(raf);
+        } else {
+          isPaused = false;
+          clock.start();
+          raf = requestAnimationFrame(animate);
+          if (threeRef.current) threeRef.current.raf = raf;
+        }
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
       const animate = () => {
+        if (isPaused) return;
         if (autoPauseOffscreen && !visibilityRef.current.visible) {
           raf = requestAnimationFrame(animate);
           return;
         }
+
         uniforms.uTime.value = timeOffset + clock.getElapsedTime() * speedRef.current;
+
         if (liquidEffect) liquidEffect.uniforms.get('uTime').value = uniforms.uTime.value;
         if (composer) {
           if (touch) touch.update();
@@ -516,6 +539,7 @@ const PixelBlast = ({
           composer.render();
         } else renderer.render(scene, camera);
         raf = requestAnimationFrame(animate);
+        if (threeRef.current) threeRef.current.raf = raf;
       };
       raf = requestAnimationFrame(animate);
       threeRef.current = {
@@ -532,7 +556,9 @@ const PixelBlast = ({
         timeOffset,
         composer,
         touch,
-        liquidEffect
+        liquidEffect,
+        onWindowPointerDown,
+        onVisibilityChange
       };
     } else {
       const t = threeRef.current;
@@ -562,6 +588,8 @@ const PixelBlast = ({
       if (threeRef.current && mustReinit) return;
       if (!threeRef.current) return;
       const t = threeRef.current;
+      if (t.onWindowPointerDown) window.removeEventListener('pointerdown', t.onWindowPointerDown);
+      if (t.onVisibilityChange) document.removeEventListener('visibilitychange', t.onVisibilityChange);
       t.resizeObserver?.disconnect();
       cancelAnimationFrame(t.raf);
       t.quad?.geometry.dispose();
