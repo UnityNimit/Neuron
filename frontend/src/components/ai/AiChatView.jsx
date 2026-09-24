@@ -192,7 +192,7 @@ export default function AiChatView({
       >
         <div className="flex items-center gap-2 truncate min-w-0">
           <span className="text-[12px] font-mono font-medium truncate max-w-[240px]">
-            {conversation?.title || 'Antigravity Studio'}
+            {conversation?.title || 'AI'}
           </span>
         </div>
 
@@ -202,6 +202,7 @@ export default function AiChatView({
             onSelectModel={onSelectModel}
             projectName={projectName}
             disabled={isStreaming}
+            onOpenSettings={onOpenSettings}
           />
         </div>
       </div>
@@ -226,7 +227,7 @@ export default function AiChatView({
                 className="flex items-center gap-2 text-[10px] px-1"
                 style={{ color: 'var(--theme-text-muted, #64748b)' }}
               >
-                <span>{isUser ? 'You' : 'Antigravity'}</span>
+                <span>{isUser ? 'You' : 'AI'}</span>
                 {msg.timestamp && (
                   <span className="opacity-50">
                     {typeof msg.timestamp === 'string' && msg.timestamp.includes('T') 
@@ -393,7 +394,7 @@ export default function AiChatView({
               className="flex items-center gap-2 text-[10px] px-1"
               style={{ color: 'var(--theme-text-muted, #64748b)' }}
             >
-              <span>Antigravity</span>
+              <span>AI</span>
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-pulse" />
             </div>
 
@@ -624,7 +625,7 @@ export default function AiChatView({
               e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Antigravity or request refactor (Enter to send)..."
+            placeholder="Ask AI or request refactor (Enter to send)..."
             spellCheck={false}
             className="flex-1 text-[12px] font-mono outline-none resize-none bg-transparent leading-relaxed placeholder:text-slate-600 [&::-webkit-scrollbar]:w-1"
             style={{

@@ -125,7 +125,7 @@ export default function ActivityBar({
           )}
         </button>
 
-        {/* Antigravity AI Studio */}
+        {/* AI */}
         <button 
           onClick={handleToggleAi}
           className={`p-2 rounded-xl transition-all relative group cursor-pointer ${
@@ -133,7 +133,7 @@ export default function ActivityBar({
               ? 'text-[var(--theme-text-bright)] bg-[var(--theme-surface-hover)]' 
               : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]'
           }`}
-          title="Antigravity AI (Ctrl+Shift+A)"
+          title="AI (Ctrl+Shift+A)"
         >
           {isAiActive && (
             <div 
@@ -170,7 +170,7 @@ export default function ActivityBar({
         {isLoggedIn ? (
           <button 
             onClick={onLogout} 
-            className="w-8 h-8 rounded-full overflow-hidden border border-blue-500/70 hover:border-red-500 transition-all cursor-pointer relative group flex items-center justify-center p-0 shadow-[0_0_12px_rgba(59,130,246,0.3)] hover:shadow-[0_0_12px_rgba(239,68,68,0.4)] shrink-0" 
+            className="w-8 h-8 rounded-full overflow-hidden transition-all cursor-pointer relative group flex items-center justify-center p-0 shrink-0" 
             title={`Signed in as ${displayName} (${email || 'Google'})\nClick to Sign Out`}
           >
             {pfp && !imgError ? (

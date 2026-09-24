@@ -1540,7 +1540,7 @@ export default function NeuronHeroEngine() {
                 color: isSidebarOpen && activeSidebarView === 'ai' ? activeTheme.textBright : activeTheme.textMuted,
                 backgroundColor: isSidebarOpen && activeSidebarView === 'ai' ? activeTheme.surfaceHover : 'transparent'
               }}
-              title="Antigravity AI (Ctrl+Shift+A)"
+              title="AI (Ctrl+Shift+A)"
             >
               <Sparkles size={18} strokeWidth={1.6} />
             </button>

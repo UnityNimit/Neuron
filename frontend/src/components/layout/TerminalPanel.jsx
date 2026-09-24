@@ -1,6 +1,6 @@
 // src/components/layout/TerminalPanel.jsx
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, X, Trash2, Square, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Square } from 'lucide-react';
 import AnsiToHtml from 'ansi-to-html';
 
 const ansiConverter = new AnsiToHtml({ 
@@ -26,10 +26,8 @@ export default function TerminalPanel({
   const [inputCommand, setInputCommand] = useState("");
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [showShellDropdown, setShowShellDropdown] = useState(false);
   
   const terminalEndRef = useRef(null);
-  const dropdownRef = useRef(null);
   const inputRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -38,16 +36,6 @@ export default function TerminalPanel({
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [logs, sessions, activeSessionId]);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowShellDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -217,16 +205,6 @@ export default function TerminalPanel({
               >
                 <div className={`w-1.5 h-1.5 rounded-full ${s.isRunning ? 'bg-[var(--theme-accent)] animate-pulse' : 'bg-[var(--theme-text-muted)]'}`} />
                 <span>{s.name}</span>
-                <button 
-                  onClick={(e) => { 
-                    e.stopPropagation(); 
-                    if (onCloseSession) onCloseSession(s.id); 
-                  }} 
-                  className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity ml-1 p-0.5 rounded hover:bg-[var(--theme-surface-hover)]"
-                  title="Close Terminal"
-                >
-                  <X size={11} />
-                </button>
               </div>
             );
           })}
@@ -235,56 +213,16 @@ export default function TerminalPanel({
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 shrink-0 pr-2">
           
-          {/* New Shell Dropdown */}
-          <div className="relative" ref={dropdownRef}>
-            <button 
-              onClick={() => setShowShellDropdown(!showShellDropdown)} 
-              className="p-1 hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] rounded transition-colors flex items-center gap-0.5 cursor-pointer" 
-              title="New Terminal"
-            >
-              <Plus size={13} />
-              <ChevronDown size={10} />
-            </button>
-            
-            {showShellDropdown && (
-              <div 
-                className="absolute top-7 right-0 z-[200] w-44 border shadow-2xl rounded-xl py-1 backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-100 font-mono text-[11px]"
-                style={{
-                  backgroundColor: 'var(--theme-surface, #191a1b)',
-                  borderColor: 'var(--theme-border-subtle, #2e3032)',
-                  color: 'var(--theme-text-primary, #cbd5e1)'
-                }}
-              >
-                <button 
-                  onClick={() => { 
-                    if (onCreateSession) onCreateSession('powershell'); 
-                    setShowShellDropdown(false); 
-                  }} 
-                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <span className="text-[var(--theme-accent)] font-bold">PS</span> PowerShell
-                </button>
-                <button 
-                  onClick={() => { 
-                    if (onCreateSession) onCreateSession('cmd'); 
-                    setShowShellDropdown(false); 
-                  }} 
-                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <span className="text-[var(--theme-accent)] font-bold">&gt;_</span> Command Prompt
-                </button>
-                <button 
-                  onClick={() => { 
-                    if (onCreateSession) onCreateSession('bash'); 
-                    setShowShellDropdown(false); 
-                  }} 
-                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
-                >
-                  <span className="text-[var(--theme-accent)] font-bold">$</span> Bash
-                </button>
-              </div>
-            )}
-          </div>
+          {/* New Terminal Button */}
+          <button 
+            onClick={() => {
+              if (onCreateSession) onCreateSession('powershell');
+            }} 
+            className="p-1 hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] rounded transition-colors cursor-pointer" 
+            title="New Terminal"
+          >
+            <Plus size={13} />
+          </button>
 
           {/* Stop Process Button (if active process is running) */}
           {activeSession?.isRunning && (
@@ -297,11 +235,17 @@ export default function TerminalPanel({
             </button>
           )}
 
-          {/* Clear Console */}
+          {/* Clear / Kill Terminal */}
           <button 
-            onClick={onClearOutput} 
-            className="p-1 text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer" 
-            title="Clear Console Output"
+            onClick={() => {
+              if (activeSessionId === 'output') {
+                if (onClearOutput) onClearOutput();
+              } else {
+                if (onCloseSession) onCloseSession(activeSessionId);
+              }
+            }} 
+            className="p-1 text-[var(--theme-text-muted)] hover:text-red-400 transition-colors cursor-pointer" 
+            title={activeSessionId === 'output' ? "Clear Output" : "Kill Terminal"}
           >
             <Trash2 size={12} />
           </button>

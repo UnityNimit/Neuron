@@ -172,6 +172,24 @@ async def health_check():
     }
 
 
+@app.post("/api/ai/discover-key")
+async def api_discover_key(request: Request):
+    """
+    Runs a live request against AI providers to automatically detect which provider
+    an API key belongs to, discover all available models for that key, and pick the best model.
+    """
+    try:
+        from services.ai_service import discover_key_and_models
+        data = await request.json()
+        api_key = (data.get("api_key") or "").strip()
+        if not api_key:
+            return JSONResponse({"valid": False, "error": "Empty API key"}, status_code=400)
+        result = await discover_key_and_models(api_key, force_refresh=True)
+        return result
+    except Exception as e:
+        return JSONResponse({"valid": False, "error": str(e)}, status_code=500)
+
+
 @app.get("/api/supabase/ping")
 async def ping_supabase():
     """

@@ -12,7 +12,7 @@ const INITIAL_MESSAGES = [
       { step: 'Connected 40 spatial conduits' }
     ],
     thought: 'Inspecting spatial graph topology for misaligned nodes across runtime and parser domains...',
-    text: 'Hello! I am Antigravity. I can inspect your codebase AST, navigate spatial conduits, and execute automated refactors. What would you like to explore?'
+    text: 'Hello! I am AI. I can inspect your codebase AST, navigate spatial conduits, and execute automated refactors. What would you like to explore?'
   }
 ];
 
@@ -27,7 +27,7 @@ const DEMO_RESPONSE = "Alignment is fixed across all spatial nodes.";
 const DOWNLOAD_FULL_TEXT = "To interact with your codebase, download Neuron";
 const PREFIX = "To interact with your codebase, ";
 
-export default function AntigravityAgentShowcase() {
+export default function AiAgentShowcase() {
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputValue, setInputValue] = useState('');
   const [isTypingAnimation, setIsTypingAnimation] = useState(false);
@@ -277,14 +277,14 @@ export default function AntigravityAgentShowcase() {
             <div className="h-10 bg-[#191a1b] border-b border-[#242628] px-3.5 flex items-center justify-between select-none shrink-0">
               <div className="flex items-center gap-2">
                 <Sparkles size={14} className="text-[#3b82f6]" />
-                <span className="text-xs font-mono font-medium text-white tracking-wide">Antigravity Studio</span>
+                <span className="text-xs font-mono font-medium text-white tracking-wide">AI</span>
               </div>
               
               <div className="flex items-center gap-2">
-                {/* Model Selector Dropdown badge */}
+                {/* Key Selector Dropdown badge */}
                 <div className="px-2 py-0.5 rounded-md bg-[#161719] border border-[#242628] text-[11px] font-mono text-[#94a3b8] flex items-center gap-1.5 cursor-pointer hover:text-white transition-colors">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6]" />
-                  <span>Gemini 2.5 Pro</span>
+                  <span>Primary Key</span>
                   <ChevronDown size={11} className="opacity-60" />
                 </div>
               </div>
@@ -313,7 +313,7 @@ export default function AntigravityAgentShowcase() {
                 return (
                   <div key={msg.id} className="flex flex-col items-start space-y-1.5 max-w-[95%]">
                     <div className="text-[10px] text-[#64748b] flex items-center gap-1.5 px-1">
-                      <span>Antigravity</span>
+                      <span>AI</span>
                       <span className="opacity-50">{msg.time}</span>
                     </div>
 
@@ -448,7 +448,7 @@ export default function AntigravityAgentShowcase() {
                   type="text"
                   value={inputValue}
                   onChange={handleInputChange}
-                  placeholder="Ask Antigravity or request refactor (Enter to send)..."
+                  placeholder="Ask AI or request refactor (Enter to send)..."
                   className="w-full bg-transparent text-xs text-white placeholder-[#64748b] focus:outline-none font-mono"
                 />
                 <button

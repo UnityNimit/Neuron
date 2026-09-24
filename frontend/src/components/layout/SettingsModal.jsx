@@ -1,6 +1,5 @@
-// src/components/layout/SettingsModal.jsx
-import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Plus, Trash2, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { useTheme } from '../../config/themeConfig';
 
 function MinimalToggle({ checked, onChange }) {
@@ -149,7 +148,148 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
   const [selectedThemeId, setSelectedThemeId] = useState(currentThemeId);
   const [tokenEdits, setTokenEdits] = useState({});
   const [saveStatus, setSaveStatus] = useState(null);
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [revealedKeyIds, setRevealedKeyIds] = useState(new Set());
+  const [detectingIds, setDetectingIds] = useState({});
+  const detectTimersRef = useRef({});
+  const apiKeysRef = useRef(settings?.apiKeys || []);
+
+  const apiKeys = settings?.apiKeys || [];
+  const activeApiKeyId = settings?.activeApiKeyId || 'local-ollama';
+
+  useEffect(() => {
+    apiKeysRef.current = settings?.apiKeys || [];
+  }, [settings?.apiKeys]);
+
+  const detectKeyAndModels = async (id, rawKey) => {
+    const cleanKey = (rawKey || '').trim();
+    if (!cleanKey || cleanKey.length < 8) return;
+
+    setDetectingIds(prev => ({ ...prev, [id]: true }));
+    try {
+      const resp = await fetch('http://127.0.0.1:8000/api/ai/discover-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: cleanKey })
+      });
+      const data = await resp.json();
+      const latestKeys = apiKeysRef.current || [];
+      if (data && data.valid && data.best_model) {
+        const updated = latestKeys.map(k => k.id === id ? {
+          ...k,
+          detectedProvider: data.provider,
+          detectedModel: data.best_model,
+          modelCount: (data.models || []).length,
+          status: 'verified',
+          errorMessage: null
+        } : k);
+        updateSetting('apiKeys', updated);
+      } else {
+        const updated = latestKeys.map(k => k.id === id ? {
+          ...k,
+          detectedProvider: null,
+          detectedModel: null,
+          modelCount: 0,
+          status: 'error',
+          errorMessage: data?.error || 'Unable to detect available models for this key'
+        } : k);
+        updateSetting('apiKeys', updated);
+      }
+    } catch (err) {
+      const latestKeys = apiKeysRef.current || [];
+      const updated = latestKeys.map(k => k.id === id ? {
+        ...k,
+        status: 'error',
+        errorMessage: 'Backend offline — will auto-detect on next request'
+      } : k);
+      updateSetting('apiKeys', updated);
+    } finally {
+      setDetectingIds(prev => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const handleAddApiKey = () => {
+    const newKey = {
+      id: `key_${Date.now()}`,
+      alias: `Key ${apiKeys.length + 1}`,
+      key: '',
+      detectedProvider: null,
+      detectedModel: null,
+      modelCount: 0,
+      status: 'idle'
+    };
+    const updated = [...apiKeys, newKey];
+    updateSetting('apiKeys', updated);
+    if (apiKeys.length === 0 || activeApiKeyId === 'local-ollama') {
+      updateSetting('activeApiKeyId', newKey.id);
+    }
+  };
+
+  const handleUpdateApiKey = (id, field, value) => {
+    const updated = apiKeys.map(k => {
+      if (k.id === id) {
+        if (field === 'key') {
+          return {
+            ...k,
+            key: value,
+            detectedProvider: null,
+            detectedModel: null,
+            modelCount: 0,
+            status: value.trim().length >= 8 ? 'detecting' : 'idle',
+            errorMessage: null
+          };
+        }
+        return { ...k, [field]: value };
+      }
+      return k;
+    });
+    updateSetting('apiKeys', updated);
+
+    if (field === 'key') {
+      if (detectTimersRef.current[id]) {
+        clearTimeout(detectTimersRef.current[id]);
+      }
+      if (value && value.trim().length >= 8) {
+        detectTimersRef.current[id] = setTimeout(() => {
+          detectKeyAndModels(id, value);
+        }, 550);
+      }
+    }
+  };
+
+  const handleDeleteApiKey = (id) => {
+    if (detectTimersRef.current[id]) {
+      clearTimeout(detectTimersRef.current[id]);
+    }
+    const updated = apiKeys.filter(k => k.id !== id);
+    updateSetting('apiKeys', updated);
+    if (activeApiKeyId === id) {
+      updateSetting('activeApiKeyId', updated.length > 0 ? updated[0].id : 'local-ollama');
+    }
+  };
+
+  const handleSetActiveApiKey = (id) => {
+    updateSetting('activeApiKeyId', id);
+  };
+
+  const toggleRevealKey = (id) => {
+    setRevealedKeyIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Auto-detect any saved keys that haven't been probed yet when AI settings tab opens
+  useEffect(() => {
+    if (isOpen && activeTab === 'ai') {
+      apiKeys.forEach(k => {
+        if (k.key && k.key.trim().length >= 8 && !k.detectedModel && !detectingIds[k.id] && k.status !== 'error') {
+          detectKeyAndModels(k.id, k.key);
+        }
+      });
+    }
+  }, [isOpen, activeTab]);
 
   // Sync activeTab when initialTab changes or modal opens
   useEffect(() => {
@@ -262,7 +402,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
   const categories = [
     { id: 'general', label: 'General', desc: 'Workspace preferences, auto-saving, and system safety' },
-    { id: 'ai', label: 'AI & Models', desc: 'Google Antigravity SDK, Gemini API key, and model options' },
+    { id: 'ai', label: 'AI', desc: 'API keys, aliases, and local models' },
     { id: 'editor', label: 'Editor', desc: 'Code editing, typography, formatting, and layout' },
     { id: 'spatial', label: 'Spatial Map', desc: '3D celestial canvas, radar minimap, and physics simulation' },
     { id: 'appearance', label: 'Appearance', desc: 'Visual theme, color palettes, and custom theme token overrides' },
@@ -289,7 +429,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
         onClick={(e) => e.stopPropagation()}
       >
         {/* ----------------------------------------------------------------- */}
-        {/* LEFT BAR: Antigravity-Style Category Sidebar                      */}
+        {/* LEFT BAR: Category Sidebar                                        */}
         {/* ----------------------------------------------------------------- */}
         <div 
           className="w-52 shrink-0 border-r flex flex-col justify-between"
@@ -478,103 +618,300 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
             {/* 1.5. AI & MODELS SETTINGS                                     */}
             {/* ============================================================= */}
             {activeTab === 'ai' && (
-              <>
-                {/* Google Antigravity / Gemini API Key */}
-                <div 
-                  className="py-3.5 flex flex-col gap-2"
-                  style={{ borderColor: 'var(--theme-border, #242628)' }}
-                >
-                  <div className="flex items-center justify-between gap-6">
-                    <div className="flex flex-col gap-0.5 max-w-[380px]">
+              <div className="flex flex-col gap-6 py-2">
+                {/* 1. API Keys & Aliases Section */}
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                    <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-2">
                         <span 
                           className="text-[12px] font-medium"
                           style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                         >
-                          Google Antigravity / Gemini API Key
+                          API Keys & Custom Aliases
                         </span>
-                        {settings?.antigravityApiKey ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            Active
-                          </span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            Offline Fallback
-                          </span>
-                        )}
                       </div>
                       <span 
                         className="text-[11px] leading-relaxed"
                         style={{ color: 'var(--theme-text-muted, #64748b)' }}
                       >
-                        Powers Gemini 3.8 Flash, Claude 4.6 Thinking, and GPT-OSS 120B via google-antigravity SDK.
+                        Add any AI API key with a custom alias. Neuron automatically queries the key and selects the best available model.
                       </span>
                     </div>
+
                     <button
                       type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className="text-[10px] font-mono px-2 py-1 rounded border transition-colors hover:border-[var(--theme-accent)]"
+                      onClick={handleAddApiKey}
+                      className="w-7 h-7 rounded flex items-center justify-center transition-colors cursor-pointer border hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)] shrink-0"
                       style={{
                         backgroundColor: 'var(--theme-surface, #161719)',
                         borderColor: 'var(--theme-border, #242628)',
-                        color: 'var(--theme-text-secondary, #94a3b8)'
+                        color: 'var(--theme-text-primary, #cbd5e1)'
                       }}
+                      title="Add API Key"
                     >
-                      {showApiKey ? 'Hide' : 'Show'}
+                      <Plus size={14} />
                     </button>
                   </div>
-                  <input
-                    type={showApiKey ? "text" : "password"}
-                    value={settings?.antigravityApiKey || ""}
-                    onChange={(e) => updateSetting('antigravityApiKey', e.target.value)}
-                    placeholder="AIzaSy..."
-                    spellCheck={false}
-                    className="w-full text-[11px] font-mono rounded-lg px-3 py-1.5 border outline-none focus:border-[var(--theme-accent)] transition-colors"
-                    style={{
-                      backgroundColor: 'var(--theme-surface, #161719)',
-                      borderColor: 'var(--theme-border, #242628)',
-                      color: 'var(--theme-text-primary, #e2e8f0)'
-                    }}
-                  />
+
+                  {/* List of Configured Keys */}
+                  {apiKeys.length === 0 ? (
+                    <div 
+                      className="p-5 rounded-xl border border-dashed flex flex-col items-center justify-center text-center gap-2"
+                      style={{
+                        backgroundColor: 'var(--theme-surface, #161719)',
+                        borderColor: 'var(--theme-border, #242628)',
+                        color: 'var(--theme-text-muted, #64748b)'
+                      }}
+                    >
+                      <span className="text-[12px] font-mono font-medium">No API keys configured yet</span>
+                      <p className="text-[11px] max-w-xs font-sans">
+                        Add an API key with a custom alias to automatically discover and use its best available model, or use Local AI below.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleAddApiKey}
+                        className="mt-1 w-7 h-7 rounded flex items-center justify-center border hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
+                        style={{
+                          backgroundColor: 'var(--theme-secondary, #191a1b)',
+                          borderColor: 'var(--theme-border, #242628)',
+                          color: 'var(--theme-text-primary, #cbd5e1)'
+                        }}
+                        title="Add API Key"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5">
+                      {apiKeys.map((k) => {
+                        const isActive = activeApiKeyId === k.id;
+                        const isRevealed = revealedKeyIds.has(k.id);
+                        const isDetecting = Boolean(detectingIds[k.id] || k.status === 'detecting');
+
+                        return (
+                          <div 
+                            key={k.id}
+                            className="p-3 rounded-xl border flex flex-col gap-2.5 transition-all"
+                            style={{
+                              backgroundColor: 'var(--theme-surface, #161719)',
+                              borderColor: isActive ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-border, #242628)',
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              {/* Left: Active Toggle + Alias */}
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSetActiveApiKey(k.id)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer border shrink-0 ${
+                                    isActive 
+                                      ? 'font-semibold' 
+                                      : 'hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)]'
+                                  }`}
+                                  style={{
+                                    backgroundColor: isActive
+                                      ? 'var(--theme-surface-active, #282a2d)'
+                                      : 'var(--theme-background, #121314)',
+                                    borderColor: isActive
+                                      ? 'var(--theme-accent, #3b82f6)'
+                                      : 'var(--theme-border, #242628)',
+                                    color: isActive
+                                      ? 'var(--theme-text-bright, #ffffff)'
+                                      : 'var(--theme-text-muted, #64748b)'
+                                  }}
+                                  title={isActive ? "Active" : "Set Active"}
+                                >
+                                  <span>{isActive ? 'Active' : 'Set Active'}</span>
+                                </button>
+
+                                <input
+                                  type="text"
+                                  value={k.alias || ""}
+                                  onChange={(e) => handleUpdateApiKey(k.id, 'alias', e.target.value)}
+                                  placeholder="Key Alias (e.g. Work Key)..."
+                                  className="text-[11px] font-mono font-medium px-2 py-1 rounded border outline-none focus:border-[var(--theme-accent)] transition-colors flex-1 max-w-[220px]"
+                                  style={{
+                                    backgroundColor: 'var(--theme-background, #121314)',
+                                    borderColor: 'var(--theme-border, #242628)',
+                                    color: 'var(--theme-text-bright, #ffffff)'
+                                  }}
+                                />
+                              </div>
+
+                              {/* Right: Auto-Detected Model Status + Delete */}
+                              <div className="flex items-center gap-2 shrink-0">
+                                {isDetecting ? (
+                                  <span 
+                                    className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded border"
+                                    style={{
+                                      backgroundColor: 'var(--theme-background, #121314)',
+                                      borderColor: 'var(--theme-border, #242628)',
+                                      color: 'var(--theme-text-secondary, #94a3b8)'
+                                    }}
+                                  >
+                                    <RefreshCw size={10} className="animate-spin" />
+                                    <span>Detecting best model...</span>
+                                  </span>
+                                ) : k.detectedModel ? (
+                                  <div className="flex items-center gap-1">
+                                    <span 
+                                      className="text-[10px] font-mono px-2 py-0.5 rounded border max-w-[220px] truncate"
+                                      style={{
+                                        backgroundColor: 'var(--theme-background, #121314)',
+                                        borderColor: 'var(--theme-border, #242628)',
+                                        color: 'var(--theme-text-secondary, #94a3b8)'
+                                      }}
+                                      title={`Auto-selected best model: ${k.detectedModel}${k.modelCount ? ` (${k.modelCount} available)` : ''}`}
+                                    >
+                                      {k.detectedProvider ? `${k.detectedProvider} · ` : ''}{k.detectedModel}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => detectKeyAndModels(k.id, k.key)}
+                                      className="p-1 rounded text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors cursor-pointer"
+                                      title="Re-scan available models for this key"
+                                    >
+                                      <RefreshCw size={11} />
+                                    </button>
+                                  </div>
+                                ) : k.status === 'error' ? (
+                                  <div className="flex items-center gap-1">
+                                    <span 
+                                      className="text-[10px] font-mono px-2 py-0.5 rounded border max-w-[200px] truncate"
+                                      style={{
+                                        backgroundColor: 'var(--theme-background, #121314)',
+                                        borderColor: 'var(--theme-border, #242628)',
+                                        color: 'var(--theme-text-muted, #64748b)'
+                                      }}
+                                      title={k.errorMessage || 'Could not detect models'}
+                                    >
+                                      {k.errorMessage || 'Detection failed'}
+                                    </span>
+                                    {k.key && k.key.trim().length >= 8 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => detectKeyAndModels(k.id, k.key)}
+                                        className="p-1 rounded text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors cursor-pointer"
+                                        title="Retry model detection"
+                                      >
+                                        <RefreshCw size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span 
+                                    className="text-[10px] font-mono px-2 py-0.5 rounded border"
+                                    style={{
+                                      backgroundColor: 'var(--theme-background, #121314)',
+                                      borderColor: 'var(--theme-border, #242628)',
+                                      color: 'var(--theme-text-muted, #64748b)'
+                                    }}
+                                  >
+                                    Auto-selects best model
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteApiKey(k.id)}
+                                  className="p-1 rounded text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] transition-colors cursor-pointer"
+                                  title="Delete API Key"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* API Key Input Line */}
+                            <div className="flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  type={isRevealed ? "text" : "password"}
+                                  value={k.key || ""}
+                                  onChange={(e) => handleUpdateApiKey(k.id, 'key', e.target.value)}
+                                  placeholder="Enter any AI API key..."
+                                  spellCheck={false}
+                                  className="w-full text-[11px] font-mono rounded-lg pl-3 pr-8 py-1.5 border outline-none focus:border-[var(--theme-accent)] transition-colors"
+                                  style={{
+                                    backgroundColor: 'var(--theme-background, #121314)',
+                                    borderColor: 'var(--theme-border, #242628)',
+                                    color: 'var(--theme-text-primary, #e2e8f0)'
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => toggleRevealKey(k.id)}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors p-0.5 cursor-pointer"
+                                  title={isRevealed ? "Hide key" : "Show key"}
+                                >
+                                  {isRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
-                {/* Default Model */}
+                {/* 2. Local AI (Ollama) */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="pt-4 border-t flex flex-col gap-3"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
-                    <span 
-                      className="text-[12px] font-medium"
-                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="text-[12px] font-medium"
+                          style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                        >
+                          Local AI (Ollama)
+                        </span>
+                      </div>
+                      <span 
+                        className="text-[11px] leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Run inference 100% offline on your local hardware. Automatically discovers and selects the best installed local model.
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSetActiveApiKey('local-ollama')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer border shrink-0 ${
+                        activeApiKeyId === 'local-ollama'
+                          ? 'font-semibold'
+                          : 'hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)]'
+                      }`}
+                      style={{
+                        backgroundColor: activeApiKeyId === 'local-ollama'
+                          ? 'var(--theme-surface-active, #282a2d)'
+                          : 'var(--theme-surface, #161719)',
+                        borderColor: activeApiKeyId === 'local-ollama'
+                          ? 'var(--theme-accent, #3b82f6)'
+                          : 'var(--theme-border, #242628)',
+                        color: activeApiKeyId === 'local-ollama'
+                          ? 'var(--theme-text-bright, #ffffff)'
+                          : 'var(--theme-text-muted, #64748b)'
+                      }}
                     >
-                      Default Model Target
-                    </span>
-                    <span 
-                      className="text-[11px] leading-relaxed"
-                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
-                    >
-                      Active model used when opening new conversations or refactoring.
-                    </span>
+                      {activeApiKeyId === 'local-ollama' ? 'Active' : 'Set Active'}
+                    </button>
                   </div>
-                  <MinimalSelect 
-                    value={settings?.defaultAiModel || 'gemini-3.8-flash'} 
-                    options={[
-                      { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (High | Fast)' },
-                      { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash (Medium | Fast)' },
-                      { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (Medium | Fast)' },
-                      { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro (Low Quota)' },
-                      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (Thinking)' },
-                      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 (Thinking)' },
-                      { value: 'gpt-oss-120b', label: 'GPT-OSS 120B (Medium)' },
-                    ]} 
-                    onChange={(val) => updateSetting('defaultAiModel', val)} 
-                  />
+
+                  <div className="flex items-center justify-between gap-4 text-[10.5px] font-mono text-[var(--theme-text-muted)]">
+                    <span>Model Discovery</span>
+                    <span className="text-[var(--theme-text-secondary)]">Automatic via http://127.0.0.1:11434/api/tags</span>
+                  </div>
                 </div>
 
-                {/* Require Approval for Code Refactors & Terminal Commands */}
+                {/* 3. Autonomous Execution Guard */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="pt-4 border-t flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
                   <div className="flex flex-col gap-0.5 max-w-[380px]">
@@ -588,7 +925,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                       className="text-[11px] leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
-                      When enabled, the AI pauses and asks for confirmation before executing terminal commands or modifying files. When disabled, the AI operates in full autonomous Auto-Pilot mode.
+                      When enabled, the AI pauses and asks for confirmation before executing terminal commands or modifying files.
                     </span>
                   </div>
                   <MinimalToggle 
@@ -596,38 +933,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     onChange={(val) => updateSetting('requireRefactorApproval', val)} 
                   />
                 </div>
-
-                {/* Local Fallback Status */}
-                <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
-                  style={{ borderColor: 'var(--theme-border, #242628)' }}
-                >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
-                    <span 
-                      className="text-[12px] font-medium"
-                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
-                    >
-                      Local Engine Endpoint
-                    </span>
-                    <span 
-                      className="text-[11px] leading-relaxed"
-                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
-                    >
-                      Automatic zero-latency fallback when offline or without API key.
-                    </span>
-                  </div>
-                  <span 
-                    className="text-[11px] font-mono px-2 py-0.5 rounded border"
-                    style={{
-                      backgroundColor: 'var(--theme-surface, #161719)',
-                      borderColor: 'var(--theme-border, #242628)',
-                      color: 'var(--theme-text-muted, #64748b)'
-                    }}
-                  >
-                    127.0.0.1:11434 (Ollama)
-                  </span>
-                </div>
-              </>
+              </div>
             )}
 
             {/* ============================================================= */}

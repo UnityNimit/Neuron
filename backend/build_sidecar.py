@@ -98,10 +98,8 @@ def build_sidecar():
         "--collect-all", "starlette",
         "--collect-all", "websockets",
         "--collect-all", "httpx",
-        # 1.1 Google Antigravity AI Engine
-        "--collect-all", "google.antigravity",
+        # 1.1 AI Engine
         "--collect-all", "google.genai",
-        "--hidden-import", "google.antigravity",
         "--hidden-import", "google.genai",
         # 2. Multi-Language AST Parsing
         "--collect-all", "tree_sitter",

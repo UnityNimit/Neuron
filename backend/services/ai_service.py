@@ -24,22 +24,57 @@ except ImportError:
     genai_types = None
     GENAI_SDK_AVAILABLE = False
 
-try:
-    import google.antigravity as ag
-    from google.antigravity.types import Text, Thought, ToolCall
-    ANTIGRAVITY_SDK_AVAILABLE = True
-except ImportError:
-    ag = None
-    Text, Thought, ToolCall = object, object, object
-    ANTIGRAVITY_SDK_AVAILABLE = False
-
 # -------------------------------------------------------------------------
 # 1. IN-MEMORY HASH CACHE (0ms Retrieval for Unmodified Code)
 # -------------------------------------------------------------------------
 SUMMARY_CACHE: Dict[str, str] = {}
 
 OLLAMA_API_BASE = "http://127.0.0.1:11434"
-DEFAULT_MODEL = "qwen2.5-coder:3b"
+
+
+async def get_available_ollama_models() -> List[str]:
+    """Queries local Ollama /api/tags endpoint and ranks installed models dynamically."""
+    try:
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            res = await client.get(f"{OLLAMA_API_BASE}/api/tags")
+            if res.status_code == 200:
+                tags = res.json()
+                raw_models = tags.get("models", [])
+                scored = []
+                for m in raw_models:
+                    name = (m.get("name") or "").strip()
+                    if not name:
+                        continue
+                    n_lower = name.lower()
+                    # Skip pure embedding models
+                    if "embed" in n_lower:
+                        continue
+                    score = 0.0
+                    details = m.get("details") or {}
+                    family = (details.get("family") or "").lower()
+                    if "coder" in n_lower or "code" in n_lower or "coder" in family:
+                        score += 500.0
+                    param_str = (details.get("parameter_size") or "").lower()
+                    param_m = re.search(r'(\d+(?:\.\d+)?)b', param_str or n_lower)
+                    if param_m:
+                        try:
+                            score += min(float(param_m.group(1)) * 10.0, 400.0)
+                        except ValueError:
+                            pass
+                    size_bytes = float(m.get("size") or 0)
+                    score += min(size_bytes / (1024 ** 3) * 5.0, 100.0)
+                    scored.append((score, name))
+                scored.sort(key=lambda x: x[0], reverse=True)
+                return [name for _, name in scored]
+    except Exception:
+        pass
+    return []
+
+
+async def resolve_best_ollama_model() -> Optional[str]:
+    """Returns the highest-ranked installed local model, or None if none installed."""
+    models = await get_available_ollama_models()
+    return models[0] if models else None
 
 
 def compute_code_hash(code_string: str, context_str: str = "") -> str:
@@ -130,40 +165,41 @@ async def fetch_ast_summary(
     if cache_key in SUMMARY_CACHE:
         return SUMMARY_CACHE[cache_key]
 
-    prompt = build_graph_rag_prompt(node_id, code_string, connected_snippets, risk_level)
-
-    payload = {
-        "model": DEFAULT_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "keep_alive": "10m",
-        "options": {
-            "temperature": 0.15,     # Low temperature for precise architectural accuracy
-            "top_p": 0.9,
-            "num_predict": 140,      # Generous token budget to prevent cut-offs
-            "num_ctx": 2048
+    local_model = await resolve_best_ollama_model()
+    if local_model:
+        prompt = build_graph_rag_prompt(node_id, code_string, connected_snippets, risk_level)
+        payload = {
+            "model": local_model,
+            "prompt": prompt,
+            "stream": False,
+            "keep_alive": "10m",
+            "options": {
+                "temperature": 0.15,     # Low temperature for precise architectural accuracy
+                "top_p": 0.9,
+                "num_predict": 140,      # Generous token budget to prevent cut-offs
+                "num_ctx": 2048
+            }
         }
-    }
 
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.post(f"{OLLAMA_API_BASE}/api/generate", json=payload)
-            if response.status_code == 200:
-                raw_summary = response.json().get("response", "").strip()
-                
-                # Strip common conversational prefixes
-                clean_summary = re.sub(r'^(?:Here is a summary:?|Summary:?|This function|This module)\s*', '', raw_summary, flags=re.IGNORECASE).strip()
-                clean_summary = ensure_complete_sentences(clean_summary)
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.post(f"{OLLAMA_API_BASE}/api/generate", json=payload)
+                if response.status_code == 200:
+                    raw_summary = response.json().get("response", "").strip()
+                    
+                    # Strip common conversational prefixes
+                    clean_summary = re.sub(r'^(?:Here is a summary:?|Summary:?|This function|This module)\s*', '', raw_summary, flags=re.IGNORECASE).strip()
+                    clean_summary = ensure_complete_sentences(clean_summary)
 
-                if clean_summary and len(clean_summary) > 15:
-                    # Capitalize first letter
-                    clean_summary = clean_summary[0].upper() + clean_summary[1:]
-                    SUMMARY_CACHE[cache_key] = clean_summary
-                    return clean_summary
-    except httpx.ConnectError:
-        pass
-    except Exception as e:
-        print(f"[DEBUG] LLM Inference fallback: {e}")
+                    if clean_summary and len(clean_summary) > 15:
+                        # Capitalize first letter
+                        clean_summary = clean_summary[0].upper() + clean_summary[1:]
+                        SUMMARY_CACHE[cache_key] = clean_summary
+                        return clean_summary
+        except httpx.ConnectError:
+            pass
+        except Exception as e:
+            print(f"[DEBUG] LLM Inference fallback: {e}")
 
     # DETERMINISTIC STATIC HEURISTIC FALLBACK
     fallback = generate_heuristic_summary(code_string, node_id, risk_level)
@@ -194,40 +230,41 @@ async def stream_ast_summary(
         yield SUMMARY_CACHE[cache_key]
         return
 
-    prompt = build_graph_rag_prompt(node_id, code_string, connected_snippets, risk_level)
-
-    payload = {
-        "model": DEFAULT_MODEL,
-        "prompt": prompt,
-        "stream": True,
-        "keep_alive": "10m",
-        "options": {
-            "temperature": 0.15,
-            "num_predict": 140,
-            "num_ctx": 2048
+    local_model = await resolve_best_ollama_model()
+    if local_model:
+        prompt = build_graph_rag_prompt(node_id, code_string, connected_snippets, risk_level)
+        payload = {
+            "model": local_model,
+            "prompt": prompt,
+            "stream": True,
+            "keep_alive": "10m",
+            "options": {
+                "temperature": 0.15,
+                "num_predict": 140,
+                "num_ctx": 2048
+            }
         }
-    }
 
-    full_tokens = []
-    try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            async with client.stream("POST", f"{OLLAMA_API_BASE}/api/generate", json=payload) as response:
-                if response.status_code == 200:
-                    async for line in response.aiter_lines():
-                        if line:
-                            chunk = json.loads(line)
-                            token = chunk.get("response", "")
-                            full_tokens.append(token)
-                            yield token
-                            if chunk.get("done", False):
-                                break
-                    
-                    complete = ensure_complete_sentences("".join(full_tokens).strip())
-                    if complete:
-                        SUMMARY_CACHE[cache_key] = complete
-                    return
-    except Exception as e:
-        print(f"[DEBUG] Streaming LLM fallback: {e}")
+        full_tokens = []
+        try:
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                async with client.stream("POST", f"{OLLAMA_API_BASE}/api/generate", json=payload) as response:
+                    if response.status_code == 200:
+                        async for line in response.aiter_lines():
+                            if line:
+                                chunk = json.loads(line)
+                                token = chunk.get("response", "")
+                                full_tokens.append(token)
+                                yield token
+                                if chunk.get("done", False):
+                                    break
+                        
+                        complete = ensure_complete_sentences("".join(full_tokens).strip())
+                        if complete:
+                            SUMMARY_CACHE[cache_key] = complete
+                        return
+        except Exception as e:
+            print(f"[DEBUG] Streaming LLM fallback: {e}")
 
     yield generate_heuristic_summary(code_string, node_id, risk_level)
 
@@ -294,7 +331,7 @@ def generate_heuristic_summary(code_str: str, node_id: str, risk_level: str) -> 
 
 
 # -------------------------------------------------------------------------
-# 5. GOOGLE ANTIGRAVITY MULTI-SESSION PERSISTENCE & HISTORY
+# 5. AI MULTI-SESSION PERSISTENCE & HISTORY
 # -------------------------------------------------------------------------
 GLOBAL_CONVERSATIONS_FILE = os.path.expanduser("~/.neuron/conversations.json")
 
@@ -326,9 +363,9 @@ def load_conversations(target_dir: Optional[str] = None) -> List[Dict[str, Any]]
     # Auto-seed default conversation for the active workspace
     default_conv = {
         "id": "conv_default",
-        "title": "Welcome to Antigravity Studio",
+        "title": "Welcome to AI",
         "project": project_name,
-        "model": "gemini-3.8-flash",
+        "model": "auto",
         "updated_at": datetime.utcnow().isoformat() + "Z",
         "unread": False,
         "messages": [
@@ -336,13 +373,12 @@ def load_conversations(target_dir: Optional[str] = None) -> List[Dict[str, Any]]
                 "id": "msg_welcome",
                 "role": "assistant",
                 "content": (
-                    "Welcome to **Google Antigravity Studio** in Neuron.\n\n"
-                    "You have direct access to Google's frontier models including "
-                    "`Gemini 3.8 Flash`, `Claude Sonnet 4.6 (Thinking)`, and `GPT-OSS 120B`.\n\n"
-                    "Ask architectural questions, request refactors with explicit change approval, "
-                    "or inspect code dependencies in real time."
+                    "Welcome to **AI** in Neuron.\n\n"
+                    "Configure your API keys with custom aliases in **Settings > AI** or use your local hardware engine. "
+                    "Neuron automatically detects available models for your active key and selects the best model.\n\n"
+                    "Ask architectural questions, request refactors, or inspect code dependencies in real time."
                 ),
-                "thoughts": "Google Antigravity agent initialized with Gemini 3.8 Flash default model.",
+                "thoughts": "AI agent initialized with automatic model discovery.",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }
         ]
@@ -376,7 +412,7 @@ def get_conversation(conv_id: str, target_dir: Optional[str] = None) -> Optional
 def create_conversation(
     title: str = "New Conversation",
     project: str = "Neuron",
-    model: str = "gemini-3.8-flash",
+    model: str = "auto",
     target_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """Creates a new conversation session and prepends it to the history."""
@@ -386,7 +422,7 @@ def create_conversation(
         "id": new_id,
         "title": title,
         "project": project or (os.path.basename(target_dir) if target_dir else "Neuron"),
-        "model": model or "gemini-3.8-flash",
+        "model": model or "auto",
         "updated_at": datetime.utcnow().isoformat() + "Z",
         "unread": False,
         "messages": []
@@ -422,7 +458,7 @@ def update_conversation(
             "id": conv_id,
             "title": title or "New Conversation",
             "project": project_name,
-            "model": model or "gemini-3.8-flash",
+            "model": model or "auto",
             "updated_at": datetime.utcnow().isoformat() + "Z",
             "unread": False,
             "messages": messages
@@ -1173,7 +1209,7 @@ def tool_update_memory(rule_name: str, instruction: str) -> str:
 def read_project_rules(target_dir: Optional[str] = None) -> str:
     """Reads persistent project rules or developer instructions (.neuronrules, memory.md, CLAUDE.md, .cursorrules)."""
     base = target_dir or ACTIVE_AGENT_WORKSPACE or os.getcwd()
-    rule_files = [".neuronrules", ".antigravityrules", "CLAUDE.md", ".cursorrules", ".neuron/memory.md"]
+    rule_files = [".neuronrules", "CLAUDE.md", ".cursorrules", ".neuron/memory.md"]
     rules_collected = []
     for r in rule_files:
         p = os.path.join(base, r)
@@ -1219,43 +1255,321 @@ TOOL_DISPATCH = {
 }
 
 
-def map_gemini_candidates(requested_model: str, client: Optional[Any] = None) -> List[str]:
+DISCOVERED_KEY_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def score_discovered_model(model_id: str, meta: Optional[Dict[str, Any]] = None) -> float:
     """
-    Resolves live, valid model endpoints from Google GenAI.
-    Discovers available models dynamically when client is available,
-    and falls back to modern 2025/2026 production models (never dead legacy 404 endpoints).
+    Universally scores any discovered model using its live API metadata and structural version signals.
+    Contains ZERO hardcoded model names.
     """
-    live_models = []
-    if client:
+    meta = meta or {}
+    m_lower = (model_id or "").lower().strip()
+    score = 0.0
+
+    # 1. Strip date stamps, build numbers, context sizes, and parameter counts before version extraction
+    m_clean = re.sub(r'[-_]?20\d{2}[-_]\d{2}[-_]\d{2}', '', m_lower)
+    m_clean = re.sub(r'[-_]?20\d{6}', '', m_clean)
+    m_clean = re.sub(r'[-_](?:0[1-9]|1[0-2])[-_](?:0[1-9]|[12]\d|3[01])(?=[-_]|$)', '', m_clean)
+    m_clean = re.sub(r'[-_]\d{3,6}(?=[-_]|$)', '', m_clean)
+    m_clean = re.sub(r'(?:^|[-_/])\d+x\d+(?:\.\d+)?b(?=[-_/]|$)', '', m_clean)
+    m_clean = re.sub(r'(?:^|[-_/])\d+(?:\.\d+)?[bkm](?=[-_/]|$)', '', m_clean)
+
+    # Normalize hyphenated major-minor versions (e.g. -3-7- -> -3.7-)
+    m_clean = re.sub(r'(?<=[-_a-z])([1-9])-(\d)(?=[-_]|$)', r'\1.\2', m_clean)
+
+    ver_tokens = re.findall(r'(?:^|[-_/a-z])(\d+(?:\.\d+)?)(?=[-_/a-z]|$)', m_clean)
+    valid_versions = []
+    for vt in ver_tokens:
+        if vt.startswith("0") and len(vt) > 1 and not vt.startswith("0."):
+            continue
         try:
-            for m in client.models.list():
-                raw = getattr(m, "name", "") or ""
-                clean = raw.replace("models/", "").strip()
-                if clean and "gemini" in clean and not clean.endswith("-vision"):
-                    live_models.append(clean)
+            val = float(vt)
+            if 1.0 <= val < 20.0:
+                valid_versions.append(val)
+        except ValueError:
+            pass
+
+    if valid_versions:
+        score += max(valid_versions) * 1000.0
+
+    # 2. Parameter size signal (e.g., 70b, 405b)
+    param_matches = re.findall(r'(?:^|[-_/x])(\d+(?:\.\d+)?)b(?=[-_/]|$)', m_lower)
+    if param_matches:
+        try:
+            max_params = max(float(p) for p in param_matches)
+            score += min(max_params * 2.0, 300.0)
+        except ValueError:
+            pass
+
+    # 3. Token capacity from live API metadata
+    out_limit = float(
+        meta.get("outputTokenLimit")
+        or meta.get("max_completion_tokens")
+        or meta.get("max_output_tokens")
+        or 0
+    )
+    in_limit = float(
+        meta.get("inputTokenLimit")
+        or meta.get("context_window")
+        or meta.get("context_length")
+        or 0
+    )
+    score += min(out_limit / 500.0, 150.0)
+    score += min(in_limit / 50000.0, 100.0)
+
+    # 4. Release timestamp from live API metadata
+    created = meta.get("created")
+    if isinstance(created, (int, float)) and created > 1500000000:
+        score += min(max((created - 1700000000) / 500000.0, 0.0), 300.0)
+
+    # 5. Structural tier modifiers (no model names hardcoded)
+    if any(t in m_lower for t in ("flagship", "opus", "pro", "sonnet", "large", "versatile", "coder")):
+        score += 220.0
+    if "flash" in m_lower and "lite" not in m_lower and "8b" not in m_lower:
+        score += 240.0
+
+    if any(t in m_lower for t in ("lite", "nano", "mini", "haiku", "tiny", "micro", "instant", "small")):
+        score -= 180.0
+    if any(t in m_lower for t in ("exp", "preview", "beta", "test")):
+        score -= 60.0
+    if "latest" in m_lower:
+        score += 25.0
+
+    return score
+
+
+async def _probe_google_models(api_key: str) -> Optional[Dict[str, Any]]:
+    """Queries Google's live /v1beta/models endpoint to discover available models for this key."""
+    excluded_terms = (
+        "embedding", "imagen", "veo", "aqa", "tts", "whisper", "audio",
+        "robotics", "learnlm", "bisect", "-vision", "computer-use", "image-generation"
+    )
+    scored_models = []
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            res = await client.get(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                params={"key": api_key, "pageSize": 100}
+            )
+            if res.status_code == 200:
+                data = res.json()
+                for m in data.get("models", []):
+                    raw_name = m.get("name", "") or ""
+                    clean_id = raw_name.replace("models/", "").strip()
+                    if not clean_id:
+                        continue
+                    methods = m.get("supportedGenerationMethods") or []
+                    if methods and "generateContent" not in methods:
+                        continue
+                    c_lower = clean_id.lower()
+                    if any(term in c_lower for term in excluded_terms):
+                        continue
+                    scored_models.append((score_discovered_model(clean_id, m), clean_id))
+    except Exception as e:
+        print(f"[DEBUG] Google HTTP model discovery error: {e}")
+
+    if not scored_models and GENAI_SDK_AVAILABLE:
+        try:
+            g_client = genai.Client(api_key=api_key)
+            for m in g_client.models.list():
+                raw_name = getattr(m, "name", "") or ""
+                clean_id = raw_name.replace("models/", "").strip()
+                if not clean_id:
+                    continue
+                c_lower = clean_id.lower()
+                if any(term in c_lower for term in excluded_terms):
+                    continue
+                scored_models.append((score_discovered_model(clean_id, {}), clean_id))
         except Exception as e:
-            print(f"[DEBUG] Failed querying client.models.list(): {e}")
+            print(f"[DEBUG] Google SDK model discovery error: {e}")
 
-    req = (requested_model or "").lower()
-    if live_models:
-        if "pro" in req:
-            pros = [m for m in live_models if "pro" in m]
-            if pros:
-                return pros + [m for m in live_models if "flash" in m]
-        if "flash" in req:
-            flashes = [m for m in live_models if "flash" in m]
-            if flashes:
-                return flashes + [m for m in live_models if "pro" in m]
-        return live_models
+    if scored_models:
+        scored_models.sort(key=lambda x: x[0], reverse=True)
+        ranked = []
+        for _, mid in scored_models:
+            if mid not in ranked:
+                ranked.append(mid)
+        return {
+            "valid": True,
+            "provider": "Google AI",
+            "protocol": "google",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta",
+            "models": ranked,
+            "best_model": ranked[0]
+        }
+    return None
 
-    # Modern production fallback candidates (gemini-2.5-flash, gemini-2.5-pro, gemini-1.5-flash)
-    if "pro" in req:
-        return ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-2.5-flash"]
-    elif "claude" in req or "thinking" in req:
-        return ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"]
-    elif "gpt" in req or "oss" in req:
-        return ["gemini-2.5-flash", "gemini-1.5-flash"]
-    return ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-pro"]
+
+async def _probe_anthropic_models(api_key: str) -> Optional[Dict[str, Any]]:
+    """Queries Anthropic's live /v1/models endpoint to discover available models for this key."""
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            res = await client.get(
+                "https://api.anthropic.com/v1/models",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01"
+                }
+            )
+            if res.status_code == 200:
+                data = res.json()
+                scored = []
+                for m in data.get("data", []):
+                    mid = (m.get("id") or "").strip()
+                    if not mid:
+                        continue
+                    scored.append((score_discovered_model(mid, m), mid))
+                if scored:
+                    scored.sort(key=lambda x: x[0], reverse=True)
+                    ranked = [mid for _, mid in scored]
+                    return {
+                        "valid": True,
+                        "provider": "Anthropic",
+                        "protocol": "anthropic",
+                        "base_url": "https://api.anthropic.com/v1",
+                        "models": ranked,
+                        "best_model": ranked[0]
+                    }
+    except Exception:
+        pass
+    return None
+
+
+async def _probe_openai_compat_models(
+    api_key: str,
+    provider_name: str,
+    base_url: str,
+    auth_verify_url: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Queries any OpenAI-compatible /models endpoint to discover available models for this key."""
+    excluded_terms = (
+        "embedding", "tts", "whisper", "dall-e", "moderation", "realtime",
+        "audio", "transcribe", "guard", "babbage", "davinci", "canary",
+        "search", "image", "vision-preview", "omni-moderation"
+    )
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            if auth_verify_url:
+                auth_res = await client.get(auth_verify_url, headers=headers)
+                if auth_res.status_code != 200:
+                    return None
+                auth_json = auth_res.json()
+                if not auth_json.get("data"):
+                    return None
+
+            res = await client.get(f"{base_url.rstrip('/')}/models", headers=headers)
+            if res.status_code == 200:
+                body = res.json()
+                items = body.get("data") if isinstance(body, dict) and "data" in body else (body if isinstance(body, list) else [])
+                scored = []
+                for m in items:
+                    if not isinstance(m, dict):
+                        continue
+                    mid = (m.get("id") or m.get("name") or "").strip()
+                    if not mid:
+                        continue
+                    m_low = mid.lower()
+                    if any(term in m_low for term in excluded_terms):
+                        continue
+                    scored.append((score_discovered_model(mid, m), mid))
+                if scored:
+                    scored.sort(key=lambda x: x[0], reverse=True)
+                    ranked = []
+                    for _, mid in scored:
+                        if mid not in ranked:
+                            ranked.append(mid)
+                    return {
+                        "valid": True,
+                        "provider": provider_name,
+                        "protocol": "openai_compat",
+                        "base_url": base_url.rstrip("/"),
+                        "models": ranked,
+                        "best_model": ranked[0]
+                    }
+    except Exception:
+        pass
+    return None
+
+
+async def discover_key_and_models(api_key: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """
+    Automatically detects which AI provider an API key belongs to by running live discovery requests,
+    retrieves all available models for that key, and ranks them to select the best model automatically.
+    Contains ZERO hardcoded model names.
+    """
+    clean_key = (api_key or "").strip()
+    if not clean_key:
+        return {
+            "valid": False,
+            "provider": None,
+            "protocol": None,
+            "base_url": None,
+            "models": [],
+            "best_model": None,
+            "error": "Empty API key"
+        }
+
+    key_hash = hashlib.sha256(clean_key.encode("utf-8")).hexdigest()
+    now = time.time()
+    if not force_refresh and key_hash in DISCOVERED_KEY_CACHE:
+        cached = DISCOVERED_KEY_CACHE[key_hash]
+        if now - cached.get("timestamp", 0) < 600:
+            return cached["data"]
+
+    # 1. Fast prefix-prioritized probe
+    result = None
+    if clean_key.startswith("AIza"):
+        result = await _probe_google_models(clean_key)
+    elif clean_key.startswith("sk-ant-"):
+        result = await _probe_anthropic_models(clean_key)
+    elif clean_key.startswith("gsk_"):
+        result = await _probe_openai_compat_models(clean_key, "Groq", "https://api.groq.com/openai/v1")
+    elif clean_key.startswith("sk-or-"):
+        result = await _probe_openai_compat_models(
+            clean_key, "OpenRouter", "https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1/auth/key"
+        )
+    elif clean_key.startswith("xai-"):
+        result = await _probe_openai_compat_models(clean_key, "xAI", "https://api.x.ai/v1")
+    elif clean_key.startswith("csk-"):
+        result = await _probe_openai_compat_models(clean_key, "Cerebras", "https://api.cerebras.ai/v1")
+
+    # 2. Universal parallel probe across all supported providers if prefix didn't resolve
+    if not result:
+        probes = [
+            _probe_google_models(clean_key),
+            _probe_openai_compat_models(clean_key, "OpenAI", "https://api.openai.com/v1"),
+            _probe_anthropic_models(clean_key),
+            _probe_openai_compat_models(clean_key, "Groq", "https://api.groq.com/openai/v1"),
+            _probe_openai_compat_models(clean_key, "DeepSeek", "https://api.deepseek.com"),
+            _probe_openai_compat_models(clean_key, "xAI", "https://api.x.ai/v1"),
+            _probe_openai_compat_models(clean_key, "Mistral", "https://api.mistral.ai/v1"),
+            _probe_openai_compat_models(clean_key, "Cerebras", "https://api.cerebras.ai/v1"),
+            _probe_openai_compat_models(
+                clean_key, "OpenRouter", "https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1/auth/key"
+            ),
+        ]
+        probe_results = await asyncio.gather(*probes, return_exceptions=True)
+        for pr in probe_results:
+            if isinstance(pr, dict) and pr.get("valid") and pr.get("models"):
+                result = pr
+                break
+
+    if result and result.get("valid"):
+        DISCOVERED_KEY_CACHE[key_hash] = {"timestamp": now, "data": result}
+        return result
+
+    return {
+        "valid": False,
+        "provider": None,
+        "protocol": None,
+        "base_url": None,
+        "models": [],
+        "best_model": None,
+        "error": "Could not authenticate API key or no compatible models found for this key."
+    }
+
 
 
 OLLAMA_TOOLS = [
@@ -1488,18 +1802,6 @@ def parse_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     return calls
 
 
-async def get_available_ollama_models() -> List[str]:
-    """Queries local Ollama tags endpoint for installed models."""
-    try:
-        async with httpx.AsyncClient(timeout=1.0) as client:
-            res = await client.get(f"{OLLAMA_API_BASE}/api/tags")
-            if res.status_code == 200:
-                tags = res.json()
-                return [m.get("name") for m in tags.get("models", []) if m.get("name")]
-    except Exception:
-        pass
-    return []
-
 
 def classify_prompt_intent(prompt: str, active_file: Optional[str] = None) -> str:
     """
@@ -1653,12 +1955,12 @@ def infer_operational_tool_calls(
 
 
 # -------------------------------------------------------------------------
-# 7. GOOGLE ANTIGRAVITY AUTONOMOUS AGENT STREAMING ENGINE
+# 7. UNIVERSAL AUTONOMOUS AI AGENT STREAMING ENGINE
 # -------------------------------------------------------------------------
-async def stream_antigravity_chat(
+async def stream_ai_chat(
     prompt: str,
     conversation_id: str,
-    model: str = "gemini-3.8-flash",
+    model: str = "auto",
     api_key: Optional[str] = None,
     context_code: Optional[str] = None,
     file_path: Optional[str] = None,
@@ -1669,8 +1971,8 @@ async def stream_antigravity_chat(
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Streams thoughts, autonomous tool execution steps, and response tokens in real-time.
-    Supports multi-turn self-correction (inspecting errors, rewriting files, and re-running).
-    Supports instant cancellation via cancel_ctx and interactive tool approval gates.
+    Automatically detects the provider and discovers all available models for any API key,
+    selecting the best available model dynamically with zero hardcoded model names.
     """
     global ACTIVE_AGENT_WORKSPACE, CURRENT_CANCEL_CTX
     ACTIVE_AGENT_WORKSPACE = target_dir or os.getcwd()
@@ -1679,7 +1981,8 @@ async def stream_antigravity_chat(
     effective_api_key = (
         api_key
         or os.environ.get("GEMINI_API_KEY")
-        or os.environ.get("ANTIGRAVITY_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("ANTHROPIC_API_KEY")
         or os.environ.get("GOOGLE_API_KEY")
         or ""
     ).strip()
@@ -1687,21 +1990,59 @@ async def stream_antigravity_chat(
     is_explicit_local = "ollama" in (model or "").lower() or "local" in (model or "").lower()
     intent = classify_prompt_intent(prompt, file_path)
 
+    # Discover provider and live available models if an API key is active
+    discovery: Optional[Dict[str, Any]] = None
+    if effective_api_key and not is_explicit_local:
+        yield {
+            "type": "step",
+            "step": "Auto-detecting API key & discovering available models...",
+            "status": "running"
+        }
+        discovery = await discover_key_and_models(effective_api_key)
+        if discovery.get("valid") and discovery.get("models"):
+            prov = discovery.get("provider", "Cloud AI")
+            best_m = discovery.get("best_model", "")
+            m_count = len(discovery.get("models", []))
+            yield {
+                "type": "key_discovered",
+                "provider": prov,
+                "best_model": best_m,
+                "model_count": m_count
+            }
+            yield {
+                "type": "step",
+                "step": f"Detected {prov} ({m_count} models available) · Selected {best_m}",
+                "status": "done"
+            }
+        else:
+            err_msg = (
+                "### API Key Verification Failed\n\n"
+                "Could not authenticate the configured API key or no compatible models were returned:\n\n"
+                f"```\n{discovery.get('error', 'Authentication failed')}\n```\n\n"
+                "Please check your API key in **Settings > AI** or switch to **Local AI**."
+            )
+            yield {"type": "token", "content": err_msg}
+            yield {"type": "step", "step": "API Key Error", "status": "done"}
+            yield {"type": "done", "content": err_msg, "refactor": None}
+            return
+
     # =========================================================================
     # STAGE 0: ZERO-LATENCY COGNITIVE INTENT FIREWALL (CONVERSE)
-    # Pure chitchat, greetings, and arithmetic bypass all tool and file overhead
     # =========================================================================
     if intent == "CONVERSE":
         conv_system = (
-            "You are Antigravity AI, the elite software engineer and coding assistant inside Neuron IDE. "
+            "You are Neuron AI, the elite software engineer and coding assistant inside Neuron IDE. "
             "You are articulate, polite, concise, and helpful. "
             "Answer the user conversationally and directly in markdown. "
             "Do NOT run shell commands, file tools, or inspections for general conversation."
         )
 
-        # Strategy A1: Native Conversational Stream via Google GenAI
-        if GENAI_SDK_AVAILABLE and effective_api_key and not is_explicit_local:
-            candidate_models = map_gemini_candidates(model)
+        # Strategy A1: Cloud API Conversational Stream (Any Discovered Provider)
+        if discovery and discovery.get("valid") and not is_explicit_local:
+            protocol = discovery.get("protocol")
+            base_url = discovery.get("base_url", "")
+            candidate_models = discovery.get("models", [])
+
             for cand_model in candidate_models:
                 if cancel_ctx and cancel_ctx.get("is_cancelled"):
                     yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
@@ -1713,96 +2054,165 @@ async def stream_antigravity_chat(
                         "step": f"Synthesizing response ({cand_model})...",
                         "status": "running"
                     }
-                    client = genai.Client(api_key=effective_api_key)
-                    config = genai_types.GenerateContentConfig(
-                        system_instruction=conv_system,
-                        temperature=0.7
-                    )
-                    stream_resp = await client.aio.models.generate_content_stream(
-                        model=cand_model,
-                        contents=prompt,
-                        config=config
-                    )
                     accumulated_text = ""
-                    async for chunk in stream_resp:
-                        if cancel_ctx and cancel_ctx.get("is_cancelled"):
-                            yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
-                            yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
-                            return
-                        c_text = chunk.text or ""
-                        if c_text:
-                            accumulated_text += c_text
-                            yield {"type": "token", "content": c_text}
 
-                    yield {"type": "step", "step": "Completed", "status": "done"}
-                    yield {"type": "done", "content": accumulated_text.strip(), "refactor": None}
-                    return
-                except Exception as genai_err:
-                    print(f"[DEBUG] Gemini converse fallback: {genai_err}")
-
-        # Strategy B1: Pure Conversational Stream via Local Ollama (Zero tools mounted)
-        available_models = await get_available_ollama_models()
-        ollama_model = DEFAULT_MODEL
-        if available_models:
-            if DEFAULT_MODEL in available_models:
-                ollama_model = DEFAULT_MODEL
-            elif any("qwen" in m.lower() for m in available_models):
-                ollama_model = next(m for m in available_models if "qwen" in m.lower())
-            elif any("coder" in m.lower() for m in available_models):
-                ollama_model = next(m for m in available_models if "coder" in m.lower())
-            else:
-                ollama_model = available_models[0]
-
-        yield {
-            "type": "step",
-            "step": f"Synthesizing response via local engine ({ollama_model})...",
-            "status": "running"
-        }
-
-        conv_messages = [
-            {"role": "system", "content": conv_system},
-            {"role": "user", "content": prompt}
-        ]
-        ollama_payload = {
-            "model": ollama_model,
-            "messages": conv_messages,
-            "stream": True,
-            "options": {
-                "temperature": 0.7,
-                "num_predict": 512
-            }
-        }
-
-        accumulated_text = ""
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=5.0)) as client:
-                async with client.stream("POST", f"{OLLAMA_API_BASE}/api/chat", json=ollama_payload) as response:
-                    if response.status_code == 200:
-                        async for line in response.aiter_lines():
+                    if protocol == "google" and GENAI_SDK_AVAILABLE:
+                        client = genai.Client(api_key=effective_api_key)
+                        config = genai_types.GenerateContentConfig(
+                            system_instruction=conv_system,
+                            temperature=0.7
+                        )
+                        stream_resp = await client.aio.models.generate_content_stream(
+                            model=cand_model,
+                            contents=prompt,
+                            config=config
+                        )
+                        async for chunk in stream_resp:
                             if cancel_ctx and cancel_ctx.get("is_cancelled"):
                                 yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
                                 yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
                                 return
-                            if line:
-                                try:
-                                    chunk = json.loads(line)
-                                    msg = chunk.get("message", {})
-                                    c_part = msg.get("content", "")
-                                    if c_part:
-                                        accumulated_text += c_part
-                                        yield {"type": "token", "content": c_part}
-                                    if chunk.get("done", False):
-                                        break
-                                except Exception:
-                                    continue
+                            c_text = chunk.text or ""
+                            if c_text:
+                                accumulated_text += c_text
+                                yield {"type": "token", "content": c_text}
 
+                    elif protocol == "openai_compat":
+                        headers = {
+                            "Authorization": f"Bearer {effective_api_key}",
+                            "Content-Type": "application/json"
+                        }
+                        payload = {
+                            "model": cand_model,
+                            "messages": [
+                                {"role": "system", "content": conv_system},
+                                {"role": "user", "content": prompt}
+                            ],
+                            "stream": True,
+                            "temperature": 0.7
+                        }
+                        async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=6.0)) as client:
+                            async with client.stream("POST", f"{base_url}/chat/completions", headers=headers, json=payload) as resp:
+                                if resp.status_code != 200:
+                                    continue
+                                async for line in resp.aiter_lines():
+                                    if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                        yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                        yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                        return
+                                    if not line or not line.startswith("data:"):
+                                        continue
+                                    data_str = line[5:].strip()
+                                    if data_str == "[DONE]":
+                                        break
+                                    try:
+                                        chunk_obj = json.loads(data_str)
+                                        choices = chunk_obj.get("choices") or []
+                                        if choices:
+                                            delta = choices[0].get("delta") or {}
+                                            c_text = delta.get("content") or ""
+                                            if c_text:
+                                                accumulated_text += c_text
+                                                yield {"type": "token", "content": c_text}
+                                    except Exception:
+                                        continue
+
+                    elif protocol == "anthropic":
+                        headers = {
+                            "x-api-key": effective_api_key,
+                            "anthropic-version": "2023-06-01",
+                            "content-type": "application/json"
+                        }
+                        payload = {
+                            "model": cand_model,
+                            "max_tokens": 1024,
+                            "system": conv_system,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "stream": True
+                        }
+                        async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=6.0)) as client:
+                            async with client.stream("POST", f"{base_url}/messages", headers=headers, json=payload) as resp:
+                                if resp.status_code != 200:
+                                    continue
+                                async for line in resp.aiter_lines():
+                                    if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                        yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                        yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                        return
+                                    if not line or not line.startswith("data:"):
+                                        continue
+                                    data_str = line[5:].strip()
+                                    try:
+                                        ev = json.loads(data_str)
+                                        if ev.get("type") == "content_block_delta":
+                                            c_text = (ev.get("delta") or {}).get("text") or ""
+                                            if c_text:
+                                                accumulated_text += c_text
+                                                yield {"type": "token", "content": c_text}
+                                    except Exception:
+                                        continue
+
+                    if accumulated_text.strip():
                         yield {"type": "step", "step": "Completed", "status": "done"}
                         yield {"type": "done", "content": accumulated_text.strip(), "refactor": None}
                         return
-        except Exception as ollama_err:
-            print(f"[DEBUG] Ollama converse error: {ollama_err}")
+                except Exception as conv_err:
+                    print(f"[DEBUG] Cloud converse candidate {cand_model} fallback: {conv_err}")
+                    continue
 
-        fallback_msg = "Hello! I am Antigravity AI inside Neuron IDE. How can I assist you with your code today?"
+        # Strategy B1: Pure Conversational Stream via Local Ollama
+        ollama_model = await resolve_best_ollama_model()
+        if ollama_model:
+            yield {
+                "type": "step",
+                "step": f"Synthesizing response via local engine ({ollama_model})...",
+                "status": "running"
+            }
+
+            conv_messages = [
+                {"role": "system", "content": conv_system},
+                {"role": "user", "content": prompt}
+            ]
+            ollama_payload = {
+                "model": ollama_model,
+                "messages": conv_messages,
+                "stream": True,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": 512
+                }
+            }
+
+            accumulated_text = ""
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=5.0)) as client:
+                    async with client.stream("POST", f"{OLLAMA_API_BASE}/api/chat", json=ollama_payload) as response:
+                        if response.status_code == 200:
+                            async for line in response.aiter_lines():
+                                if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                    yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                    yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                    return
+                                if line:
+                                    try:
+                                        chunk = json.loads(line)
+                                        msg = chunk.get("message", {})
+                                        c_part = msg.get("content", "")
+                                        if c_part:
+                                            accumulated_text += c_part
+                                            yield {"type": "token", "content": c_part}
+                                        if chunk.get("done", False):
+                                            break
+                                    except Exception:
+                                        continue
+
+                            yield {"type": "step", "step": "Completed", "status": "done"}
+                            yield {"type": "done", "content": accumulated_text.strip(), "refactor": None}
+                            return
+            except Exception as ollama_err:
+                print(f"[DEBUG] Ollama converse error: {ollama_err}")
+
+        fallback_msg = "Hello! I am Neuron AI. How can I assist you with your code today?"
         yield {"type": "token", "content": fallback_msg}
         yield {"type": "step", "step": "Completed", "status": "done"}
         yield {"type": "done", "content": fallback_msg, "refactor": None}
@@ -1825,7 +2235,6 @@ async def stream_antigravity_chat(
         "status": "done"
     }
 
-    # Selective file inspection note: Only emit if relevant to user instruction
     if file_path:
         clean_name = os.path.basename(file_path)
         is_relevant = (
@@ -1842,259 +2251,425 @@ async def stream_antigravity_chat(
 
     full_prompt = f"{ws_context}\n{project_rules}\n\n[USER INSTRUCTION]\n{prompt}".strip()
 
-    # --- STRATEGY A: NATIVE GOOGLE GENAI AUTONOMOUS AGENT WITH REAL-TIME STREAMING ---
-    if GENAI_SDK_AVAILABLE and effective_api_key and not is_explicit_local:
-        candidate_models = map_gemini_candidates(model)
-        for cand_model in candidate_models:
-            if cancel_ctx and cancel_ctx.get("is_cancelled"):
-                yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
-                yield {"type": "done", "content": "[Execution stopped by user]", "refactor": None}
-                return
+    # Helper for cleaning tool arguments and generating step labels
+    def clean_tool_arg(val: Any) -> Any:
+        if isinstance(val, str):
+            s = val.strip()
+            if s.startswith("{") and s.endswith("}"):
+                try:
+                    parsed = ast.literal_eval(s)
+                    if isinstance(parsed, dict):
+                        return clean_tool_arg(parsed)
+                except Exception:
+                    m = re.search(r"['\"](?:description|value|command|cmd)['\"]\s*:\s*['\"]([^'\"]+)['\"]", s)
+                    if m:
+                        return m.group(1).strip()
+            return val
+        if isinstance(val, dict):
+            desc = val.get("description", "")
+            if isinstance(desc, str) and desc.strip() and not desc.startswith("The exact shell") and not desc.startswith("Relative"):
+                return desc.strip()
+            for k_cand in ("value", "command", "file_path", "code_content", "cmd"):
+                if k_cand in val:
+                    return clean_tool_arg(val[k_cand])
+            if len(val) == 1:
+                return clean_tool_arg(list(val.values())[0])
+            return str(val)
+        return val
 
-            try:
-                yield {
-                    "type": "step",
-                    "step": f"Engaging autonomous agent ({cand_model})...",
-                    "status": "running"
-                }
+    def describe_tool_step(fn_name: str, fn_args: Dict[str, Any]) -> str:
+        def safe_str(val: Any, max_len: int = 50) -> str:
+            if isinstance(val, dict):
+                val = val.get("value") or val.get("command") or val.get("file_path") or str(val)
+            elif not isinstance(val, str):
+                val = str(val or "")
+            return val[:max_len]
 
-                client = genai.Client(api_key=effective_api_key)
-                tools_list = [
-                    tool_get_file_outline,
-                    tool_view_file,
-                    tool_grep_search,
-                    tool_find_by_name,
-                    tool_write_to_file,
-                    tool_replace_file_content,
-                    tool_run_command,
-                    tool_get_blast_radius,
-                    tool_update_memory
-                ]
+        if fn_name == "tool_run_command":
+            return f"Running: {safe_str(fn_args.get('command') or fn_args.get('cmd'))}"
+        elif fn_name == "tool_write_to_file":
+            return f"Creating {safe_str(fn_args.get('file_path'))}"
+        elif fn_name == "tool_replace_file_content":
+            return f"Modifying {safe_str(fn_args.get('file_path'))}"
+        elif fn_name == "tool_get_file_outline":
+            return f"Outline of {safe_str(fn_args.get('file_path'))}"
+        elif fn_name == "tool_view_file":
+            return f"Reading {safe_str(fn_args.get('file_path'))}"
+        elif fn_name == "tool_grep_search":
+            return f"Searching for '{safe_str(fn_args.get('query'), 30)}'"
+        elif fn_name == "tool_update_memory":
+            return f"Saving memory: '{safe_str(fn_args.get('rule_name'), 30)}'"
+        return f"Executing {fn_name}"
 
-                system_inst = (
-                    "You are Google Antigravity, an elite autonomous software engineering AI inside Neuron IDE. "
-                    f"You are working in project '{project_name}' at '{target_dir or os.getcwd()}'. "
-                    f"{project_rules}\n\n"
-                    "AUTONOMOUS AGENT DIRECTIVES:\n"
-                    "1. `tool_get_file_outline`: ALWAYS inspect the AST outline first before reading large files! Understand structure in 50-100 tokens.\n"
-                    "2. `tool_view_file`: Read specific lines of files once you locate the relevant functions from the outline or search.\n"
-                    "3. `tool_grep_search` / `tool_find_by_name`: Search codebase for symbols, functions, or files.\n"
-                    "4. `tool_write_to_file`: Create new scripts, test files, or overwrite files.\n"
-                    "5. `tool_replace_file_content`: Surgically edit specific code blocks with instant unified diffs.\n"
-                    "6. `tool_run_command`: Run Python scripts, unit tests, or install packages in the virtual environment.\n"
-                    "7. `tool_get_blast_radius`: Analyze AST dependency graph impact before modifying shared symbols.\n"
-                    "8. `tool_update_memory`: Persist developer rules and architectural conventions to '.neuron/memory.md'.\n"
-                    "9. SELF-CORRECTION MANDATE: When running tests or commands, if an error, traceback, or non-zero exit code occurs, "
-                    "DO NOT stop and ask the user! Read the traceback, inspect the code, fix the issue, and re-run to verify!\n"
-                    "10. Once satisfied, provide a clean architectural summary with code explanations."
-                )
+    # --- STRATEGY A: CLOUD API AUTONOMOUS AGENT (ANY DISCOVERED PROVIDER & LIVE MODELS) ---
+    if discovery and discovery.get("valid") and not is_explicit_local:
+        protocol = discovery.get("protocol")
+        base_url = discovery.get("base_url", "")
+        candidate_models = discovery.get("models", [])
 
-                config = genai_types.GenerateContentConfig(
-                    system_instruction=system_inst,
-                    temperature=0.2,
-                    tools=tools_list,
-                    automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True)
-                )
+        # A1: Google AI Protocol
+        if protocol == "google" and GENAI_SDK_AVAILABLE:
+            for cand_model in candidate_models:
+                if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                    yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                    yield {"type": "done", "content": "[Execution stopped by user]", "refactor": None}
+                    return
 
-                chat = client.aio.chats.create(model=cand_model, config=config)
-                
-                # Multi-Turn Self-Correction Agent Loop (up to 10 turns)
-                current_input: Any = full_prompt
-                accumulated_text = ""
-                max_turns = 10
-                tools_executed = False
+                try:
+                    yield {
+                        "type": "step",
+                        "step": f"Engaging autonomous agent ({cand_model})...",
+                        "status": "running"
+                    }
 
-                for turn in range(max_turns):
-                    if cancel_ctx and cancel_ctx.get("is_cancelled"):
-                        yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
-                        yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
-                        return
+                    client = genai.Client(api_key=effective_api_key)
+                    tools_list = [
+                        tool_get_file_outline,
+                        tool_view_file,
+                        tool_grep_search,
+                        tool_find_by_name,
+                        tool_write_to_file,
+                        tool_replace_file_content,
+                        tool_run_command,
+                        tool_get_blast_radius,
+                        tool_update_memory
+                    ]
 
-                    stream_resp = await chat.send_message_stream(current_input)
-                    turn_function_calls = []
-                    turn_text_chunks = []
+                    system_inst = (
+                        "You are Neuron AI, an elite autonomous software engineering assistant inside Neuron IDE. "
+                        f"You are working in project '{project_name}' at '{target_dir or os.getcwd()}'. "
+                        f"{project_rules}\n\n"
+                        "AUTONOMOUS AGENT DIRECTIVES:\n"
+                        "1. `tool_get_file_outline`: ALWAYS inspect the AST outline first before reading large files! Understand structure in 50-100 tokens.\n"
+                        "2. `tool_view_file`: Read specific lines of files once you locate the relevant functions from the outline or search.\n"
+                        "3. `tool_grep_search` / `tool_find_by_name`: Search codebase for symbols, functions, or files.\n"
+                        "4. `tool_write_to_file`: Create new scripts, test files, or overwrite files.\n"
+                        "5. `tool_replace_file_content`: Surgically edit specific code blocks with instant unified diffs.\n"
+                        "6. `tool_run_command`: Run Python scripts, unit tests, or install packages in the virtual environment.\n"
+                        "7. `tool_get_blast_radius`: Analyze AST dependency graph impact before modifying shared symbols.\n"
+                        "8. `tool_update_memory`: Persist developer rules and architectural conventions to '.neuron/memory.md'.\n"
+                        "9. SELF-CORRECTION MANDATE: When running tests or commands, if an error, traceback, or non-zero exit code occurs, "
+                        "DO NOT stop and ask the user! Read the traceback, inspect the code, fix the issue, and re-run to verify!\n"
+                        "10. Once satisfied, provide a clean architectural summary with code explanations."
+                    )
 
-                    async for chunk in stream_resp:
+                    config = genai_types.GenerateContentConfig(
+                        system_instruction=system_inst,
+                        temperature=0.2,
+                        tools=tools_list,
+                        automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True)
+                    )
+
+                    chat = client.aio.chats.create(model=cand_model, config=config)
+                    current_input: Any = full_prompt
+                    accumulated_text = ""
+                    max_turns = 10
+                    tools_executed = False
+
+                    for turn in range(max_turns):
                         if cancel_ctx and cancel_ctx.get("is_cancelled"):
                             yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
-                            yield {"type": "done", "content": accumulated_text + "".join(turn_text_chunks) + "\n\n[Stopped by user]", "refactor": None}
+                            yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
                             return
 
-                        chunk_text = ""
-                        try:
-                            chunk_text = chunk.text or ""
-                        except Exception:
+                        stream_resp = await chat.send_message_stream(current_input)
+                        turn_function_calls = []
+                        turn_text_chunks = []
+
+                        async for chunk in stream_resp:
+                            if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                yield {"type": "done", "content": accumulated_text + "".join(turn_text_chunks) + "\n\n[Stopped by user]", "refactor": None}
+                                return
+
                             chunk_text = ""
+                            try:
+                                chunk_text = chunk.text or ""
+                            except Exception:
+                                chunk_text = ""
 
-                        if chunk_text:
-                            turn_text_chunks.append(chunk_text)
-                            accumulated_text += chunk_text
-                            yield {"type": "token", "content": chunk_text}
+                            if chunk_text:
+                                turn_text_chunks.append(chunk_text)
+                                accumulated_text += chunk_text
+                                yield {"type": "token", "content": chunk_text}
 
-                        calls = getattr(chunk, "function_calls", None)
-                        if calls:
-                            turn_function_calls.extend(calls)
+                            calls = getattr(chunk, "function_calls", None)
+                            if calls:
+                                turn_function_calls.extend(calls)
 
-                    if turn_function_calls:
-                        tools_executed = True
-                        tool_responses = []
-                        for fc in turn_function_calls:
-                            fn_name = fc.name
-                            raw_args = dict(fc.args or {})
-                            def clean_arg(val: Any) -> Any:
-                                if isinstance(val, dict):
-                                    if "value" in val:
-                                        return clean_arg(val["value"])
-                                    if "command" in val:
-                                        return clean_arg(val["command"])
-                                    if "file_path" in val:
-                                        return clean_arg(val["file_path"])
-                                    if "code_content" in val:
-                                        return clean_arg(val["code_content"])
-                                    if "cmd" in val:
-                                        return clean_arg(val["cmd"])
-                                    if len(val) == 1:
-                                        return clean_arg(list(val.values())[0])
-                                    return str(val)
-                                return val
+                        if turn_function_calls:
+                            tools_executed = True
+                            tool_responses = []
+                            for fc in turn_function_calls:
+                                fn_name = fc.name
+                                raw_args = dict(fc.args or {})
+                                fn_args = {k: clean_tool_arg(v) for k, v in raw_args.items()}
+                                step_desc = describe_tool_step(fn_name, fn_args)
 
-                            fn_args = {k: clean_arg(v) for k, v in raw_args.items()}
+                                mutating_tools = {"tool_run_command", "tool_write_to_file", "tool_replace_file_content"}
+                                if approval_mode == "manual" and fn_name in mutating_tools and approval_handler:
+                                    yield {"type": "step", "step": f"Awaiting approval for {step_desc}...", "status": "running"}
+                                    try:
+                                        approved, feedback = await approval_handler(conversation_id, fn_name, fn_args, step_desc)
+                                    except Exception as err:
+                                        approved, feedback = False, str(err)
 
-                            def safe_str(val: Any, max_len: int = 50) -> str:
-                                if isinstance(val, dict):
-                                    val = val.get("value") or val.get("command") or val.get("file_path") or str(val)
-                                elif not isinstance(val, str):
-                                    val = str(val or "")
-                                return val[:max_len]
-                            
-                            # Real-time action step notification
-                            step_desc = f"Executing {fn_name}"
-                            if fn_name == "tool_run_command":
-                                step_desc = f"Running: {safe_str(fn_args.get('command') or fn_args.get('cmd'))}"
-                            elif fn_name == "tool_write_to_file":
-                                step_desc = f"Creating {safe_str(fn_args.get('file_path'))}"
-                            elif fn_name == "tool_replace_file_content":
-                                step_desc = f"Modifying {safe_str(fn_args.get('file_path'))}"
-                            elif fn_name == "tool_get_file_outline":
-                                step_desc = f"Outline of {safe_str(fn_args.get('file_path'))}"
-                            elif fn_name == "tool_view_file":
-                                step_desc = f"Reading {safe_str(fn_args.get('file_path'))} (lines {safe_str(fn_args.get('start_line', 1))}-{safe_str(fn_args.get('end_line', 120))})"
-                            elif fn_name == "tool_grep_search":
-                                step_desc = f"Searching for '{safe_str(fn_args.get('query'), 30)}'"
-                            elif fn_name == "tool_update_memory":
-                                step_desc = f"Saving memory: '{safe_str(fn_args.get('rule_name'), 30)}'"
+                                    if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                        yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                        yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                        return
 
-                            # Interactive Approval Gate for mutating actions in manual approval mode
-                            mutating_tools = {"tool_run_command", "tool_write_to_file", "tool_replace_file_content"}
-                            if approval_mode == "manual" and fn_name in mutating_tools and approval_handler:
-                                yield {"type": "step", "step": f"Awaiting approval for {step_desc}...", "status": "running"}
-                                try:
-                                    approved, feedback = await approval_handler(conversation_id, fn_name, fn_args, step_desc)
-                                except Exception as err:
-                                    approved, feedback = False, str(err)
+                                    if not approved:
+                                        rejection_note = f"[Action rejected by user. Feedback: {feedback or 'User denied approval. Please provide an alternative plan.'}]"
+                                        yield {"type": "step", "step": f"Rejected: {step_desc}", "status": "done"}
+                                        tool_responses.append(
+                                            genai_types.Part.from_function_response(
+                                                name=fn_name,
+                                                response={"result": rejection_note}
+                                            )
+                                        )
+                                        continue
 
+                                yield {"type": "step", "step": f"{step_desc}...", "status": "running"}
+
+                                tool_fn = TOOL_DISPATCH.get(fn_name)
+                                if tool_fn:
+                                    raw_res = await asyncio.to_thread(tool_fn, **fn_args)
+                                else:
+                                    raw_res = f"[Error: Tool {fn_name} not found]"
+
+                                is_failure = "Error" in str(raw_res) or "Exit Code: 1" in str(raw_res) or "Exit Code: 2" in str(raw_res)
+                                completion_status = f"{step_desc} (Self-correcting...)" if is_failure else step_desc
+                                yield {"type": "step", "step": completion_status, "status": "done"}
+
+                                tool_responses.append(
+                                    genai_types.Part.from_function_response(
+                                        name=fn_name,
+                                        response={"result": str(raw_res)}
+                                    )
+                                )
+
+                            current_input = tool_responses
+                        else:
+                            break
+
+                    refactor = extract_refactor_proposal(accumulated_text, file_path, target_dir, user_prompt=prompt, tools_executed=tools_executed)
+                    yield {"type": "step", "step": "Completed", "status": "done"}
+                    yield {"type": "done", "content": accumulated_text, "refactor": refactor}
+                    return
+
+                except Exception as genai_err:
+                    print(f"[DEBUG] Google candidate {cand_model} exception: {genai_err}")
+                    # Automatically try next discovered live model if quota/rate-limit/unsupported/not-found
+                    continue
+
+        # A2: OpenAI-Compatible & Anthropic Protocols (OpenAI, Groq, OpenRouter, DeepSeek, xAI, Mistral, Cerebras, Anthropic)
+        elif protocol in ("openai_compat", "anthropic"):
+            system_inst = (
+                "You are Neuron AI, an elite autonomous software engineering assistant inside Neuron IDE. "
+                f"You are working in project '{project_name}' at '{target_dir or os.getcwd()}'. "
+                f"{project_rules}\n\n"
+                "AUTONOMOUS AGENT DIRECTIVES:\n"
+                "1. You have DIRECT EXECUTION TOOLS. Call the appropriate tool to inspect, create, edit, or run files.\n"
+                "2. `tool_write_to_file`: Create new scripts or overwrite files on disk.\n"
+                "3. `tool_run_command`: Run Python scripts, terminal commands, or install packages.\n"
+                "4. `tool_replace_file_content`: Surgically edit specific code blocks.\n"
+                "5. `tool_view_file` / `tool_get_file_outline`: Inspect files and code outlines.\n"
+                "6. `tool_grep_search` / `tool_find_by_name`: Search codebase symbols and filenames.\n"
+                "7. `tool_update_memory`: Save project conventions to .neuron/memory.md.\n"
+                "8. FORMAT REQUIREMENT: To call a tool, respond with ONLY a JSON code block:\n"
+                "```json\n"
+                '{"name": "tool_name", "arguments": {"param_key": "param_value"}}\n'
+                "```\n"
+                "9. Once you receive tool observation output, analyze it and provide a clean architectural summary or explanation."
+            )
+
+            for cand_model in candidate_models:
+                if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                    yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                    yield {"type": "done", "content": "[Execution stopped by user]", "refactor": None}
+                    return
+
+                try:
+                    yield {
+                        "type": "step",
+                        "step": f"Engaging autonomous agent ({cand_model})...",
+                        "status": "running"
+                    }
+
+                    messages = [
+                        {"role": "system", "content": system_inst},
+                        {"role": "user", "content": full_prompt}
+                    ]
+                    accumulated_text = ""
+                    tools_executed = False
+                    prev_turn_failed = False
+                    model_succeeded = False
+
+                    for turn in range(8):
+                        if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                            yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                            yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                            return
+
+                        turn_content_chunks = []
+
+                        if protocol == "openai_compat":
+                            headers = {
+                                "Authorization": f"Bearer {effective_api_key}",
+                                "Content-Type": "application/json"
+                            }
+                            payload = {
+                                "model": cand_model,
+                                "messages": messages,
+                                "stream": True,
+                                "temperature": 0.2
+                            }
+                            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=6.0)) as client:
+                                async with client.stream("POST", f"{base_url}/chat/completions", headers=headers, json=payload) as resp:
+                                    if resp.status_code != 200:
+                                        raise RuntimeError(f"HTTP {resp.status_code}")
+                                    model_succeeded = True
+                                    async for line in resp.aiter_lines():
+                                        if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                            yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                            yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                            return
+                                        if not line or not line.startswith("data:"):
+                                            continue
+                                        data_str = line[5:].strip()
+                                        if data_str == "[DONE]":
+                                            break
+                                        try:
+                                            chunk_obj = json.loads(data_str)
+                                            choices = chunk_obj.get("choices") or []
+                                            if choices:
+                                                delta = choices[0].get("delta") or {}
+                                                c_part = delta.get("content") or ""
+                                                if c_part:
+                                                    turn_content_chunks.append(c_part)
+                                        except Exception:
+                                            continue
+
+                        elif protocol == "anthropic":
+                            headers = {
+                                "x-api-key": effective_api_key,
+                                "anthropic-version": "2023-06-01",
+                                "content-type": "application/json"
+                            }
+                            anth_messages = [m for m in messages if m["role"] != "system"]
+                            payload = {
+                                "model": cand_model,
+                                "max_tokens": 4096,
+                                "system": system_inst,
+                                "messages": anth_messages,
+                                "stream": True,
+                                "temperature": 0.2
+                            }
+                            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=6.0)) as client:
+                                async with client.stream("POST", f"{base_url}/messages", headers=headers, json=payload) as resp:
+                                    if resp.status_code != 200:
+                                        raise RuntimeError(f"HTTP {resp.status_code}")
+                                    model_succeeded = True
+                                    async for line in resp.aiter_lines():
+                                        if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                            yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                            yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                            return
+                                        if not line or not line.startswith("data:"):
+                                            continue
+                                        data_str = line[5:].strip()
+                                        try:
+                                            ev = json.loads(data_str)
+                                            if ev.get("type") == "content_block_delta":
+                                                c_part = (ev.get("delta") or {}).get("text") or ""
+                                                if c_part:
+                                                    turn_content_chunks.append(c_part)
+                                        except Exception:
+                                            continue
+
+                        turn_text = "".join(turn_content_chunks)
+                        detected_calls = extract_json_tool_calls(turn_text)
+                        if not detected_calls:
+                            detected_calls = infer_operational_tool_calls(
+                                prompt, turn_text, file_path, target_dir, turn=turn, prev_failed=prev_turn_failed
+                            )
+
+                        if detected_calls:
+                            tools_executed = True
+                            for call in detected_calls:
                                 if cancel_ctx and cancel_ctx.get("is_cancelled"):
                                     yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
                                     yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
                                     return
 
-                                if not approved:
-                                    rejection_note = f"[Action rejected by user. Feedback: {feedback or 'User denied approval. Please provide an alternative plan.'}]"
-                                    yield {"type": "step", "step": f"Rejected: {step_desc}", "status": "done"}
-                                    tool_responses.append(
-                                        genai_types.Part.from_function_response(
-                                            name=fn_name,
-                                            response={"result": rejection_note}
-                                        )
+                                fn_name = call.get("name", "")
+                                raw_fn_args = call.get("args") or {}
+                                fn_args = {k: clean_tool_arg(v) for k, v in (raw_fn_args or {}).items()}
+                                step_desc = describe_tool_step(fn_name, fn_args)
+
+                                mutating_tools = {"tool_run_command", "tool_write_to_file", "tool_replace_file_content"}
+                                if approval_mode == "manual" and fn_name in mutating_tools and approval_handler:
+                                    yield {"type": "step", "step": f"Awaiting approval for {step_desc}...", "status": "running"}
+                                    try:
+                                        approved, feedback = await approval_handler(conversation_id, fn_name, fn_args, step_desc)
+                                    except Exception as err:
+                                        approved, feedback = False, str(err)
+
+                                    if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                        yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                        yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                        return
+
+                                    if not approved:
+                                        rejection_note = f"[Action rejected by user. Feedback: {feedback or 'User denied approval. Please provide an alternative plan.'}]"
+                                        yield {"type": "step", "step": f"Rejected: {step_desc}", "status": "done"}
+                                        messages.append({"role": "assistant", "content": json.dumps({"name": fn_name, "arguments": fn_args})})
+                                        messages.append({"role": "user", "content": rejection_note})
+                                        continue
+
+                                yield {"type": "step", "step": f"{step_desc}...", "status": "running"}
+                                tool_fn = TOOL_DISPATCH.get(fn_name)
+                                if tool_fn:
+                                    raw_res = await asyncio.to_thread(tool_fn, **fn_args)
+                                else:
+                                    raw_res = f"[Error: Tool {fn_name} not found]"
+
+                                is_failure = "Error" in str(raw_res) or "Exit Code: 1" in str(raw_res) or "Exit Code: 2" in str(raw_res)
+                                prev_turn_failed = is_failure
+                                completion_status = f"{step_desc} (Self-correcting...)" if is_failure else step_desc
+                                yield {"type": "step", "step": completion_status, "status": "done"}
+
+                                messages.append({"role": "assistant", "content": json.dumps({"name": fn_name, "arguments": fn_args})})
+                                messages.append({
+                                    "role": "user",
+                                    "content": (
+                                        f"[Observation from {fn_name} with arguments {json.dumps(fn_args)}]:\n"
+                                        f"{raw_res}\n\n"
+                                        "Analyze the execution result above. If an error occurred, diagnose and call the appropriate tool to fix it. "
+                                        "If the operation succeeded, explain the output clearly and concisely to the user without calling further tools."
                                     )
-                                    continue
+                                })
+                        else:
+                            accumulated_text += turn_text
+                            yield {"type": "token", "content": turn_text}
+                            break
 
-                            yield {"type": "step", "step": f"{step_desc}...", "status": "running"}
+                    if model_succeeded:
+                        final_text = accumulated_text.strip()
+                        refactor = extract_refactor_proposal(final_text, file_path, target_dir, user_prompt=prompt, tools_executed=tools_executed)
+                        yield {"type": "step", "step": "Completed", "status": "done"}
+                        yield {"type": "done", "content": final_text, "refactor": refactor}
+                        return
+                except Exception as compat_err:
+                    print(f"[DEBUG] Provider candidate {cand_model} exception: {compat_err}")
+                    continue
 
-                            # Execute tool
-                            tool_fn = TOOL_DISPATCH.get(fn_name)
-                            if tool_fn:
-                                raw_res = await asyncio.to_thread(tool_fn, **fn_args)
-                            else:
-                                raw_res = f"[Error: Tool {fn_name} not found]"
-
-                            # Report completion
-                            is_failure = "Error" in str(raw_res) or "Exit Code: 1" in str(raw_res) or "Exit Code: 2" in str(raw_res)
-                            completion_status = f"{step_desc} (Self-correcting...)" if is_failure else step_desc
-                            yield {"type": "step", "step": completion_status, "status": "done"}
-
-                            tool_responses.append(
-                                genai_types.Part.from_function_response(
-                                    name=fn_name,
-                                    response={"result": str(raw_res)}
-                                )
-                            )
-
-                        current_input = tool_responses
-                    else:
-                        # Agent has completed all tool calls and synthesized final answer
-                        break
-
-                refactor = extract_refactor_proposal(accumulated_text, file_path, target_dir, user_prompt=prompt, tools_executed=tools_executed)
-                yield {"type": "step", "step": "Completed", "status": "done"}
-                yield {"type": "done", "content": accumulated_text, "refactor": refactor}
-                return
-
-            except Exception as genai_err:
-                print(f"[DEBUG] Google GenAI candidate {cand_model} exception: {genai_err}")
-                err_str = str(genai_err).lower()
-                if "404" in err_str or "not found" in err_str:
-                    continue  # Try next model candidate
-                if "api_key" in err_str or "400" in err_str or "invalid" in err_str:
-                    key_err_msg = (
-                        "### Invalid Gemini API Key\n\n"
-                        "The API key configured in **Settings > AI & Models** was rejected by Google GenAI:\n\n"
-                        f"```\n{str(genai_err)[:350]}\n```\n\n"
-                        "Please verify your key at [Google AI Studio](https://aistudio.google.com/app/apikey) and re-enter it in **Settings > AI & Models**."
-                    )
-                    yield {"type": "token", "content": key_err_msg}
-                    yield {"type": "step", "step": "API Key Authentication Error", "status": "done"}
-                    yield {"type": "done", "content": key_err_msg, "refactor": None}
-                    return
-
-                yield {
-                    "type": "thought",
-                    "content": f"Frontier model alert: {str(genai_err)}. Falling back to local neural engine..."
-                }
-                break
-
-    # --- STRATEGY B: LOCAL OLLAMA RESILIENT FALLBACK WITH FAST PROBE ---
-    ollama_available = False
-    available_ollama_models = []
-    try:
-        async with httpx.AsyncClient(timeout=1.0) as test_client:
-            res = await test_client.get(f"{OLLAMA_API_BASE}/api/tags")
-            if res.status_code == 200:
-                ollama_available = True
-                tags_data = res.json()
-                available_ollama_models = [
-                    m.get("name") for m in tags_data.get("models", []) if m.get("name")
-                ]
-    except Exception:
-        ollama_available = False
-
-    if ollama_available:
-        # Dynamically select best available model from Ollama tags
-        ollama_model = DEFAULT_MODEL
-        if available_ollama_models:
-            if DEFAULT_MODEL in available_ollama_models:
-                ollama_model = DEFAULT_MODEL
-            elif any("qwen" in m.lower() for m in available_ollama_models):
-                ollama_model = next(m for m in available_ollama_models if "qwen" in m.lower())
-            elif any("coder" in m.lower() for m in available_ollama_models):
-                ollama_model = next(m for m in available_ollama_models if "coder" in m.lower())
-            elif any("llama" in m.lower() for m in available_ollama_models):
-                ollama_model = next(m for m in available_ollama_models if "llama" in m.lower())
-            else:
-                ollama_model = available_ollama_models[0]
-
+    # --- STRATEGY B: LOCAL OLLAMA ENGINE (DYNAMICALLY DISCOVERED MODEL) ---
+    ollama_model = await resolve_best_ollama_model()
+    if ollama_model:
         system_inst = (
-            "You are Google Antigravity, an elite autonomous software engineering AI inside Neuron IDE. "
+            "You are Neuron AI, an elite autonomous software engineering assistant inside Neuron IDE. "
             f"You are working in project '{project_name}' at '{target_dir or os.getcwd()}'. "
             f"{project_rules}\n\n"
             "AUTONOMOUS AGENT DIRECTIVES:\n"
@@ -2128,13 +2703,6 @@ async def stream_antigravity_chat(
                 "step": f"Synthesizing response via local engine ({ollama_model})...",
                 "status": "running"
             }
-            if not effective_api_key and not is_explicit_local:
-                notice = (
-                    "*[Notice: Antigravity API key not configured. Streaming via local Ollama. "
-                    "Enter your Gemini API key in Settings > AI & Models to enable Gemini 3.8 / Claude Thinking models with full autonomous tools.]*\n\n"
-                )
-                accumulated_text += notice
-                yield {"type": "token", "content": notice}
 
             for turn in range(max_turns):
                 if cancel_ctx and cancel_ctx.get("is_cancelled"):
@@ -2182,7 +2750,6 @@ async def stream_antigravity_chat(
 
                 turn_text = "".join(turn_content_chunks)
 
-                # Parse tool calls from all sources
                 detected_calls = []
                 for tc in turn_tool_calls:
                     fn = tc.get("function", {})
@@ -2190,6 +2757,9 @@ async def stream_antigravity_chat(
                     args = fn.get("arguments", {})
                     if name:
                         detected_calls.append({"name": name, "args": args})
+
+                if not detected_calls:
+                    detected_calls = extract_json_tool_calls(turn_text)
 
                 if not detected_calls:
                     detected_calls = infer_operational_tool_calls(
@@ -2206,67 +2776,9 @@ async def stream_antigravity_chat(
 
                         fn_name = call.get("name", "")
                         raw_fn_args = call.get("args") or {}
+                        fn_args = {k: clean_tool_arg(v) for k, v in (raw_fn_args or {}).items()}
+                        step_desc = describe_tool_step(fn_name, fn_args)
 
-                        def clean_arg(val: Any) -> Any:
-                            if isinstance(val, str):
-                                s = val.strip()
-                                if s.startswith("{") and s.endswith("}"):
-                                    try:
-                                        import ast
-                                        parsed = ast.literal_eval(s)
-                                        if isinstance(parsed, dict):
-                                            return clean_arg(parsed)
-                                    except Exception:
-                                        m = re.search(r"['\"](?:description|value|command|cmd)['\"]\s*:\s*['\"]([^'\"]+)['\"]", s)
-                                        if m:
-                                            return m.group(1).strip()
-                                return val
-                            if isinstance(val, dict):
-                                desc = val.get("description", "")
-                                if isinstance(desc, str) and desc.strip() and not desc.startswith("The exact shell") and not desc.startswith("Relative"):
-                                    return desc.strip()
-                                if "value" in val:
-                                    return clean_arg(val["value"])
-                                if "command" in val:
-                                    return clean_arg(val["command"])
-                                if "file_path" in val:
-                                    return clean_arg(val["file_path"])
-                                if "code_content" in val:
-                                    return clean_arg(val["code_content"])
-                                if "cmd" in val:
-                                    return clean_arg(val["cmd"])
-                                if len(val) == 1:
-                                    return clean_arg(list(val.values())[0])
-                                return str(val)
-                            return val
-
-                        fn_args = {k: clean_arg(v) for k, v in (raw_fn_args or {}).items()}
-
-                        def safe_str(val: Any, max_len: int = 50) -> str:
-                            if isinstance(val, dict):
-                                val = val.get("value") or val.get("command") or val.get("file_path") or str(val)
-                            elif not isinstance(val, str):
-                                val = str(val or "")
-                            return val[:max_len]
-
-                        # Action step description
-                        step_desc = f"Executing {fn_name}"
-                        if fn_name == "tool_run_command":
-                            step_desc = f"Running: {safe_str(fn_args.get('command') or fn_args.get('cmd'))}"
-                        elif fn_name == "tool_write_to_file":
-                            step_desc = f"Creating {safe_str(fn_args.get('file_path'))}"
-                        elif fn_name == "tool_replace_file_content":
-                            step_desc = f"Modifying {safe_str(fn_args.get('file_path'))}"
-                        elif fn_name == "tool_get_file_outline":
-                            step_desc = f"Outline of {safe_str(fn_args.get('file_path'))}"
-                        elif fn_name == "tool_view_file":
-                            step_desc = f"Reading {safe_str(fn_args.get('file_path'))}"
-                        elif fn_name == "tool_grep_search":
-                            step_desc = f"Searching for '{safe_str(fn_args.get('query'), 30)}'"
-                        elif fn_name == "tool_update_memory":
-                            step_desc = f"Saving memory: '{safe_str(fn_args.get('rule_name'), 30)}'"
-
-                        # Interactive Approval Gate for mutating tools in manual approval mode
                         mutating_tools = {"tool_run_command", "tool_write_to_file", "tool_replace_file_content"}
                         if approval_mode == "manual" and fn_name in mutating_tools and approval_handler:
                             yield {"type": "step", "step": f"Awaiting approval for {step_desc}...", "status": "running"}
@@ -2320,7 +2832,6 @@ async def stream_antigravity_chat(
                             )
                         })
                 else:
-                    # Model has finished executing tools and synthesized its final answer
                     accumulated_text += turn_text
                     yield {"type": "token", "content": turn_text}
                     break
@@ -2337,10 +2848,10 @@ async def stream_antigravity_chat(
 
     # --- STRATEGY C: GRACEFUL DIAGNOSTIC GUIDANCE ---
     guidance = (
-        "### Google Antigravity Setup Required\n\n"
-        "To enable legendary autonomous execution (`Gemini 3.8 Flash`, `Claude Sonnet 4.6`, `GPT-OSS 120B`), "
-        "please configure your **Gemini / Antigravity API Key** in **Settings > AI & Models**.\n\n"
-        "- Alternatively, ensure your local **Ollama** server is running on `http://127.0.0.1:11434`."
+        "### AI Setup Required\n\n"
+        "To enable autonomous AI execution, please add an **API Key** in **Settings > AI**.\n\n"
+        "- Neuron automatically detects your key's provider and selects the best available model.\n"
+        "- Alternatively, ensure your local **Ollama** server is running on `http://127.0.0.1:11434` with at least one model installed."
     )
     yield {"type": "token", "content": guidance}
     yield {"type": "step", "step": "Setup Required", "status": "done"}

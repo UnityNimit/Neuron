@@ -23,9 +23,10 @@ from services.ai_service import (
     create_conversation,
     update_conversation,
     delete_conversation,
-    stream_antigravity_chat,
+    stream_ai_chat,
     apply_refactor_code,
-    rollback_all_snapshots
+    rollback_all_snapshots,
+    discover_key_and_models
 )
 from services.file_service import (
     create_item, delete_item, edit_code, move_item, 
@@ -720,7 +721,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await safe_send_json(websocket, {"event": "GIT_GRAPH_DATA", "payload": graph})
 
             # -----------------------------------------------------------------
-            # 10. GOOGLE ANTIGRAVITY AGENT & MULTI-SESSION STUDIO
+            # 10. AI AGENT & MULTI-SESSION STUDIO
             # -----------------------------------------------------------------
             elif evt == "AI_LIST_CONVERSATIONS":
                 convs = await asyncio.to_thread(load_conversations, AppState.TARGET_DIR)
@@ -731,7 +732,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif evt == "AI_CREATE_CONVERSATION":
                 title = message.get("title", "New Conversation")
-                model = message.get("model", "gemini-3.8-flash")
+                model = message.get("model", "auto")
                 project = os.path.basename(AppState.TARGET_DIR) if AppState.TARGET_DIR else "Neuron"
                 new_conv = await asyncio.to_thread(
                     create_conversation, title, project, model, AppState.TARGET_DIR
@@ -781,12 +782,27 @@ async def websocket_endpoint(websocket: WebSocket):
                     "payload": all_convs
                 })
 
+            elif evt == "AI_DISCOVER_KEY":
+                key_id = message.get("key_id", "")
+                api_key_str = message.get("api_key", "")
+                discovery = await discover_key_and_models(api_key_str, force_refresh=True)
+                await safe_send_json(websocket, {
+                    "event": "AI_KEY_DISCOVERED",
+                    "key_id": key_id,
+                    "valid": discovery.get("valid", False),
+                    "provider": discovery.get("provider"),
+                    "best_model": discovery.get("best_model"),
+                    "model_count": len(discovery.get("models", [])),
+                    "error": discovery.get("error")
+                })
+
             elif evt == "AI_CHAT_STREAM":
                 try:
                     prompt = message.get("prompt", "")
                     conversation_id = message.get("conversation_id", f"conv_{int(time.time() * 1000)}")
-                    model = message.get("model", "gemini-3.8-flash")
+                    model = message.get("model", "auto")
                     api_key = message.get("api_key")
+                    key_id = message.get("key_id", "")
                     approval_mode = message.get("approval_mode", "auto")
                     context_code = message.get("context_code")
                     file_path = message.get("file_path") or AppState.ACTIVE_FILE
@@ -802,7 +818,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     current_messages = list(conv.get("messages", [])) if conv else []
                     current_messages.append(user_msg)
                     conv_title = conv.get("title") if conv else None
-                    if not conv_title or conv_title in {"New Conversation", "Welcome to Antigravity Studio"}:
+                    if not conv_title or conv_title in {"New Conversation", "Welcome to AI", "AI"}:
                         conv_title = prompt[:32]
                     await asyncio.to_thread(
                         update_conversation, conversation_id, current_messages, conv_title, model, AppState.TARGET_DIR
@@ -856,7 +872,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             ACTIVE_AI_APPROVALS.pop(c_id, None)
 
                     try:
-                        async for chunk in stream_antigravity_chat(
+                        async for chunk in stream_ai_chat(
                             prompt=prompt,
                             conversation_id=conversation_id,
                             model=model,
@@ -869,7 +885,16 @@ async def websocket_endpoint(websocket: WebSocket):
                             approval_handler=approval_handler
                         ):
                             chunk_type = chunk.get("type")
-                            if chunk_type == "step":
+                            if chunk_type == "key_discovered":
+                                await safe_send_to_active(websocket, {
+                                    "event": "AI_KEY_DISCOVERED",
+                                    "key_id": key_id,
+                                    "valid": True,
+                                    "provider": chunk.get("provider"),
+                                    "best_model": chunk.get("best_model"),
+                                    "model_count": chunk.get("model_count", 0)
+                                })
+                            elif chunk_type == "step":
                                 step_name = chunk.get("step", "")
                                 status = chunk.get("status", "running")
                                 collected_steps.append({"step": step_name, "status": status})

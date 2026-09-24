@@ -5,7 +5,7 @@ import ScrambledText from '../components/ScrambledText';
 import Footer from '../components/Footer';
 import NeuronHeroEngine from '../components/graph/NeuronHeroEngine';
 import SpatialSnippetsShowcase from '../components/showcase/SpatialSnippetsShowcase';
-import AntigravityAgentShowcase from '../components/showcase/AntigravityAgentShowcase';
+import AiAgentShowcase from '../components/showcase/AiAgentShowcase';
 import NeuronThemeShowcase from '../components/showcase/NeuronThemeShowcase';
 import { ScrollReveal, ScrollWriteHeading } from '../components/ScrollReveal';
 import { useLanguage } from '../context/LanguageContext';
@@ -189,7 +189,7 @@ export default function Home() {
           {/* AI INTEGRATION SHOWCASE                                                   */}
           {/* ========================================================================= */}
           <ScrollReveal>
-            <AntigravityAgentShowcase />
+            <AiAgentShowcase />
           </ScrollReveal>
 
           {/* ========================================================================= */}

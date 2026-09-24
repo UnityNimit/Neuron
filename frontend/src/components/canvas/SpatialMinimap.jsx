@@ -1,79 +1,146 @@
 // src/components/canvas/SpatialMinimap.jsx
-import React, { useMemo } from 'react';
+import React, { useEffect, useRef } from 'react';
+
+const MINIMAP_WIDTH = 136;
+const MINIMAP_HEIGHT = 84;
+const PADDING_PX = 8;
 
 export default function SpatialMinimap({ nodes = [], simDataRef }) {
-  // Compute bounds and scaled positions of celestial nodes
-  const radarNodes = useMemo(() => {
-    const rawNodes = simDataRef?.current?.nodes || nodes;
-    if (!rawNodes || rawNodes.length === 0) return [];
+  const canvasRef = useRef(null);
+  const fallbackNodesRef = useRef(nodes);
 
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    rawNodes.forEach(n => {
-      const x = n.x ?? 0;
-      const y = n.y ?? 0;
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-    });
+  useEffect(() => {
+    fallbackNodesRef.current = nodes;
+  }, [nodes]);
 
-    const padding = 100;
-    minX -= padding;
-    maxX += padding;
-    minY -= padding;
-    maxY += padding;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    const spanX = Math.max(maxX - minX, 1);
-    const spanY = Math.max(maxY - minY, 1);
+    let animFrameId;
+    let isMounted = true;
 
-    const svgWidth = 112;
-    const svgHeight = 64;
+    const renderFrame = () => {
+      if (!isMounted) return;
 
-    return rawNodes.slice(0, 150).map(n => {
-      const isFolder = n.data?.nodeType === 'folder';
-      const isFile = n.data?.nodeType === 'file';
-      const isHighRisk = n.data?.risk === 'high';
+      const dpr = window.devicePixelRatio || 1;
+      const targetW = Math.floor(MINIMAP_WIDTH * dpr);
+      const targetH = Math.floor(MINIMAP_HEIGHT * dpr);
 
-      let color = '#a855f7';
-      if (isHighRisk) color = '#ef4444';
-      else if (isFolder) color = '#3b82f6';
-      else if (isFile) color = '#eab308';
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
 
-      const normX = ((n.x ?? 0) - minX) / spanX;
-      const normY = ((n.y ?? 0) - minY) / spanY;
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
 
-      return {
-        id: n.id,
-        cx: 8 + normX * svgWidth,
-        cy: 6 + normY * svgHeight,
-        r: isFolder ? 2.5 : isFile ? 1.8 : 1.2,
-        color
-      };
-    });
-  }, [nodes, simDataRef]);
+      const rawNodes = simDataRef?.current?.nodes?.length
+        ? simDataRef.current.nodes
+        : fallbackNodesRef.current;
+
+      if (rawNodes && rawNodes.length > 0) {
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        for (let i = 0; i < rawNodes.length; i++) {
+          const n = rawNodes[i];
+          const x = typeof n.x === 'number' && !isNaN(n.x) ? n.x : 0;
+          const y = typeof n.y === 'number' && !isNaN(n.y) ? n.y : 0;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+
+        const worldPad = 60;
+        minX -= worldPad;
+        maxX += worldPad;
+        minY -= worldPad;
+        maxY += worldPad;
+
+        const spanX = Math.max(maxX - minX, 1);
+        const spanY = Math.max(maxY - minY, 1);
+
+        const drawW = MINIMAP_WIDTH - PADDING_PX * 2;
+        const drawH = MINIMAP_HEIGHT - PADDING_PX * 2;
+
+        // Preserve aspect ratio and center inside minimap
+        const scale = Math.min(drawW / spanX, drawH / spanY);
+        const offsetX = PADDING_PX + (drawW - spanX * scale) * 0.5;
+        const offsetY = PADDING_PX + (drawH - spanY * scale) * 0.5;
+
+        for (let i = 0; i < rawNodes.length; i++) {
+          const n = rawNodes[i];
+          const nx = typeof n.x === 'number' && !isNaN(n.x) ? n.x : 0;
+          const ny = typeof n.y === 'number' && !isNaN(n.y) ? n.y : 0;
+
+          const cx = offsetX + (nx - minX) * scale;
+          const cy = offsetY + (ny - minY) * scale;
+
+          const nodeType = n.data?.nodeType;
+          const risk = n.data?.risk;
+
+          let color = '#8b5cf6'; // Function
+          let r = 0.75;
+
+          if (nodeType === 'folder') {
+            color = '#e4ef61';
+            r = 1.35;
+          } else if (nodeType === 'file') {
+            color = '#3b82f6';
+            r = 1.0;
+          }
+
+          if (risk === 'high') {
+            color = '#ef4444';
+          } else if (risk === 'medium') {
+            color = '#f59e0b';
+          }
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+      animFrameId = requestAnimationFrame(renderFrame);
+    };
+
+    animFrameId = requestAnimationFrame(renderFrame);
+
+    return () => {
+      isMounted = false;
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+    };
+  }, [simDataRef]);
 
   return (
-    <div 
-      className="absolute bottom-4 right-4 z-30 w-32 h-20 rounded-xl border shadow-xl overflow-hidden pointer-events-none select-none backdrop-blur-md flex items-center justify-center p-1.5 animate-in fade-in zoom-in-95 duration-200"
+    <div
+      className="absolute bottom-3 right-3 z-30 border rounded-none shadow-none overflow-hidden pointer-events-none select-none flex items-center justify-center"
       style={{
+        width: `${MINIMAP_WIDTH}px`,
+        height: `${MINIMAP_HEIGHT}px`,
         backgroundColor: 'var(--theme-surface, #161719)',
         borderColor: 'var(--theme-border, #242628)',
-        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.45)'
+        boxShadow: 'none'
       }}
     >
-      <svg width="100%" height="100%" className="overflow-visible">
-        {/* Node dots */}
-        {radarNodes.map(rn => (
-          <circle 
-            key={rn.id} 
-            cx={rn.cx} 
-            cy={rn.cy} 
-            r={rn.r} 
-            fill={rn.color} 
-            opacity={0.85}
-          />
-        ))}
-      </svg>
+      <canvas
+        ref={canvasRef}
+        style={{
+          width: `${MINIMAP_WIDTH}px`,
+          height: `${MINIMAP_HEIGHT}px`,
+          display: 'block'
+        }}
+      />
     </div>
   );
 }

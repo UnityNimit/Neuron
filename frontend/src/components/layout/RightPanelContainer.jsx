@@ -52,58 +52,58 @@ export default function RightPanelContainer({
       }}
     >
       {/* ------------------------------------------------------------- */}
-      {/* TOP SEGMENTED SWITCHER: [ Input ] vs [ Antigravity AI ]        */}
+      {/* TOP TAB BAR: [ Input ] vs [ AI ]                              */}
       {/* ------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 flex items-center justify-between px-2 border-b text-[11px] font-mono tracking-wide"
+        className="h-8 shrink-0 border-b flex items-center justify-between px-0 select-none"
         style={{
           backgroundColor: 'var(--theme-secondary, #191a1b)',
           borderColor: 'var(--theme-border, #242628)',
         }}
       >
-        <div className="flex items-center gap-1">
+        <div className="flex items-center overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden">
           {/* Input Tab */}
           <button
             type="button"
             onClick={() => handleTabChange('stdin')}
-            className={`px-2.5 py-1 rounded text-[11px] font-mono transition-all ${
+            className={`h-8 px-3 flex items-center text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
               activeTab === 'stdin' 
-                ? 'font-medium shadow-sm' 
-                : 'opacity-60 hover:opacity-100'
+                ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
+                : 'hover:text-[var(--theme-text-bright)]'
             }`}
             style={{
               backgroundColor: activeTab === 'stdin' 
-                ? 'var(--theme-surfaceActive, #282a2d)' 
-                : 'transparent',
+                ? 'var(--theme-background, #121314)' 
+                : 'var(--theme-secondary, #191a1b)',
+              borderColor: 'var(--theme-border, #242628)',
               color: activeTab === 'stdin' 
-                ? 'var(--theme-text-bright, #ffffff)' 
-                : 'var(--theme-text-secondary, #94a3b8)',
-              borderBottom: activeTab === 'stdin' ? '2px solid var(--theme-accent, #3b82f6)' : '2px solid transparent'
+                ? 'var(--theme-accent, #3b82f6)' 
+                : 'var(--theme-text-secondary, #94a3b8)'
             }}
           >
-            Input
+            <span>Input</span>
           </button>
 
-          {/* Antigravity AI Tab */}
+          {/* AI Tab */}
           <button
             type="button"
             onClick={() => handleTabChange('ai')}
-            className={`px-2.5 py-1 rounded text-[11px] font-mono transition-all flex items-center gap-1.5 ${
+            className={`h-8 px-3 flex items-center gap-1.5 text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
               activeTab === 'ai' 
-                ? 'font-medium shadow-sm' 
-                : 'opacity-60 hover:opacity-100'
+                ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
+                : 'hover:text-[var(--theme-text-bright)]'
             }`}
             style={{
               backgroundColor: activeTab === 'ai' 
-                ? 'var(--theme-surfaceActive, #282a2d)' 
-                : 'transparent',
+                ? 'var(--theme-background, #121314)' 
+                : 'var(--theme-secondary, #191a1b)',
+              borderColor: 'var(--theme-border, #242628)',
               color: activeTab === 'ai' 
-                ? 'var(--theme-text-bright, #ffffff)' 
-                : 'var(--theme-text-secondary, #94a3b8)',
-              borderBottom: activeTab === 'ai' ? '2px solid var(--theme-accent, #3b82f6)' : '2px solid transparent'
+                ? 'var(--theme-accent, #3b82f6)' 
+                : 'var(--theme-text-secondary, #94a3b8)'
             }}
           >
-            <span>Antigravity AI</span>
+            <span>AI</span>
             {isStreaming && (
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-pulse" />
             )}
@@ -120,7 +120,7 @@ export default function RightPanelContainer({
           <StdinPanel stdin={stdin} setStdin={setStdin} />
         </div>
 
-        {/* VIEW 2: ANTIGRAVITY AI STUDIO (Full-width clean chat view) */}
+        {/* VIEW 2: AI (Full-width clean chat view) */}
         <div className={`w-full h-full ${activeTab === 'ai' ? 'block' : 'hidden'}`}>
           <AiChatView
             conversation={aiStudio?.activeConversation}

@@ -13,7 +13,7 @@ export function useAiStudio({
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [activeModelId, setActiveModelId] = useState(() => {
-    return settings?.defaultAiModel || 'gemini-3.8-flash';
+    return settings?.activeApiKeyId || (settings?.apiKeys && settings.apiKeys.length > 0 ? settings.apiKeys[0].id : 'local-ollama');
   });
 
   // Streaming states
@@ -37,12 +37,12 @@ export function useAiStudio({
     return conversations.find(c => c.id === activeConversationId) || conversations[0] || null;
   }, [conversations, activeConversationId]);
 
-  // Sync default model from settings
+  // Sync active model/key from settings
   useEffect(() => {
-    if (settings?.defaultAiModel && !activeModelId) {
-      setActiveModelId(settings.defaultAiModel);
+    if (settings?.activeApiKeyId) {
+      setActiveModelId(settings.activeApiKeyId);
     }
-  }, [settings?.defaultAiModel]);
+  }, [settings?.activeApiKeyId]);
 
   // Request initial conversations on connect / reconnect
   useEffect(() => {
@@ -213,7 +213,7 @@ export function useAiStudio({
                 const assistantMsg = {
                   id: `msg_${Date.now()}`,
                   role: 'assistant',
-                  content: `### Antigravity Alert\n\n${errorMsg}\n\n*Please verify your Gemini API key in **Settings > AI & Models**.*`,
+                  content: `### AI Alert\n\n${errorMsg}\n\n*Please verify your API key in **Settings > AI**.*`,
                   timestamp: new Date().toISOString()
                 };
                 const updatedMessages = [...(c.messages || []), assistantMsg];
@@ -222,7 +222,38 @@ export function useAiStudio({
               return c;
             });
           });
-          addNotification?.('error', 'Antigravity Error', errorMsg, 'ai');
+          addNotification?.('error', 'AI Error', errorMsg, 'ai');
+        }
+        else if (evt === 'AI_KEY_DISCOVERED') {
+          if (data.valid && data.best_model) {
+            try {
+              const savedRaw = localStorage.getItem('neuron-settings');
+              if (savedRaw) {
+                const parsed = JSON.parse(savedRaw);
+                if (Array.isArray(parsed.apiKeys)) {
+                  const targetKeyId = data.key_id || parsed.activeApiKeyId;
+                  let changed = false;
+                  parsed.apiKeys = parsed.apiKeys.map(k => {
+                    if (k.id === targetKeyId) {
+                      changed = true;
+                      return {
+                        ...k,
+                        detectedProvider: data.provider || k.detectedProvider,
+                        detectedModel: data.best_model || k.detectedModel,
+                        modelCount: data.model_count || k.modelCount || 0,
+                        status: 'verified'
+                      };
+                    }
+                    return k;
+                  });
+                  if (changed) {
+                    localStorage.setItem('neuron-settings', JSON.stringify(parsed));
+                    window.dispatchEvent(new CustomEvent('neuron-settings-sync', { detail: parsed }));
+                  }
+                }
+              }
+            } catch (err) {}
+          }
         }
       } catch (e) {}
     };
@@ -297,12 +328,39 @@ export function useAiStudio({
     streamingStepsRef.current = [];
 
     if (wsRef?.current?.readyState === WebSocket.OPEN) {
+      let effectiveApiKey = "";
+      let effectiveModel = "auto";
+      let effectiveKeyId = activeModelId;
+
+      if (activeModelId === 'local-ollama' || (typeof activeModelId === 'string' && activeModelId.startsWith('local'))) {
+        effectiveApiKey = "";
+        effectiveModel = "local";
+        effectiveKeyId = "local-ollama";
+      } else {
+        const foundKey = (settings?.apiKeys || []).find(k => k.id === activeModelId || k.alias === activeModelId);
+        if (foundKey) {
+          effectiveApiKey = foundKey.key || "";
+          effectiveModel = "auto";
+          effectiveKeyId = foundKey.id;
+        } else if ((settings?.apiKeys || []).length > 0) {
+          const firstKey = settings.apiKeys[0];
+          effectiveApiKey = firstKey.key || "";
+          effectiveModel = "auto";
+          effectiveKeyId = firstKey.id;
+        } else {
+          effectiveApiKey = "";
+          effectiveModel = "local";
+          effectiveKeyId = "local-ollama";
+        }
+      }
+
       wsRef.current.send(JSON.stringify({
         event: 'AI_CHAT_STREAM',
         prompt: promptText,
         conversation_id: targetConvId,
-        model: activeModelId,
-        api_key: settings?.antigravityApiKey || "",
+        model: effectiveModel,
+        key_id: effectiveKeyId,
+        api_key: effectiveApiKey,
         approval_mode: settings?.requireRefactorApproval ? 'manual' : 'auto',
         context_code: fileContent || "",
         file_path: activeFile || ""
@@ -323,7 +381,7 @@ export function useAiStudio({
       }));
       addNotification?.('error', 'Connection Offline', 'Neuron backend is not connected.', 'ai');
     }
-  }, [activeConversationId, isStreaming, activeModelId, settings?.antigravityApiKey, settings?.requireRefactorApproval, fileContent, activeFile, wsRef, addNotification]);
+  }, [activeConversationId, isStreaming, activeModelId, settings?.apiKeys, settings?.activeApiKeyId, settings?.requireRefactorApproval, fileContent, activeFile, wsRef, addNotification]);
 
   // Stop generation mid-flight
   const handleStopGeneration = useCallback(() => {
