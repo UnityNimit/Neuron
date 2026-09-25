@@ -31,6 +31,13 @@ export default function SourceControlPanel({
   const [isGraphOpen, setIsGraphOpen] = useState(true);
   const dropdownRef = useRef(null);
 
+  // Automatically fetch latest git status & commit history when opening Source Control or switching repos
+  useEffect(() => {
+    if (isGitRepo && onRefresh) {
+      onRefresh();
+    }
+  }, [isGitRepo, repoName, gitBranch]);
+
   // Close dropdown on click outside
   useEffect(() => {
     const handleOutsideClick = (e) => {

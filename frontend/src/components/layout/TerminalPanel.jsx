@@ -26,8 +26,10 @@ export default function TerminalPanel({
   const [inputCommand, setInputCommand] = useState("");
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [showShellDropdown, setShowShellDropdown] = useState(false);
   
   const terminalEndRef = useRef(null);
+  const dropdownRef = useRef(null);
   const inputRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -36,6 +38,16 @@ export default function TerminalPanel({
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [logs, sessions, activeSessionId]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowShellDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
@@ -109,9 +121,6 @@ export default function TerminalPanel({
 
       if (inputCommand.trim() === 'clear' || inputCommand.trim() === 'cls') {
         if (onClearOutput) onClearOutput();
-        if (activeSessionId !== 'output' && onSendTerminalCommand) {
-          onSendTerminalCommand(activeSessionId, 'cls');
-        }
         setInputCommand("");
         return;
       }
@@ -149,7 +158,7 @@ export default function TerminalPanel({
     <div 
       className="w-full h-full flex flex-col font-mono text-sm select-none"
       style={{
-        backgroundColor: 'var(--theme-secondary, #191a1b)',
+        backgroundColor: 'var(--theme-background, #121314)',
         color: 'var(--theme-text-primary, #cbd5e1)'
       }}
     >
@@ -213,16 +222,55 @@ export default function TerminalPanel({
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 shrink-0 pr-2">
           
-          {/* New Terminal Button */}
-          <button 
-            onClick={() => {
-              if (onCreateSession) onCreateSession('powershell');
-            }} 
-            className="p-1 hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] rounded transition-colors cursor-pointer" 
-            title="New Terminal"
-          >
-            <Plus size={13} />
-          </button>
+          {/* New Shell Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button 
+              onClick={() => setShowShellDropdown(!showShellDropdown)} 
+              className="p-1 hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] rounded transition-colors flex items-center cursor-pointer" 
+              title="New Terminal"
+            >
+              <Plus size={13} />
+            </button>
+            
+            {showShellDropdown && (
+              <div 
+                className="absolute top-7 right-0 z-[200] w-44 border shadow-2xl rounded-xl py-1 backdrop-blur-xl animate-in fade-in slide-in-from-top-1 duration-100 font-mono text-[11px]"
+                style={{
+                  backgroundColor: 'var(--theme-surface, #191a1b)',
+                  borderColor: 'var(--theme-border-subtle, #2e3032)',
+                  color: 'var(--theme-text-primary, #cbd5e1)'
+                }}
+              >
+                <button 
+                  onClick={() => { 
+                    if (onCreateSession) onCreateSession('powershell'); 
+                    setShowShellDropdown(false); 
+                  }} 
+                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)] font-bold">PS</span> PowerShell
+                </button>
+                <button 
+                  onClick={() => { 
+                    if (onCreateSession) onCreateSession('cmd'); 
+                    setShowShellDropdown(false); 
+                  }} 
+                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)] font-bold">&gt;_</span> Command Prompt
+                </button>
+                <button 
+                  onClick={() => { 
+                    if (onCreateSession) onCreateSession('bash'); 
+                    setShowShellDropdown(false); 
+                  }} 
+                  className="w-full px-3 py-1.5 text-left hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)] font-bold">$</span> Bash
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Stop Process Button (if active process is running) */}
           {activeSession?.isRunning && (
@@ -267,7 +315,7 @@ export default function TerminalPanel({
         }}
         className="flex-grow p-3 overflow-y-auto font-mono text-xs select-text cursor-text outline-none [&::-webkit-scrollbar]:w-1"
         style={{
-          backgroundColor: 'var(--theme-secondary, #191a1b)',
+          backgroundColor: 'var(--theme-background, #121314)',
           color: 'var(--theme-text-primary, #cbd5e1)',
           fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace"
         }}

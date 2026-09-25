@@ -66,9 +66,25 @@ def resolve_shell_command(command: str, shell_type: str, cwd: str) -> Tuple[List
 
     # WINDOWS
     if sys.platform == "win32":
-        if shell_type.lower() == "cmd":
+        stype = (shell_type or "powershell").lower()
+        if stype == "cmd":
             full_cmd = f"chcp 65001 >nul & {command} & echo __NEURON_CWD__:%cd%"
             args = ["cmd.exe", "/c", full_cmd]
+        elif stype in ("bash", "sh", "zsh"):
+            bash_exe = find_shell_interpreter() or "bash.exe"
+            if os.path.isabs(bash_exe) and os.path.exists(bash_exe):
+                bash_dir = os.path.dirname(bash_exe)
+                git_root = os.path.dirname(bash_dir)
+                extra_paths = [
+                    os.path.join(git_root, "usr", "bin"),
+                    os.path.join(git_root, "bin"),
+                    bash_dir,
+                ]
+                existing_paths = [p for p in extra_paths if os.path.isdir(p)]
+                if existing_paths:
+                    env["PATH"] = os.pathsep.join(existing_paths) + os.pathsep + env.get("PATH", "")
+            full_cmd = f'{command}; echo "__NEURON_CWD__:$(pwd -W 2>/dev/null || pwd)"'
+            args = [bash_exe, "-c", full_cmd]
         else:
             ps_exe = "pwsh.exe" if shutil.which("pwsh.exe") else "powershell.exe"
             ps_utf8_init = (
@@ -475,22 +491,46 @@ def find_c_compiler() -> Optional[str]:
 
 
 def find_shell_interpreter() -> Optional[str]:
-    """Finds bash or sh in PATH or Git for Windows install locations."""
-    for name in ["bash", "sh"]:
-        found = shutil.which(name)
-        if found and os.path.exists(found):
-            return os.path.abspath(found)
-
+    """Finds bash or sh in Git for Windows install locations or system PATH."""
     if sys.platform == "win32":
-        candidates = [
+        candidates = []
+        git_exe = shutil.which("git")
+        if git_exe and os.path.exists(git_exe):
+            git_root = os.path.dirname(os.path.dirname(os.path.abspath(git_exe)))
+            candidates.extend([
+                os.path.join(git_root, "bin", "bash.exe"),
+                os.path.join(git_root, "usr", "bin", "bash.exe"),
+            ])
+
+        candidates.extend([
             r"C:\Program Files\Git\bin\bash.exe",
             r"C:\Program Files (x86)\Git\bin\bash.exe",
             os.path.expandvars(r"%LOCALAPPDATA%\Programs\Git\bin\bash.exe"),
             r"C:\msys64\usr\bin\bash.exe",
-        ]
+        ])
+
         for c in candidates:
-            if os.path.exists(c):
-                return c
+            if c and os.path.exists(c):
+                return os.path.abspath(c)
+
+        for name in ["bash", "sh"]:
+            found = shutil.which(name)
+            if found and os.path.exists(found):
+                lower_found = found.lower()
+                if "system32\\bash.exe" not in lower_found and "windowsapps\\bash.exe" not in lower_found:
+                    return os.path.abspath(found)
+
+        for name in ["bash", "sh"]:
+            found = shutil.which(name)
+            if found and os.path.exists(found):
+                return os.path.abspath(found)
+
+        return None
+
+    for name in ["bash", "sh"]:
+        found = shutil.which(name)
+        if found and os.path.exists(found):
+            return os.path.abspath(found)
 
     return None
 

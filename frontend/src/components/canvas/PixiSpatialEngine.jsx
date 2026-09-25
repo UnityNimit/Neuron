@@ -85,9 +85,12 @@ export default function PixiSpatialEngine({
       const app = new PIXI.Application();
       const currentTheme = THEMES[getCurrentThemeId()] || THEMES.black;
       const initialBg = currentTheme?.webgl?.canvasBackground ?? 0x121314;
+      const initW = Math.max(1, Math.floor(containerRef.current?.clientWidth || 800));
+      const initH = Math.max(1, Math.floor(containerRef.current?.clientHeight || 600));
       
       await app.init({
-        resizeTo: containerRef.current,
+        width: initW,
+        height: initH,
         backgroundColor: initialBg,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
@@ -95,12 +98,23 @@ export default function PixiSpatialEngine({
         preference: 'webgpu' 
       });
 
-      if (!isMounted) { 
+      if (!isMounted || !containerRef.current) { 
         app.destroy(true); 
         return; 
       }
+      app.canvas.style.display = 'block';
+      app.canvas.style.touchAction = 'none';
       containerRef.current.appendChild(app.canvas);
       appRef.current = app;
+
+      app.stage.eventMode = 'static';
+      app.stage.hitArea = app.screen;
+
+      const curW = Math.max(1, Math.floor(containerRef.current.clientWidth || initW));
+      const curH = Math.max(1, Math.floor(containerRef.current.clientHeight || initH));
+      if (curW !== initW || curH !== initH) {
+        app.renderer.resize(curW, curH);
+      }
 
       // 1. INFINITE CAMERA VIEWPORT
       viewport = new Viewport({
@@ -110,10 +124,12 @@ export default function PixiSpatialEngine({
         worldHeight: 300000,
         events: app.renderer.events
       });
+      viewport.eventMode = 'static';
       
       viewport.drag().pinch().wheel().decelerate();
       viewport.moveCenter(0, 0);
       viewport.setZoom(0.45);
+      viewport.update(0);
       app.stage.addChild(viewport);
 
       // 2. LAYER PIPELINE (Optimized Depth Z-Ordering)
@@ -337,6 +353,14 @@ export default function PixiSpatialEngine({
       // -----------------------------------------------------------------------
       app.ticker.add(() => {
         frameCount++;
+        if (viewport.screenWidth !== app.screen.width || viewport.screenHeight !== app.screen.height) {
+          const prevC = viewport.center;
+          viewport.resize(app.screen.width, app.screen.height, 300000, 300000);
+          if (prevC && !isNaN(prevC.x) && !isNaN(prevC.y)) {
+            viewport.moveCenter(prevC.x, prevC.y);
+          }
+          viewport.update(0);
+        }
         const zoom = viewport.scale.x;
         const currentActiveRay = stateRef.current.activeRay;
         const currentBlastRadius = stateRef.current.blastRadius;
@@ -740,9 +764,33 @@ export default function PixiSpatialEngine({
     };
     window.addEventListener('neuron-theme-change', handleThemeChange);
 
-    const resizeObserver = new ResizeObserver(() => {
-      if (containerRef.current && appRef.current && appRef.current.renderer) {
-        appRef.current.renderer.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (!containerRef.current || !appRef.current || !appRef.current.renderer) return;
+      const entry = entries?.[0];
+      const w = Math.max(1, Math.floor(entry?.contentRect?.width ?? containerRef.current.clientWidth));
+      const h = Math.max(1, Math.floor(entry?.contentRect?.height ?? containerRef.current.clientHeight));
+
+      if (appRef.current.screen.width === w && appRef.current.screen.height === h) return;
+
+      const prevCenter = viewport ? { x: viewport.center.x, y: viewport.center.y } : null;
+
+      appRef.current.renderer.resize(w, h);
+      if (appRef.current.stage) {
+        appRef.current.stage.hitArea = appRef.current.screen;
+      }
+
+      if (viewport) {
+        viewport.resize(w, h, 300000, 300000);
+        if (prevCenter && !isNaN(prevCenter.x) && !isNaN(prevCenter.y)) {
+          viewport.moveCenter(prevCenter.x, prevCenter.y);
+        }
+        viewport.update(0);
+      }
+
+      try {
+        appRef.current.render();
+      } catch {
+        // ignore if renderer is mid-init
       }
     });
     resizeObserver.observe(containerRef.current);

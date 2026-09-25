@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import StdinPanel from './StdinPanel';
 import AiChatView from '../ai/AiChatView';
+import ModelSelectorDropdown from '../ai/ModelSelectorDropdown';
 
 export default function RightPanelContainer({
   stdin = "",
@@ -47,15 +48,15 @@ export default function RightPanelContainer({
     <div 
       className="w-full h-full flex flex-col select-none overflow-hidden"
       style={{
-        backgroundColor: 'var(--theme-secondary, #191a1b)',
+        backgroundColor: 'var(--theme-background, #121314)',
         color: 'var(--theme-text-primary, #cbd5e1)'
       }}
     >
       {/* ------------------------------------------------------------- */}
-      {/* TOP TAB BAR: [ Input ] vs [ AI ]                              */}
+      {/* TOP TAB BAR: [ Input ] vs [ AI ] + Model Selector             */}
       {/* ------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 border-b flex items-center justify-between px-0 select-none"
+        className="h-8 shrink-0 border-b flex items-center justify-between px-0 select-none relative z-30"
         style={{
           backgroundColor: 'var(--theme-secondary, #191a1b)',
           borderColor: 'var(--theme-border, #242628)',
@@ -108,6 +109,16 @@ export default function RightPanelContainer({
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-pulse" />
             )}
           </button>
+        </div>
+
+        <div className="shrink-0 flex items-center pr-2">
+          <ModelSelectorDropdown 
+            selectedModelId={aiStudio?.activeModelId}
+            onSelectModel={aiStudio?.setActiveModelId}
+            projectName={projectName}
+            disabled={isStreaming}
+            onOpenSettings={onOpenSettings}
+          />
         </div>
       </div>
 

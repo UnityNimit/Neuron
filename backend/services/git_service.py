@@ -26,6 +26,8 @@ def git_get_detailed_status(target_dir: str) -> Dict[str, Any]:
             cwd=abs_target,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=1.5
         )
@@ -38,6 +40,8 @@ def git_get_detailed_status(target_dir: str) -> Dict[str, Any]:
                 cwd=abs_target,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=1.5
             )
@@ -54,6 +58,8 @@ def git_get_detailed_status(target_dir: str) -> Dict[str, Any]:
             cwd=abs_target,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=5.0
         )
@@ -139,8 +145,17 @@ def git_get_log_graph(target_dir: str, limit: int = 40) -> List[Dict[str, Any]]:
     ]
 
     try:
-        res = subprocess.run(cmd, cwd=abs_target, capture_output=True, text=True, check=False, timeout=5.0)
-        lines = res.stdout.splitlines()
+        res = subprocess.run(
+            cmd,
+            cwd=abs_target,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=5.0
+        )
+        lines = (res.stdout or "").splitlines()
 
         graph_rows = []
         for line in lines:

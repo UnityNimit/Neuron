@@ -400,6 +400,7 @@ export function useWorkspace(session) {
                 files: deltaFiles,
                 git_statuses, 
                 git_detailed_status,
+                git_graph,
                 git_branch,
                 is_git_repo,
                 repo_name,
@@ -410,6 +411,7 @@ export function useWorkspace(session) {
               if (deltaFiles) setFiles(deltaFiles);
               if (git_statuses) setGitStatuses(git_statuses);
               if (git_detailed_status) setGitDetailedStatus(git_detailed_status);
+              if (Array.isArray(git_graph)) setGitGraph(git_graph);
               if (typeof is_git_repo !== 'undefined') setIsGitRepo(Boolean(is_git_repo));
               if (git_branch) setGitBranch(git_branch);
               if (repo_name) setRepoName(repo_name);

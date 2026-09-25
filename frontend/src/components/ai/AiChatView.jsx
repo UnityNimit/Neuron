@@ -1,7 +1,7 @@
 // frontend/src/components/ai/AiChatView.jsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { ArrowUp } from 'lucide-react';
 import { marked } from 'marked';
-import ModelSelectorDropdown from './ModelSelectorDropdown';
 
 // Configure marked options
 marked.setOptions({
@@ -179,33 +179,6 @@ export default function AiChatView({
           font-style: italic;
         }
       `}</style>
-
-      {/* ------------------------------------------------------------- */}
-      {/* CHAT HEADER: Model Selector, Conversation Title               */}
-      {/* ------------------------------------------------------------- */}
-      <div 
-        className="h-10 shrink-0 px-3 border-b flex items-center justify-between gap-2"
-        style={{
-          backgroundColor: 'var(--theme-secondary, #191a1b)',
-          borderColor: 'var(--theme-border, #242628)',
-        }}
-      >
-        <div className="flex items-center gap-2 truncate min-w-0">
-          <span className="text-[12px] font-mono font-medium truncate max-w-[240px]">
-            {conversation?.title || 'AI'}
-          </span>
-        </div>
-
-        <div className="shrink-0 flex items-center gap-2">
-          <ModelSelectorDropdown 
-            selectedModelId={activeModelId}
-            onSelectModel={onSelectModel}
-            projectName={projectName}
-            disabled={isStreaming}
-            onOpenSettings={onOpenSettings}
-          />
-        </div>
-      </div>
 
       {/* ------------------------------------------------------------- */}
       {/* MESSAGES FEED                                                 */}
@@ -570,35 +543,6 @@ export default function AiChatView({
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* CONTEXT BAR (Active File Context)                             */}
-      {/* ------------------------------------------------------------- */}
-      {activeFile && (
-        <div 
-          className="px-3 py-1 border-t flex items-center justify-between text-[10px] font-mono select-none"
-          style={{
-            backgroundColor: 'var(--theme-secondary, #191a1b)',
-            borderColor: 'var(--theme-border, #242628)',
-            color: 'var(--theme-text-muted, #64748b)'
-          }}
-        >
-          <div className="flex items-center gap-1.5 truncate">
-            <span>Context:</span>
-            <span 
-              className="px-1.5 py-0.2 rounded border truncate max-w-[240px]"
-              style={{
-                backgroundColor: 'var(--theme-surface, #161719)',
-                borderColor: 'var(--theme-border, #242628)',
-                color: 'var(--theme-text-primary, #cbd5e1)'
-              }}
-            >
-              @{activeFile}
-            </span>
-          </div>
-          <span className="opacity-60 shrink-0">Attached</span>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
       {/* PROMPT INPUT BAR                                              */}
       {/* ------------------------------------------------------------- */}
       <div 
@@ -609,7 +553,7 @@ export default function AiChatView({
         }}
       >
         <div 
-          className="rounded-xl border p-2 flex items-end gap-2 focus-within:border-[var(--theme-accent)] transition-colors"
+          className="rounded-xl border px-3 py-2 flex items-center gap-2 focus-within:border-[var(--theme-accent)] transition-colors"
           style={{
             backgroundColor: 'var(--theme-background, #141516)',
             borderColor: 'var(--theme-border, #242628)'
@@ -625,9 +569,8 @@ export default function AiChatView({
               e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Ask AI or request refactor (Enter to send)..."
             spellCheck={false}
-            className="flex-1 text-[12px] font-mono outline-none resize-none bg-transparent leading-relaxed placeholder:text-slate-600 [&::-webkit-scrollbar]:w-1"
+            className="flex-1 text-[12px] font-mono outline-none resize-none bg-transparent leading-relaxed [&::-webkit-scrollbar]:w-1"
             style={{
               color: 'var(--theme-text-primary, #cbd5e1)'
             }}
@@ -637,28 +580,23 @@ export default function AiChatView({
             <button
               type="button"
               onClick={() => onStopGeneration?.()}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-mono font-medium transition-all shrink-0 flex items-center gap-1.5 bg-rose-600/90 hover:bg-rose-600 text-white cursor-pointer shadow-sm animate-pulse"
-              title="Stop Generation (Emergency Break)"
+              className="w-7 h-7 rounded-full transition-all shrink-0 flex items-center justify-center bg-rose-600/90 hover:bg-rose-600 text-white cursor-pointer shadow-sm animate-pulse"
+              title="Stop Generation"
             >
-              <span className="w-2 h-2 rounded-sm bg-white" />
-              <span>Stop</span>
+              <span className="w-2.5 h-2.5 rounded-xs bg-white" />
             </button>
           ) : (
             <button
               type="button"
               onClick={handleSend}
               disabled={!inputValue.trim()}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-mono font-medium transition-all shrink-0 flex items-center justify-center disabled:opacity-30 hover:brightness-110 cursor-pointer"
+              className="w-7 h-7 rounded-full transition-all shrink-0 flex items-center justify-center disabled:opacity-40 hover:brightness-110 cursor-pointer"
               style={{
-                backgroundColor: inputValue.trim() 
-                  ? 'var(--theme-accent, #3b82f6)' 
-                  : 'var(--theme-surfaceHover, #222426)',
-                color: inputValue.trim() 
-                  ? '#ffffff' 
-                  : 'var(--theme-text-muted, #94a3b8)'
+                backgroundColor: 'var(--theme-accent, #3b82f6)',
+                color: '#ffffff'
               }}
             >
-              Send
+              <ArrowUp size={14} strokeWidth={2.2} />
             </button>
           )}
         </div>

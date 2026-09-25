@@ -88,6 +88,8 @@ def get_git_metadata(target_dir: str) -> Dict[str, Any]:
                 cwd=abs_target,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
                 timeout=1.5
             )
@@ -123,6 +125,8 @@ def get_git_status(target_dir: str) -> Dict[str, str]:
             cwd=abs_target,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=5.0
         )
@@ -194,6 +198,8 @@ def get_git_churn(target_dir: str) -> Dict[str, int]:
             cwd=target_dir,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=1.5
         )
@@ -353,8 +359,9 @@ def get_workspace_state(is_initial_load: bool = False) -> dict:
                 f"Blast Protection intercepted & neutralized an instant AI mutation burst affecting {len(mutated_files_buffer)} files."
             )
 
-    from services.git_service import git_get_detailed_status
+    from services.git_service import git_get_detailed_status, git_get_log_graph
     git_detailed = git_get_detailed_status(AppState.TARGET_DIR)
+    git_graph = git_get_log_graph(AppState.TARGET_DIR, 40)
 
     raw_state = {
         "items": items,
@@ -364,6 +371,7 @@ def get_workspace_state(is_initial_load: bool = False) -> dict:
         "target_dir_abs": AppState.TARGET_DIR,
         "git_statuses": git_statuses,
         "git_detailed_status": git_detailed,
+        "git_graph": git_graph,
         "git_branch": git_meta.get("git_branch", "main"),
         "is_git_repo": git_meta.get("is_git_repo", False),
         "repo_name": git_meta.get("repo_name", ""),
@@ -399,6 +407,7 @@ def compute_incremental_graph_delta(old_state: dict, new_state: dict) -> dict:
         "edges_remove": edges_remove,
         "git_statuses": new_state.get("git_statuses", {}),
         "git_detailed_status": new_state.get("git_detailed_status", {}),
+        "git_graph": new_state.get("git_graph", []),
         "git_branch": new_state.get("git_branch", "main"),
         "is_git_repo": new_state.get("is_git_repo", False),
         "repo_name": new_state.get("repo_name", ""),
