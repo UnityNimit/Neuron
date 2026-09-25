@@ -142,9 +142,9 @@ export default function AiChatView({
 
   return (
     <div 
-      className="flex-1 h-full flex flex-col min-w-0 select-none"
+      className="flex-1 h-full flex flex-col min-w-0 select-none relative"
       style={{
-        backgroundColor: 'var(--theme-background, #141516)',
+        backgroundColor: 'var(--theme-background, #121314)',
         color: 'var(--theme-text-primary, #cbd5e1)'
       }}
     >
@@ -183,7 +183,7 @@ export default function AiChatView({
       {/* ------------------------------------------------------------- */}
       {/* MESSAGES FEED                                                 */}
       {/* ------------------------------------------------------------- */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-4 font-mono text-[12px]">
+      <div className="flex-1 overflow-y-auto px-4 pt-3 pb-20 flex flex-col gap-4 font-mono text-[12px]">
         {messages.map((msg, idx) => {
           const isUser = msg.role === 'user';
           const msgKey = msg.id || `msg_${idx}`;
@@ -193,33 +193,26 @@ export default function AiChatView({
           return (
             <div 
               key={msgKey}
-              className={`flex flex-col gap-1.5 ${isUser ? 'items-end' : 'items-start'}`}
+              className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
             >
-              {/* Role label & timestamp */}
+              {/* Message Content (Container ONLY for User messages; containerless for AI replies) */}
               <div 
-                className="flex items-center gap-2 text-[10px] px-1"
-                style={{ color: 'var(--theme-text-muted, #64748b)' }}
-              >
-                <span>{isUser ? 'You' : 'AI'}</span>
-                {msg.timestamp && (
-                  <span className="opacity-50">
-                    {typeof msg.timestamp === 'string' && msg.timestamp.includes('T') 
-                      ? msg.timestamp.split('T')[1]?.slice(0, 5) 
-                      : ''}
-                  </span>
-                )}
-              </div>
-
-              {/* Message Content Bubble */}
-              <div 
-                className="max-w-[95%] rounded-xl p-3 border leading-relaxed select-text flex flex-col gap-2.5 transition-colors"
-                style={{
-                  backgroundColor: isUser 
-                    ? 'var(--theme-surface-active, var(--theme-surfaceActive, #282a2d))' 
-                    : 'var(--theme-surface, #161719)',
-                  borderColor: 'var(--theme-border, #242628)',
-                  color: 'var(--theme-text-primary, #cbd5e1)'
-                }}
+                className={
+                  isUser
+                    ? "max-w-[90%] rounded-xl px-3.5 py-2.5 border leading-relaxed select-text flex flex-col gap-2 transition-colors"
+                    : "w-full leading-relaxed select-text flex flex-col gap-2.5"
+                }
+                style={
+                  isUser
+                    ? {
+                        backgroundColor: 'var(--theme-surface-active, var(--theme-surfaceActive, #282a2d))',
+                        borderColor: 'var(--theme-border, #242628)',
+                        color: 'var(--theme-text-primary, #cbd5e1)'
+                      }
+                    : {
+                        color: 'var(--theme-text-primary, #cbd5e1)'
+                      }
+                }
               >
                 {/* 1. Agentic Action Steps Badges */}
                 {msg.steps && msg.steps.length > 0 && (
@@ -240,7 +233,7 @@ export default function AiChatView({
                   <div 
                     className="rounded-lg border overflow-hidden"
                     style={{
-                      backgroundColor: 'var(--theme-background, #141516)',
+                      backgroundColor: 'var(--theme-surface, #161719)',
                       borderColor: 'var(--theme-border, #242628)'
                     }}
                   >
@@ -360,22 +353,12 @@ export default function AiChatView({
           );
         })}
 
-        {/* Live Streaming Assistant Message */}
+        {/* Live Streaming Assistant Message (Containerless) */}
         {isStreaming && (
-          <div className="flex flex-col gap-1.5 items-start">
+          <div className="flex flex-col items-start">
             <div 
-              className="flex items-center gap-2 text-[10px] px-1"
-              style={{ color: 'var(--theme-text-muted, #64748b)' }}
-            >
-              <span>AI</span>
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-pulse" />
-            </div>
-
-            <div 
-              className="max-w-[95%] rounded-xl p-3 border leading-relaxed select-text flex flex-col gap-2.5 transition-colors"
+              className="w-full leading-relaxed select-text flex flex-col gap-2.5"
               style={{
-                backgroundColor: 'var(--theme-surface, #161719)',
-                borderColor: 'var(--theme-border, #242628)',
                 color: 'var(--theme-text-primary, #cbd5e1)'
               }}
             >
@@ -421,7 +404,7 @@ export default function AiChatView({
                 <div 
                   className="rounded-lg border p-2.5 text-[11px] leading-relaxed font-mono opacity-80"
                   style={{
-                    backgroundColor: 'var(--theme-background, #141516)',
+                    backgroundColor: 'var(--theme-surface, #161719)',
                     borderColor: 'var(--theme-border, #242628)',
                     color: 'var(--theme-text-secondary, #94a3b8)'
                   }}
@@ -543,19 +526,18 @@ export default function AiChatView({
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* PROMPT INPUT BAR                                              */}
+      {/* PROMPT INPUT BAR (Dark Gradient Fade Behind Textbox)          */}
       {/* ------------------------------------------------------------- */}
       <div 
-        className="p-3 border-t flex flex-col gap-2 shrink-0"
+        className="absolute bottom-0 left-0 right-0 px-3 pb-3 pt-8 pointer-events-none z-20"
         style={{
-          backgroundColor: 'var(--theme-secondary, #191a1b)',
-          borderColor: 'var(--theme-border, #242628)',
+          background: 'linear-gradient(to top, var(--theme-background, #121314) 55%, transparent 100%)'
         }}
       >
         <div 
-          className="rounded-xl border px-3 py-2 flex items-center gap-2 focus-within:border-[var(--theme-accent)] transition-colors"
+          className="pointer-events-auto rounded-xl border px-3 py-2 flex items-center gap-2 focus-within:border-[var(--theme-accent)] transition-colors"
           style={{
-            backgroundColor: 'var(--theme-background, #141516)',
+            backgroundColor: 'var(--theme-background, #121314)',
             borderColor: 'var(--theme-border, #242628)'
           }}
         >

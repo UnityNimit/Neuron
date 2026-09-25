@@ -164,33 +164,49 @@ export default function TerminalPanel({
     >
       
       {/* ----------------------------------------------------------------- */}
-      {/* 1. ULTRA-MINIMAL TERMINAL TAB STRIP                               */}
+      {/* 1. ULTRA-MINIMAL TERMINAL TAB STRIP (Unified Curved Connected)    */}
       {/* ----------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 border-b flex items-center justify-between px-0 select-none"
+        className="h-8 shrink-0 flex items-center justify-between px-0 select-none relative z-30"
         style={{
-          backgroundColor: 'var(--theme-secondary, #191a1b)',
-          borderColor: 'var(--theme-border, #242628)'
+          backgroundColor: 'var(--theme-secondary)'
         }}
       >
+        {/* Full-width 1px bottom joining line (hidden under active tab) */}
+        <div 
+          className="absolute bottom-0 left-0 right-0 border-b z-0 pointer-events-none"
+          style={{ borderColor: 'var(--theme-border)' }}
+        />
         
         {/* Session Tabs */}
-        <div className="flex items-center overflow-x-auto flex-grow mr-2 [&::-webkit-scrollbar]:hidden">
+        <div className="h-full flex items-end pt-1 px-1.5 gap-1 overflow-x-auto flex-grow mr-2 [&::-webkit-scrollbar]:hidden relative z-10">
           
           {/* Output Log Tab */}
           <button 
             onClick={() => onSelectSession && onSelectSession('output')} 
-            className={`h-8 px-3 flex items-center text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
+            className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
               activeSessionId === 'output' 
-                ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
-                : 'hover:text-[var(--theme-text-bright)]'
+                ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
+                : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
             }`}
             style={{
-              backgroundColor: activeSessionId === 'output' ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
-              borderColor: 'var(--theme-border, #242628)',
-              color: activeSessionId === 'output' ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-text-secondary, #94a3b8)'
+              backgroundColor: activeSessionId === 'output' ? 'var(--theme-background)' : 'transparent',
+              borderColor: activeSessionId === 'output' ? 'var(--theme-border)' : 'transparent',
+              color: activeSessionId === 'output' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
             }}
           >
+            <span
+              className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
+                activeSessionId === 'output' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+              }`}
+              style={{ borderColor: 'var(--theme-accent)' }}
+            />
+            {activeSessionId === 'output' && (
+              <span
+                className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
+                style={{ borderColor: 'var(--theme-background)' }}
+              />
+            )}
             <span>Output</span>
           </button>
 
@@ -201,18 +217,33 @@ export default function TerminalPanel({
               <div 
                 key={s.id} 
                 onClick={() => onSelectSession && onSelectSession(s.id)} 
-                className={`h-8 px-3 flex items-center gap-1.5 cursor-pointer text-[11px] font-mono font-medium border-r transition-colors group shrink-0 ${
+                className={`relative px-3.5 flex items-center gap-1.5 cursor-pointer text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out group shrink-0 ${
                   isActive 
-                    ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
-                    : 'hover:text-[var(--theme-text-bright)]'
+                    ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
+                    : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
                 }`}
                 style={{
-                  backgroundColor: isActive ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
-                  borderColor: 'var(--theme-border, #242628)',
-                  color: isActive ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-text-secondary, #94a3b8)'
+                  backgroundColor: isActive ? 'var(--theme-background)' : 'transparent',
+                  borderColor: isActive ? 'var(--theme-border)' : 'transparent',
+                  color: isActive ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
                 }}
               >
-                <div className={`w-1.5 h-1.5 rounded-full ${s.isRunning ? 'bg-[var(--theme-accent)] animate-pulse' : 'bg-[var(--theme-text-muted)]'}`} />
+                <span
+                  className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
+                    isActive ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+                  }`}
+                  style={{ borderColor: 'var(--theme-accent)' }}
+                />
+                {isActive && (
+                  <span
+                    className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
+                    style={{ borderColor: 'var(--theme-background)' }}
+                  />
+                )}
+                <div 
+                  className={`w-1.5 h-1.5 rounded-full transition-colors duration-150 ${s.isRunning ? 'animate-pulse' : ''}`}
+                  style={{ backgroundColor: s.isRunning ? 'var(--theme-accent)' : 'var(--theme-text-muted)' }}
+                />
                 <span>{s.name}</span>
               </div>
             );
@@ -220,8 +251,19 @@ export default function TerminalPanel({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1.5 shrink-0 pr-2">
+        <div className="flex items-center gap-1.5 shrink-0 pr-2 relative z-20">
           
+          {/* Stop Process Button (Left of Plus, Icon Only in Red) */}
+          {activeSession?.isRunning && (
+            <button 
+              onClick={() => onKillProcess && onKillProcess(activeSessionId)} 
+              className="p-1 text-red-500 hover:text-red-400 hover:bg-[var(--theme-surface-hover)] rounded transition-colors flex items-center justify-center cursor-pointer" 
+              title="Stop Running Process (Ctrl+C)"
+            >
+              <Square size={12} fill="currentColor" />
+            </button>
+          )}
+
           {/* New Shell Dropdown */}
           <div className="relative" ref={dropdownRef}>
             <button 
@@ -272,17 +314,6 @@ export default function TerminalPanel({
             )}
           </div>
 
-          {/* Stop Process Button (if active process is running) */}
-          {activeSession?.isRunning && (
-            <button 
-              onClick={() => onKillProcess && onKillProcess(activeSessionId)} 
-              className="flex items-center gap-1 bg-red-950/40 hover:bg-red-900/60 text-red-300 px-2 py-0.5 rounded text-[10px] font-mono border border-red-800/40 transition-colors" 
-              title="Stop Running Process (Ctrl+C)"
-            >
-              <Square size={9} fill="currentColor" /> Stop
-            </button>
-          )}
-
           {/* Clear / Kill Terminal */}
           <button 
             onClick={() => {
@@ -327,7 +358,7 @@ export default function TerminalPanel({
               <div 
                 key={index} 
                 className={`${
-                  log.isError ? 'text-red-400' : log.isSystem ? 'text-[var(--theme-accent)] font-medium' : 'text-[var(--theme-text-primary)]'
+                  log.isError ? 'text-[var(--theme-accent)]' : log.isSystem ? 'text-[var(--theme-accent)] font-medium' : 'text-[var(--theme-text-primary)]'
                 } whitespace-pre-wrap select-text leading-none font-mono`}
                 style={{ fontVariantLigatures: 'none' }}
                 dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(log.text || "") }} 
@@ -354,8 +385,8 @@ export default function TerminalPanel({
                 )}
                 {h.stderr && (
                   <div 
-                    className="text-red-400 whitespace-pre-wrap select-text leading-none font-mono"
-                    style={{ fontVariantLigatures: 'none' }}
+                    className="whitespace-pre-wrap select-text leading-none font-mono"
+                    style={{ color: 'var(--theme-accent)', fontVariantLigatures: 'none' }}
                     dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(h.stderr) }}
                   />
                 )}
@@ -376,13 +407,6 @@ export default function TerminalPanel({
                   onKeyDown={handleKeyDown} 
                   className="flex-grow bg-transparent text-[var(--theme-text-bright)] font-mono text-xs outline-none border-none caret-[var(--theme-accent)] select-text placeholder:text-[var(--theme-text-muted)] placeholder:text-[11px] placeholder:italic" 
                 />
-                <button 
-                  onClick={() => onKillProcess && onKillProcess(activeSessionId)} 
-                  className="flex items-center gap-1 bg-red-950/50 hover:bg-red-900/80 text-red-300 px-2 py-0.5 rounded text-[10px] font-mono border border-red-800/50 transition-colors shrink-0 cursor-pointer"
-                  title="Stop Running Process (Ctrl+C)"
-                >
-                  <Square size={8} fill="currentColor" /> Stop
-                </button>
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-0.5 select-text">

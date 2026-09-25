@@ -1,5 +1,6 @@
 // frontend/src/components/ai/ModelSelectorDropdown.jsx
 import React, { useState, useRef, useEffect } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useSettings } from '../../hooks/useSettings';
 
 export default function ModelSelectorDropdown({
@@ -50,26 +51,21 @@ export default function ModelSelectorDropdown({
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>
-      {/* Minimalist Trigger */}
+      {/* Minimalist Containerless Trigger */}
       <button
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`h-6 px-2 rounded flex items-center gap-1.5 text-[11px] font-mono border transition-colors select-none ${
+        className={`px-1.5 py-1 rounded flex items-center gap-1 text-[11px] font-mono text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors select-none ${
           disabled
             ? 'opacity-40 cursor-not-allowed'
-            : 'hover:border-[var(--theme-accent)] cursor-pointer'
+            : 'cursor-pointer'
         }`}
-        style={{
-          backgroundColor: 'var(--theme-surface, #161719)',
-          borderColor: isOpen ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-border, #242628)',
-          color: 'var(--theme-text-primary, #cbd5e1)'
-        }}
       >
         <span className="truncate max-w-[140px]">
           {!isLocalActive && activeKey ? activeKey.alias : 'Local AI'}
         </span>
-        <span className="text-[8px] opacity-60">▼</span>
+        <ChevronDown size={12} strokeWidth={1.8} className={`shrink-0 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Minimalist Dropdown List */}

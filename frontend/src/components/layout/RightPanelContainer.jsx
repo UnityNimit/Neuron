@@ -56,32 +56,45 @@ export default function RightPanelContainer({
       {/* TOP TAB BAR: [ Input ] vs [ AI ] + Model Selector             */}
       {/* ------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 border-b flex items-center justify-between px-0 select-none relative z-30"
+        className="h-8 shrink-0 flex items-center justify-between px-0 select-none relative z-30"
         style={{
-          backgroundColor: 'var(--theme-secondary, #191a1b)',
-          borderColor: 'var(--theme-border, #242628)',
+          backgroundColor: 'var(--theme-secondary)'
         }}
       >
-        <div className="flex items-center overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden">
+        {/* Full-width 1px bottom joining line (hidden under active tab) */}
+        <div 
+          className="absolute bottom-0 left-0 right-0 border-b z-0 pointer-events-none"
+          style={{ borderColor: 'var(--theme-border)' }}
+        />
+
+        <div className="h-full flex items-end pt-1 px-1.5 gap-1 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
           {/* Input Tab */}
           <button
             type="button"
             onClick={() => handleTabChange('stdin')}
-            className={`h-8 px-3 flex items-center text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
+            className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
               activeTab === 'stdin' 
-                ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
-                : 'hover:text-[var(--theme-text-bright)]'
+                ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
+                : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
             }`}
             style={{
-              backgroundColor: activeTab === 'stdin' 
-                ? 'var(--theme-background, #121314)' 
-                : 'var(--theme-secondary, #191a1b)',
-              borderColor: 'var(--theme-border, #242628)',
-              color: activeTab === 'stdin' 
-                ? 'var(--theme-accent, #3b82f6)' 
-                : 'var(--theme-text-secondary, #94a3b8)'
+              backgroundColor: activeTab === 'stdin' ? 'var(--theme-background)' : 'transparent',
+              borderColor: activeTab === 'stdin' ? 'var(--theme-border)' : 'transparent',
+              color: activeTab === 'stdin' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
             }}
           >
+            <span
+              className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
+                activeTab === 'stdin' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+              }`}
+              style={{ borderColor: 'var(--theme-accent)' }}
+            />
+            {activeTab === 'stdin' && (
+              <span
+                className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
+                style={{ borderColor: 'var(--theme-background)' }}
+              />
+            )}
             <span>Input</span>
           </button>
 
@@ -89,29 +102,40 @@ export default function RightPanelContainer({
           <button
             type="button"
             onClick={() => handleTabChange('ai')}
-            className={`h-8 px-3 flex items-center gap-1.5 text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
+            className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
               activeTab === 'ai' 
-                ? 'font-semibold border-t-2 border-t-[var(--theme-accent)]' 
-                : 'hover:text-[var(--theme-text-bright)]'
+                ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
+                : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
             }`}
             style={{
-              backgroundColor: activeTab === 'ai' 
-                ? 'var(--theme-background, #121314)' 
-                : 'var(--theme-secondary, #191a1b)',
-              borderColor: 'var(--theme-border, #242628)',
-              color: activeTab === 'ai' 
-                ? 'var(--theme-accent, #3b82f6)' 
-                : 'var(--theme-text-secondary, #94a3b8)'
+              backgroundColor: activeTab === 'ai' ? 'var(--theme-background)' : 'transparent',
+              borderColor: activeTab === 'ai' ? 'var(--theme-border)' : 'transparent',
+              color: activeTab === 'ai' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
             }}
           >
+            <span
+              className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
+                activeTab === 'ai' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+              }`}
+              style={{ borderColor: 'var(--theme-accent)' }}
+            />
+            {activeTab === 'ai' && (
+              <span
+                className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
+                style={{ borderColor: 'var(--theme-background)' }}
+              />
+            )}
             <span>AI</span>
             {isStreaming && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-pulse" />
+              <span 
+                className="w-1.5 h-1.5 rounded-full animate-pulse" 
+                style={{ backgroundColor: 'var(--theme-accent)' }}
+              />
             )}
           </button>
         </div>
 
-        <div className="shrink-0 flex items-center pr-2">
+        <div className="shrink-0 flex items-center pr-2 relative z-20">
           <ModelSelectorDropdown 
             selectedModelId={aiStudio?.activeModelId}
             onSelectModel={aiStudio?.setActiveModelId}

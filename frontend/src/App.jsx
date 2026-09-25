@@ -994,124 +994,167 @@ export default function App() {
               <Panel id="canvas-area" order={1} className="relative flex flex-col" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
                 
                 {/* ----------------------------------------------------------- */}
-                {/* CENTER TAB STRIP (#191a1b & Blue Accent)                    */}
+                {/* CENTER TAB STRIP (Unified Curved Connected Tabs)            */}
                 {/* ----------------------------------------------------------- */}
                 <div 
-                  className="h-8 shrink-0 flex items-center overflow-x-auto [&::-webkit-scrollbar]:hidden border-b z-40 relative select-none"
+                  className="h-8 shrink-0 flex items-center justify-between px-0 z-40 relative select-none"
                   style={{
-                    backgroundColor: 'var(--theme-secondary, #191a1b)',
-                    borderColor: 'var(--theme-border, #242628)'
+                    backgroundColor: 'var(--theme-secondary)'
                   }}
                 >
-                  
-                  {/* Spatial Map Tab */}
-                  <button 
-                    onClick={() => setCenterView('spatial')} 
-                    className={`h-full px-3 flex items-center gap-1.5 text-[11px] font-mono font-medium border-r transition-colors shrink-0 cursor-pointer ${
-                      centerView === 'spatial' 
-                        ? 'border-t-2 border-t-[var(--theme-accent)] font-semibold' 
-                        : 'hover:text-[var(--theme-text-bright)]'
-                    }`}
-                    style={{
-                      backgroundColor: centerView === 'spatial' ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
-                      borderColor: 'var(--theme-border, #242628)',
-                      color: centerView === 'spatial' ? 'var(--theme-text-bright, #e2e8f0)' : 'var(--theme-text-secondary, #94a3b8)'
-                    }}
-                  >
-                    <span>Spatial Map</span>
-                  </button>
+                  {/* Full-width 1px bottom joining line (hidden under active tab) */}
+                  <div 
+                    className="absolute bottom-0 left-0 right-0 border-b z-0 pointer-events-none"
+                    style={{ borderColor: 'var(--theme-border)' }}
+                  />
 
-                  {/* Dynamic Multi-File Tabs (With VS Code Dirty Dot Indicator ●) */}
-                  {(workspace.openFiles || []).map(file => {
-                    const isDirty = dirtyFiles.has(file);
-                    const rawGStat = (workspace.gitStatuses || {})[file];
-                    const gStat = (isDirty && (!rawGStat || rawGStat === 'I')) ? 'M' : rawGStat;
-                    const isModified = gStat === 'M';
-                    const isUntracked = gStat === 'U';
-                    const isAdded = gStat === 'A';
-                    const isDeleted = gStat === 'D';
-                    const isActive = centerView === 'editor' && workspace.currentFile === file;
-                    
-                    let tabTextColor = "text-[var(--theme-text-muted)]";
-                    let iconColor = "text-[var(--theme-text-muted)]";
-                    let badgeColor = "";
-
-                    if (isDirty) {
-                      tabTextColor = isActive ? "italic text-amber-500 font-semibold" : "italic text-amber-500";
-                      iconColor = "text-amber-500";
-                      badgeColor = "text-amber-500";
-                    } else if (isModified) {
-                      tabTextColor = isActive ? "text-amber-500 font-semibold" : "text-amber-500";
-                      iconColor = "text-amber-500";
-                      badgeColor = "text-amber-500";
-                    } else if (isUntracked || isAdded) {
-                      tabTextColor = isActive ? "text-emerald-500 font-semibold" : "text-emerald-500";
-                      iconColor = "text-emerald-500";
-                      badgeColor = "text-emerald-500";
-                    } else if (isDeleted) {
-                      tabTextColor = "text-red-500 line-through";
-                      iconColor = "text-red-500";
-                      badgeColor = "text-red-500";
-                    } else if (isActive) {
-                      tabTextColor = "text-[var(--theme-text-bright)]";
-                      iconColor = "text-[var(--theme-accent)]";
-                    }
-                    
-                    return (
-                      <div 
-                        key={file} 
-                        onClick={() => handleSwitchFile(file)} 
-                        className={`h-full px-3 flex items-center gap-2 text-[11px] font-mono font-medium border-r transition-colors cursor-pointer shrink-0 group ${
-                          isActive 
-                            ? 'border-t-2 border-t-[var(--theme-accent)] font-semibold' 
-                            : 'hover:text-[var(--theme-text-bright)]'
+                  <div className="h-full flex items-end pt-1 px-1.5 gap-1 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
+                    {/* Spatial Map Tab */}
+                    <button 
+                      onClick={() => setCenterView('spatial')} 
+                      className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
+                        centerView === 'spatial' 
+                          ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
+                          : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
+                      }`}
+                      style={{
+                        backgroundColor: centerView === 'spatial' ? 'var(--theme-background)' : 'transparent',
+                        borderColor: centerView === 'spatial' ? 'var(--theme-border)' : 'transparent',
+                        color: centerView === 'spatial' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
+                      }}
+                    >
+                      <span
+                        className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
+                          centerView === 'spatial' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
                         }`}
-                        style={{
-                          backgroundColor: isActive ? 'var(--theme-background, #121314)' : 'var(--theme-secondary, #191a1b)',
-                          borderColor: 'var(--theme-border, #242628)'
-                        }}
-                      >
-                        <FileCode2 size={12} className={iconColor} /> 
-                        
-                        <span className={tabTextColor}>
-                          {file.split('/').pop()}
-                        </span>
-                        
-                        {gStat && gStat !== 'I' && (
-                          <span className={`text-[10px] font-mono font-bold ${badgeColor} pr-0.5`}>
-                            {gStat}
-                          </span>
-                        )}
+                        style={{ borderColor: 'var(--theme-accent)' }}
+                      />
+                      {centerView === 'spatial' && (
+                        <span
+                          className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
+                          style={{ borderColor: 'var(--theme-background)' }}
+                        />
+                      )}
+                      <span>Spatial Map</span>
+                    </button>
 
-                        {workspace.isFileSyncing && workspace.currentFile === file && (
-                          <Loader2 size={11} className="text-[var(--theme-accent)] animate-spin" />
-                        )}
-                        
-                        {/* 🚀 VS CODE-STYLE CLOSE BUTTON OR DIRTY CIRCLE (●) */}
-                        <button 
-                          onClick={(e) => handleCloseTab(file, e)} 
-                          className="rounded p-0.5 ml-1 transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] flex items-center justify-center relative w-4 h-4 group/btn"
-                          title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
+                    {/* Dynamic Multi-File Tabs (With VS Code Dirty Dot Indicator ●) */}
+                    {(workspace.openFiles || []).map(file => {
+                      const isDirty = dirtyFiles.has(file);
+                      const rawGStat = (workspace.gitStatuses || {})[file];
+                      const gStat = (isDirty && (!rawGStat || rawGStat === 'I')) ? 'M' : rawGStat;
+                      const isModified = gStat === 'M';
+                      const isUntracked = gStat === 'U';
+                      const isAdded = gStat === 'A';
+                      const isDeleted = gStat === 'D';
+                      const isActive = centerView === 'editor' && workspace.currentFile === file;
+                      
+                      let tabTextClass = isActive ? "font-semibold" : "group-hover:text-[var(--theme-text-bright)]";
+                      let tabTextStyle = {
+                        color: isActive ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
+                      };
+                      let iconClass = "";
+                      let iconStyle = {
+                        color: isActive ? 'var(--theme-accent)' : 'var(--theme-text-muted)'
+                      };
+                      let badgeColor = "";
+
+                      if (isDirty) {
+                        tabTextClass = isActive ? "italic text-amber-500 font-semibold" : "italic text-amber-500";
+                        tabTextStyle = {};
+                        iconClass = "text-amber-500";
+                        iconStyle = {};
+                        badgeColor = "text-amber-500";
+                      } else if (isModified) {
+                        tabTextClass = isActive ? "text-amber-500 font-semibold" : "text-amber-500";
+                        tabTextStyle = {};
+                        iconClass = "text-amber-500";
+                        iconStyle = {};
+                        badgeColor = "text-amber-500";
+                      } else if (isUntracked || isAdded) {
+                        tabTextClass = isActive ? "text-emerald-500 font-semibold" : "text-emerald-500";
+                        tabTextStyle = {};
+                        iconClass = "text-emerald-500";
+                        iconStyle = {};
+                        badgeColor = "text-emerald-500";
+                      } else if (isDeleted) {
+                        tabTextClass = "text-red-500 line-through";
+                        tabTextStyle = {};
+                        iconClass = "text-red-500";
+                        iconStyle = {};
+                        badgeColor = "text-red-500";
+                      }
+                      
+                      return (
+                        <div 
+                          key={file} 
+                          onClick={() => handleSwitchFile(file)} 
+                          className={`relative px-3.5 flex items-center gap-2 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out cursor-pointer shrink-0 group ${
+                            isActive 
+                              ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
+                              : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60'
+                          }`}
+                          style={{
+                            backgroundColor: isActive ? 'var(--theme-background)' : 'transparent',
+                            borderColor: isActive ? 'var(--theme-border)' : 'transparent',
+                            color: isActive ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
+                          }}
                         >
-                          {isDirty ? (
-                            <>
-                              <span className="w-2 h-2 rounded-full bg-amber-400 group-hover/btn:opacity-0 transition-opacity" />
-                              <X size={12} className="opacity-0 group-hover/btn:opacity-100 transition-opacity absolute inset-0 m-auto text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)]" />
-                            </>
-                          ) : (
-                            <X size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]" />
+                          <span
+                            className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
+                              isActive ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+                            }`}
+                            style={{ borderColor: 'var(--theme-accent)' }}
+                          />
+                          {isActive && (
+                            <span
+                              className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
+                              style={{ borderColor: 'var(--theme-background)' }}
+                            />
                           )}
-                        </button>
-                      </div>
-                    );
-                  })}
 
-                  {/* 🚀 HOLLOW WHITE TRIANGLE RUN BUTTON (F5) */}
+                          <FileCode2 size={12} className={`transition-colors duration-150 ${iconClass}`} style={iconStyle} /> 
+                          
+                          <span className={`transition-colors duration-150 ${tabTextClass}`} style={tabTextStyle}>
+                            {file.split('/').pop()}
+                          </span>
+                          
+                          {gStat && gStat !== 'I' && (
+                            <span className={`text-[10px] font-mono font-bold ${badgeColor} pr-0.5`}>
+                              {gStat}
+                            </span>
+                          )}
+
+                          {workspace.isFileSyncing && workspace.currentFile === file && (
+                            <Loader2 size={11} className="animate-spin" style={{ color: 'var(--theme-accent)' }} />
+                          )}
+                          
+                          {/* 🚀 VS CODE-STYLE CLOSE BUTTON OR DIRTY CIRCLE (●) */}
+                          <button 
+                            onClick={(e) => handleCloseTab(file, e)} 
+                            className="rounded p-0.5 ml-0.5 transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] flex items-center justify-center relative w-4 h-4 group/btn"
+                            title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
+                          >
+                            {isDirty ? (
+                              <>
+                                <span className="w-2 h-2 rounded-full bg-amber-400 group-hover/btn:opacity-0 transition-opacity" />
+                                <X size={12} className="opacity-0 group-hover/btn:opacity-100 transition-opacity absolute inset-0 m-auto text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)]" />
+                              </>
+                            ) : (
+                              <X size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]" />
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 🚀 RUN BUTTON (F5) */}
                   {!isImageFile && !isUnsupportedFile && (
-                    <div className="ml-auto flex items-center pr-2.5 shrink-0">
+                    <div className="ml-auto flex items-center pr-2.5 shrink-0 relative z-10">
                       <button 
                         onClick={handleRunCode} 
-                        className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-white/10 text-white/80 hover:text-white transition-all cursor-pointer"
+                        className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-all cursor-pointer"
                         title="Run Active File (F5)"
                       >
                         <Play size={13} strokeWidth={1.8} />
