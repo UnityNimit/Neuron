@@ -1,0 +1,1802 @@
+[
+  {
+    "code": "def get_user_profile(user_id):\n    query = f'SELECT * FROM users WHERE id = {user_id}'\n    return db.execute(query).fetchall()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "f-string formatting in SQL query"
+  },
+  {
+    "code": "def search_products(term):\n    sql = 'SELECT * FROM inventory WHERE name LIKE \"%' + term + '%\"'\n    return cursor.execute(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "String concatenation in search query"
+  },
+  {
+    "code": "def authenticate(username, password):\n    stmt = 'SELECT id, role FROM accounts WHERE user=\"' + username + '\" AND pass=\"' + password + '\"'\n    return db.query(stmt).first()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Direct concatenation of auth credentials"
+  },
+  {
+    "code": "def delete_record(table, record_id):\n    db.execute('DELETE FROM %s WHERE id = %s' % (table, record_id))",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Percent formatting in SQL statement"
+  },
+  {
+    "code": "def filter_orders(status, customer_id):\n    raw_sql = f'SELECT * FROM orders WHERE status = \"{status}\" AND cust_id = {customer_id}'\n    return db.engine.execute(raw_sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Multi-parameter interpolation in query"
+  },
+  {
+    "code": "def get_article_by_slug(slug):\n    return db.session.execute(f'SELECT title, content FROM posts WHERE slug = \"{slug}\"')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Slug formatting in database query"
+  },
+  {
+    "code": "def update_balance(account_num, amount):\n    cursor.execute('UPDATE accounts SET balance = balance + ' + str(amount) + ' WHERE acc = ' + str(account_num))",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "String concatenation in balance update"
+  },
+  {
+    "code": "def fetch_logs(severity, limit):\n    query = 'SELECT timestamp, msg FROM logs WHERE level = \"' + severity + '\" LIMIT ' + str(limit)\n    return db.fetch(query)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Severity string appended directly to query"
+  },
+  {
+    "code": "def find_email(domain):\n    q = 'SELECT email FROM clients WHERE email LIKE \"%' + domain + '\"'\n    return db.cursor().execute(q).fetchall()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Domain wildcards concatenated into SQL"
+  },
+  {
+    "code": "def remove_user(uid):\n    sql = f'DELETE FROM users WHERE user_id = {uid}; DELETE FROM sessions WHERE user_id = {uid}'\n    db.executescript(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Multi-statement injection vulnerability"
+  },
+  {
+    "code": "def lookup_token(tok):\n    return db.execute(f'SELECT valid, expiry FROM api_tokens WHERE token = \"{tok}\"').fetchone()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "API token formatted into SQL string"
+  },
+  {
+    "code": "def get_comments(post_id, sort_order):\n    return db.execute(f'SELECT * FROM comments WHERE post_id = {post_id} ORDER BY created_at {sort_order}')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Order clause injection via unvalidated string"
+  },
+  {
+    "code": "def change_role(user, new_role):\n    db.execute('UPDATE members SET role = \"' + new_role + '\" WHERE username = \"' + user + '\"')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Role update using raw string concatenation"
+  },
+  {
+    "code": "def search_customers(city, state):\n    sql = 'SELECT name, phone FROM contacts WHERE city = \"' + city + '\" AND state = \"' + state + '\"'\n    return db.query(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Unsanitized city/state search parameters"
+  },
+  {
+    "code": "def get_metric_stats(metric_name, start_date):\n    query = f'SELECT avg(val) FROM metrics WHERE metric = \"{metric_name}\" AND date >= \"{start_date}\"'\n    return db.run(query)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Dynamic metric query via f-string"
+  },
+  {
+    "code": "def get_user_profile(user_id):\n    query = 'SELECT * FROM users WHERE id = ?'\n    return db.execute(query, (user_id,)).fetchall()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized query with positional tuple"
+  },
+  {
+    "code": "def search_products(term):\n    sql = 'SELECT * FROM inventory WHERE name LIKE :term'\n    return cursor.execute(sql, {'term': f'%{term}%'})",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Named parameter binding with wildcard"
+  },
+  {
+    "code": "def authenticate(username, password_hash):\n    stmt = 'SELECT id, role FROM accounts WHERE user = ? AND pass_hash = ?'\n    return db.query(stmt, (username, password_hash)).first()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe parameterized credential check"
+  },
+  {
+    "code": "def delete_record(record_id):\n    db.execute('DELETE FROM records WHERE id = ?', (record_id,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized single-record deletion"
+  },
+  {
+    "code": "def filter_orders(status, customer_id):\n    sql = 'SELECT * FROM orders WHERE status = :status AND cust_id = :cid'\n    return db.engine.execute(sql, {'status': status, 'cid': customer_id})",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Strict dictionary binding in ORM engine"
+  },
+  {
+    "code": "def get_article_by_slug(slug):\n    return db.session.execute('SELECT title, content FROM posts WHERE slug = ?', (slug,)).fetchone()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe slug parameterization"
+  },
+  {
+    "code": "def update_balance(account_num, amount):\n    cursor.execute('UPDATE accounts SET balance = balance + ? WHERE acc = ?', (amount, account_num))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized numerical update"
+  },
+  {
+    "code": "def fetch_logs(severity, limit):\n    query = 'SELECT timestamp, msg FROM logs WHERE level = ? LIMIT ?'\n    return db.fetch(query, (severity, int(limit)))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Type cast limit and parameterized severity"
+  },
+  {
+    "code": "def find_email(domain):\n    q = 'SELECT email FROM clients WHERE email LIKE ?'\n    return db.cursor().execute(q, (f'%{domain}',)).fetchall()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Bound parameter with domain suffix"
+  },
+  {
+    "code": "def remove_user(uid):\n    db.execute('DELETE FROM users WHERE user_id = ?', (uid,))\n    db.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Separate parameterized atomic queries"
+  },
+  {
+    "code": "def lookup_token(tok):\n    return db.execute('SELECT valid, expiry FROM api_tokens WHERE token = ?', (tok,)).fetchone()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized token validation lookup"
+  },
+  {
+    "code": "def get_comments(post_id, sort_order):\n    allowed_orders = {'asc': 'ASC', 'desc': 'DESC'}\n    order = allowed_orders.get(sort_order.lower(), 'DESC')\n    return db.execute(f'SELECT * FROM comments WHERE post_id = ? ORDER BY created_at {order}', (post_id,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Whitelist validation for order clause and parameterized id"
+  },
+  {
+    "code": "def change_role(user, new_role):\n    allowed_roles = {'admin', 'viewer', 'editor'}\n    if new_role not in allowed_roles:\n        raise ValueError('Invalid role')\n    db.execute('UPDATE members SET role = ? WHERE username = ?', (new_role, user))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Role validation against whitelist before parameterized query"
+  },
+  {
+    "code": "def search_customers(city, state):\n    sql = 'SELECT name, phone FROM contacts WHERE city = ? AND state = ?'\n    return db.query(sql, (city, state))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Dual parameterized string filtering"
+  },
+  {
+    "code": "def get_metric_stats(metric_name, start_date):\n    query = 'SELECT avg(val) FROM metrics WHERE metric = ? AND date >= ?'\n    return db.run(query, (metric_name, start_date))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe metric aggregation with bound parameters"
+  },
+  {
+    "code": "def ping_server(host):\n    import os\n    return os.system(f'ping -c 1 {host}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Direct host concatenation in os.system ping"
+  },
+  {
+    "code": "def evaluate_formula(expr):\n    return eval(expr)",
+    "label": 1,
+    "category": "RCE_Eval",
+    "description": "Arbitrary code execution via raw eval"
+  },
+  {
+    "code": "def run_calculation(user_math):\n    return exec(f'result = {user_math}')",
+    "label": 1,
+    "category": "RCE_Exec",
+    "description": "Unbounded dynamic code execution via exec"
+  },
+  {
+    "code": "def convert_pdf(filename):\n    import subprocess\n    cmd = f'pdftotext {filename} output.txt'\n    return subprocess.Popen(cmd, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Subprocess execution with shell=True and user string"
+  },
+  {
+    "code": "def unzip_file(archive_path, target_dir):\n    import os\n    os.system('unzip ' + archive_path + ' -d ' + target_dir)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "os.system unzip command concatenation"
+  },
+  {
+    "code": "def backup_database(db_name):\n    import subprocess\n    return subprocess.call(f'pg_dump {db_name} > backup.sql', shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Database dump with shell=True"
+  },
+  {
+    "code": "def resize_image(image_path, width, height):\n    import os\n    os.system(f'convert {image_path} -resize {width}x{height} out.png')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "ImageMagick CLI injection vulnerability"
+  },
+  {
+    "code": "def run_git_clone(repo_url):\n    import subprocess\n    return subprocess.check_output(f'git clone {repo_url}', shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "git clone with shell=True and user-controlled URL"
+  },
+  {
+    "code": "def check_disk_usage(mount_point):\n    import os\n    return os.popen('df -h ' + mount_point).read()",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "os.popen with unsanitized mount point parameter"
+  },
+  {
+    "code": "def kill_process(proc_name):\n    import subprocess\n    subprocess.run('pkill -f ' + proc_name, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Process kill command injection via shell=True"
+  },
+  {
+    "code": "def compile_code(source_file):\n    import os\n    os.system('gcc ' + source_file + ' -o output_bin')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "C compiler invocation with unquoted source file"
+  },
+  {
+    "code": "def lookup_dns(domain):\n    import subprocess\n    return subprocess.getoutput(f'nslookup {domain}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "nslookup command injection via getoutput"
+  },
+  {
+    "code": "def run_script(script_name, arg):\n    import os\n    os.system(f'bash {script_name}.sh {arg}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Shell script execution with unsanitized arguments"
+  },
+  {
+    "code": "def compress_folder(folder_name):\n    import subprocess\n    subprocess.call('tar -czf archive.tar.gz ' + folder_name, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Tar archiving injection via shell=True"
+  },
+  {
+    "code": "def parse_expression(user_input):\n    compiled = compile(user_input, '<string>', 'eval')\n    return eval(compiled)",
+    "label": 1,
+    "category": "RCE_Eval",
+    "description": "Dynamic code compilation and evaluation of user input"
+  },
+  {
+    "code": "def ping_server(host):\n    import subprocess, ipaddress\n    ipaddress.ip_address(host)\n    return subprocess.run(['ping', '-c', '1', host], capture_output=True, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Host validation with ipaddress and list arguments"
+  },
+  {
+    "code": "def evaluate_formula(expr):\n    import ast\n    node = ast.parse(expr, mode='eval')\n    for n in ast.walk(node):\n        if not isinstance(n, (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.operator, ast.unaryop)):\n            raise ValueError('Unsafe expression')\n    return eval(compile(node, '<string>', 'eval'), {'__builtins__': None}, {})",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Safe AST-validated arithmetic expression evaluator"
+  },
+  {
+    "code": "def run_calculation(op, a, b):\n    ops = {'+': lambda x, y: x + y, '-': lambda x, y: x - y, '*': lambda x, y: x * y}\n    if op not in ops:\n        raise ValueError('Unsupported operator')\n    return ops[op](float(a), float(b))",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Deterministic dictionary lookup for arithmetic operations"
+  },
+  {
+    "code": "def convert_pdf(filename):\n    import subprocess, os\n    if not os.path.isfile(filename):\n        raise FileNotFoundError('File does not exist')\n    return subprocess.run(['pdftotext', filename, 'output.txt'], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Subprocess execution using explicit argument array without shell"
+  },
+  {
+    "code": "def unzip_file(archive_path, target_dir):\n    import zipfile\n    with zipfile.ZipFile(archive_path, 'r') as zip_ref:\n        zip_ref.extractall(target_dir)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native zipfile library extraction without shell invocation"
+  },
+  {
+    "code": "def backup_database(db_name):\n    import subprocess, re\n    if not re.match(r'^[a-zA-Z0-9_]+$', db_name):\n        raise ValueError('Invalid database name')\n    with open('backup.sql', 'w') as out_f:\n        return subprocess.run(['pg_dump', db_name], stdout=out_f, shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Alphanumeric regex validation and argument list invocation"
+  },
+  {
+    "code": "def resize_image(image_path, width, height):\n    from PIL import Image\n    with Image.open(image_path) as img:\n        resized = img.resize((int(width), int(height)))\n        resized.save('out.png')",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native Pillow image processing API"
+  },
+  {
+    "code": "def run_git_clone(repo_url):\n    import subprocess, re\n    if not re.match(r'^https://github\\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$', repo_url):\n        raise ValueError('Invalid GitHub repository URL')\n    return subprocess.run(['git', 'clone', '--depth', '1', repo_url], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Strict URL regex check and non-shell git execution"
+  },
+  {
+    "code": "def check_disk_usage(mount_point):\n    import shutil\n    usage = shutil.disk_usage(mount_point)\n    return {'total': usage.total, 'used': usage.used, 'free': usage.free}",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native shutil.disk_usage system call"
+  },
+  {
+    "code": "def kill_process(pid):\n    import os, signal\n    pid_int = int(pid)\n    if pid_int > 1:\n        os.kill(pid_int, signal.SIGTERM)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Typed integer conversion and direct OS signal"
+  },
+  {
+    "code": "def compile_code(source_file):\n    import subprocess, os\n    if not source_file.endswith('.c') or not os.path.exists(source_file):\n        raise ValueError('Invalid source path')\n    subprocess.run(['gcc', source_file, '-o', 'output_bin'], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "File extension check and argument vector execution"
+  },
+  {
+    "code": "def lookup_dns(domain):\n    import socket\n    return socket.gethostbyname(domain)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Standard library socket lookup without external binary"
+  },
+  {
+    "code": "def run_script(script_name, arg):\n    import subprocess\n    allowed_scripts = {'daily_cleanup', 'sync_cache'}\n    if script_name not in allowed_scripts:\n        raise ValueError('Unauthorized script')\n    subprocess.run(['bash', f'{script_name}.sh', str(arg)], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Whitelist of allowed script names and non-shell subprocess"
+  },
+  {
+    "code": "def compress_folder(folder_path, output_archive):\n    import shutil\n    return shutil.make_archive(output_archive, 'gztar', folder_path)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Standard library shutil archiving API"
+  },
+  {
+    "code": "def parse_expression(value_str):\n    import json\n    return json.loads(value_str)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Strict JSON parser for data deserialization"
+  },
+  {
+    "code": "def read_file(filename):\n    with open('/var/www/uploads/' + filename, 'r') as f:\n        return f.read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Arbitrary path traversal via directory concatenation"
+  },
+  {
+    "code": "def delete_user_file(file_path):\n    import os\n    os.remove('/home/storage/' + file_path)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Direct removal of file using unsanitized path suffix"
+  },
+  {
+    "code": "def download_attachment(name):\n    return send_file('/app/documents/' + name)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "File serving without directory escape check"
+  },
+  {
+    "code": "def save_avatar(user_id, ext, data):\n    path = f'uploads/{user_id}.{ext}'\n    with open(path, 'wb') as f:\n        f.write(data)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Unvalidated file extension leading to path traversal or script upload"
+  },
+  {
+    "code": "def display_log(log_name):\n    filepath = f'/logs/{log_name}'\n    return open(filepath, 'r').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Arbitrary log file traversal"
+  },
+  {
+    "code": "def load_plugin(plugin_name):\n    import importlib\n    return importlib.import_module(f'plugins.{plugin_name}')",
+    "label": 1,
+    "category": "Insecure_Import",
+    "description": "Dynamic import without validation"
+  },
+  {
+    "code": "def stream_video(video_id):\n    return open(f'/media/videos/{video_id}.mp4', 'rb').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Unsanitized video file identifier"
+  },
+  {
+    "code": "def export_report(folder, report_name):\n    target = folder + '/' + report_name\n    with open(target, 'w') as f:\n        f.write('Report data')",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Dual parameter concatenation allowing arbitrary destination write"
+  },
+  {
+    "code": "def get_template(theme, page):\n    path = f'templates/{theme}/{page}.html'\n    return open(path).read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Template injection and path traversal"
+  },
+  {
+    "code": "def read_config_file(path_arg):\n    return open(path_arg, 'r').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Completely unvalidated file path input"
+  },
+  {
+    "code": "def read_file(filename):\n    import os\n    base_dir = os.path.abspath('/var/www/uploads')\n    safe_path = os.path.abspath(os.path.join(base_dir, os.path.basename(filename)))\n    if not safe_path.startswith(base_dir) or not os.path.exists(safe_path):\n        raise PermissionError('Access denied')\n    with open(safe_path, 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Basename extraction and canonical path boundary validation"
+  },
+  {
+    "code": "def delete_user_file(file_path):\n    import os\n    base = os.path.abspath('/home/storage')\n    target = os.path.abspath(os.path.join(base, os.path.basename(file_path)))\n    if target.startswith(base) and os.path.isfile(target):\n        os.remove(target)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Canonical path prefix check before file removal"
+  },
+  {
+    "code": "def download_attachment(name):\n    import os\n    clean_name = os.path.basename(name)\n    base = os.path.abspath('/app/documents')\n    full = os.path.abspath(os.path.join(base, clean_name))\n    if not full.startswith(base) or not os.path.exists(full):\n        raise FileNotFoundError('File not found')\n    return send_file(full)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Path sanitization and containment validation"
+  },
+  {
+    "code": "def save_avatar(user_id, ext, data):\n    import os\n    allowed_exts = {'png', 'jpg', 'jpeg'}\n    clean_ext = ext.lower().strip('.')\n    if clean_ext not in allowed_exts:\n        raise ValueError('Invalid image format')\n    safe_name = f'{int(user_id)}.{clean_ext}'\n    path = os.path.join('/app/uploads', safe_name)\n    with open(path, 'wb') as f:\n        f.write(data)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Extension whitelist and integer sanitization"
+  },
+  {
+    "code": "def display_log(log_name):\n    import os\n    allowed_logs = {'access.log', 'error.log', 'audit.log'}\n    if log_name not in allowed_logs:\n        raise ValueError('Unauthorized log file')\n    full = os.path.join('/logs', log_name)\n    with open(full, 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Strict log filename whitelist"
+  },
+  {
+    "code": "def load_plugin(plugin_name):\n    import importlib\n    allowed = {'auth_plugin', 'metrics_plugin', 'cache_plugin'}\n    if plugin_name not in allowed:\n        raise ValueError('Unauthorized plugin')\n    return importlib.import_module(f'plugins.{plugin_name}')",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Plugin name whitelist validation"
+  },
+  {
+    "code": "def stream_video(video_id):\n    import os\n    safe_id = int(video_id)\n    path = f'/media/videos/{safe_id}.mp4'\n    with open(path, 'rb') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Type-casting video ID to positive integer"
+  },
+  {
+    "code": "def export_report(report_name, data):\n    import os\n    base = os.path.abspath('/reports')\n    clean = os.path.basename(report_name)\n    target = os.path.abspath(os.path.join(base, clean))\n    if not target.startswith(base):\n        raise PermissionError('Escape attempted')\n    with open(target, 'w') as f:\n        f.write(data)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Target directory containment check"
+  },
+  {
+    "code": "def get_template(theme, page):\n    import os\n    allowed_themes = {'dark', 'light'}\n    allowed_pages = {'index', 'contact', 'about'}\n    if theme not in allowed_themes or page not in allowed_pages:\n        raise ValueError('Invalid template parameters')\n    path = f'templates/{theme}/{page}.html'\n    with open(path) as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Strict set membership check for template paths"
+  },
+  {
+    "code": "def read_config_file(config_type):\n    config_map = {'app': '/etc/app.conf', 'db': '/etc/db.conf'}\n    if config_type not in config_map:\n        raise KeyError('Config not found')\n    with open(config_map[config_type], 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Lookup table mapping rather than raw path access"
+  },
+  {
+    "code": "def load_session_state(raw_data):\n    import pickle\n    return pickle.loads(raw_data)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "Arbitrary object execution via untrusted pickle"
+  },
+  {
+    "code": "def parse_yaml_config(yaml_str):\n    import yaml\n    return yaml.load(yaml_str, Loader=yaml.Loader)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "Unsafe YAML deserialization"
+  },
+  {
+    "code": "def read_large_dataset(filepath):\n    f = open(filepath, 'r')\n    data = f.readlines()\n    return len(data)",
+    "label": 1,
+    "category": "Resource_Leak",
+    "description": "File descriptor leak without close or context manager"
+  },
+  {
+    "code": "def divide_metrics(total, count):\n    return total / count",
+    "label": 1,
+    "category": "Unhandled_Zero_Division",
+    "description": "ZeroDivisionError unhandled when count is zero"
+  },
+  {
+    "code": "def access_matrix_element(matrix, r, c):\n    return matrix[r][c]",
+    "label": 1,
+    "category": "Unchecked_Index",
+    "description": "Potential IndexError on out-of-bounds access"
+  },
+  {
+    "code": "def query_key_value(dictionary, key):\n    return dictionary[key]",
+    "label": 1,
+    "category": "Unchecked_Key",
+    "description": "KeyError unhandled on missing dictionary key"
+  },
+  {
+    "code": "def parse_json_unsafe(raw_json):\n    import json\n    return json.loads(raw_json)",
+    "label": 1,
+    "category": "Uncaught_Parse_Error",
+    "description": "JSONDecodeError unhandled on corrupted string"
+  },
+  {
+    "code": "def compute_ratio(a, b):\n    val = a / b\n    return val * 100",
+    "label": 1,
+    "category": "Unhandled_Zero_Division",
+    "description": "Unhandled division leading to crash"
+  },
+  {
+    "code": "def deserialize_payload(payload):\n    import _pickle as cPickle\n    return cPickle.loads(payload)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "cPickle deserialization of user-provided data"
+  },
+  {
+    "code": "def write_audit_log(entry):\n    f = open('/var/log/audit.log', 'a')\n    f.write(entry + '\\n')",
+    "label": 1,
+    "category": "Resource_Leak",
+    "description": "Unclosed append handle"
+  },
+  {
+    "code": "def load_session_state(raw_data):\n    import json\n    return json.loads(raw_data.decode('utf-8'))",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Safe JSON deserialization of state data"
+  },
+  {
+    "code": "def parse_yaml_config(yaml_str):\n    import yaml\n    return yaml.safe_load(yaml_str)",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Strict yaml.safe_load avoiding code execution"
+  },
+  {
+    "code": "def read_large_dataset(filepath):\n    with open(filepath, 'r') as f:\n        return len(f.readlines())",
+    "label": 0,
+    "category": "Safe_Resource",
+    "description": "Deterministic resource cleanup via context manager"
+  },
+  {
+    "code": "def divide_metrics(total, count):\n    if not count or count == 0:\n        return 0.0\n    return total / count",
+    "label": 0,
+    "category": "Safe_Arithmetic",
+    "description": "Explicit zero guard before division"
+  },
+  {
+    "code": "def access_matrix_element(matrix, r, c):\n    if 0 <= r < len(matrix) and 0 <= c < len(matrix[r]):\n        return matrix[r][c]\n    return None",
+    "label": 0,
+    "category": "Safe_Access",
+    "description": "Explicit boundary validation before indexing"
+  },
+  {
+    "code": "def query_key_value(dictionary, key, default=None):\n    return dictionary.get(key, default)",
+    "label": 0,
+    "category": "Safe_Access",
+    "description": "Safe dictionary get method with default fallback"
+  },
+  {
+    "code": "def parse_json_safe(raw_json):\n    import json\n    try:\n        return json.loads(raw_json)\n    except (json.JSONDecodeError, TypeError):\n        return {}",
+    "label": 0,
+    "category": "Safe_Parsing",
+    "description": "Handled JSON decode errors with fallback empty dict"
+  },
+  {
+    "code": "def compute_ratio(a, b):\n    try:\n        return (a / b) * 100\n    except ZeroDivisionError:\n        return 0.0",
+    "label": 0,
+    "category": "Safe_Arithmetic",
+    "description": "Caught ZeroDivisionError returning 0.0"
+  },
+  {
+    "code": "def deserialize_payload(payload):\n    import json\n    return json.loads(payload)",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Standard JSON parsing replacing dangerous pickle"
+  },
+  {
+    "code": "def write_audit_log(entry):\n    with open('/var/log/audit.log', 'a') as f:\n        f.write(str(entry) + '\\n')",
+    "label": 0,
+    "category": "Safe_Resource",
+    "description": "Auto-closing context manager for audit logs"
+  },
+  {
+    "code": "def get_user_profile(user_id):\n    '''Security audit module function.'''\n    query = f'SELECT * FROM users WHERE id = {user_id}'\n    return db.execute(query).fetchall()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "f-string formatting in SQL query (variant A)"
+  },
+  {
+    "code": "def get_user_profile(user_id):\n    import logging\n    logging.debug('Executing operation')\n    query = f'SELECT * FROM users WHERE id = {user_id}'\n    return db.execute(query).fetchall()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "f-string formatting in SQL query (variant B)"
+  },
+  {
+    "code": "def search_products(term):\n    '''Security audit module function.'''\n    sql = 'SELECT * FROM inventory WHERE name LIKE \"%' + term + '%\"'\n    return cursor.execute(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "String concatenation in search query (variant A)"
+  },
+  {
+    "code": "def search_products(term):\n    import logging\n    logging.debug('Executing operation')\n    sql = 'SELECT * FROM inventory WHERE name LIKE \"%' + term + '%\"'\n    return cursor.execute(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "String concatenation in search query (variant B)"
+  },
+  {
+    "code": "def authenticate(username, password):\n    '''Security audit module function.'''\n    stmt = 'SELECT id, role FROM accounts WHERE user=\"' + username + '\" AND pass=\"' + password + '\"'\n    return db.query(stmt).first()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Direct concatenation of auth credentials (variant A)"
+  },
+  {
+    "code": "def authenticate(username, password):\n    import logging\n    logging.debug('Executing operation')\n    stmt = 'SELECT id, role FROM accounts WHERE user=\"' + username + '\" AND pass=\"' + password + '\"'\n    return db.query(stmt).first()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Direct concatenation of auth credentials (variant B)"
+  },
+  {
+    "code": "def delete_record(table, record_id):\n    '''Security audit module function.'''\n    db.execute('DELETE FROM %s WHERE id = %s' % (table, record_id))",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Percent formatting in SQL statement (variant A)"
+  },
+  {
+    "code": "def delete_record(table, record_id):\n    import logging\n    logging.debug('Executing operation')\n    db.execute('DELETE FROM %s WHERE id = %s' % (table, record_id))",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Percent formatting in SQL statement (variant B)"
+  },
+  {
+    "code": "def filter_orders(status, customer_id):\n    '''Security audit module function.'''\n    raw_sql = f'SELECT * FROM orders WHERE status = \"{status}\" AND cust_id = {customer_id}'\n    return db.engine.execute(raw_sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Multi-parameter interpolation in query (variant A)"
+  },
+  {
+    "code": "def filter_orders(status, customer_id):\n    import logging\n    logging.debug('Executing operation')\n    raw_sql = f'SELECT * FROM orders WHERE status = \"{status}\" AND cust_id = {customer_id}'\n    return db.engine.execute(raw_sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Multi-parameter interpolation in query (variant B)"
+  },
+  {
+    "code": "def get_article_by_slug(slug):\n    '''Security audit module function.'''\n    return db.session.execute(f'SELECT title, content FROM posts WHERE slug = \"{slug}\"')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Slug formatting in database query (variant A)"
+  },
+  {
+    "code": "def get_article_by_slug(slug):\n    import logging\n    logging.debug('Executing operation')\n    return db.session.execute(f'SELECT title, content FROM posts WHERE slug = \"{slug}\"')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Slug formatting in database query (variant B)"
+  },
+  {
+    "code": "def update_balance(account_num, amount):\n    '''Security audit module function.'''\n    cursor.execute('UPDATE accounts SET balance = balance + ' + str(amount) + ' WHERE acc = ' + str(account_num))",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "String concatenation in balance update (variant A)"
+  },
+  {
+    "code": "def update_balance(account_num, amount):\n    import logging\n    logging.debug('Executing operation')\n    cursor.execute('UPDATE accounts SET balance = balance + ' + str(amount) + ' WHERE acc = ' + str(account_num))",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "String concatenation in balance update (variant B)"
+  },
+  {
+    "code": "def fetch_logs(severity, limit):\n    '''Security audit module function.'''\n    query = 'SELECT timestamp, msg FROM logs WHERE level = \"' + severity + '\" LIMIT ' + str(limit)\n    return db.fetch(query)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Severity string appended directly to query (variant A)"
+  },
+  {
+    "code": "def fetch_logs(severity, limit):\n    import logging\n    logging.debug('Executing operation')\n    query = 'SELECT timestamp, msg FROM logs WHERE level = \"' + severity + '\" LIMIT ' + str(limit)\n    return db.fetch(query)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Severity string appended directly to query (variant B)"
+  },
+  {
+    "code": "def find_email(domain):\n    '''Security audit module function.'''\n    q = 'SELECT email FROM clients WHERE email LIKE \"%' + domain + '\"'\n    return db.cursor().execute(q).fetchall()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Domain wildcards concatenated into SQL (variant A)"
+  },
+  {
+    "code": "def find_email(domain):\n    import logging\n    logging.debug('Executing operation')\n    q = 'SELECT email FROM clients WHERE email LIKE \"%' + domain + '\"'\n    return db.cursor().execute(q).fetchall()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Domain wildcards concatenated into SQL (variant B)"
+  },
+  {
+    "code": "def remove_user(uid):\n    '''Security audit module function.'''\n    sql = f'DELETE FROM users WHERE user_id = {uid}; DELETE FROM sessions WHERE user_id = {uid}'\n    db.executescript(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Multi-statement injection vulnerability (variant A)"
+  },
+  {
+    "code": "def remove_user(uid):\n    import logging\n    logging.debug('Executing operation')\n    sql = f'DELETE FROM users WHERE user_id = {uid}; DELETE FROM sessions WHERE user_id = {uid}'\n    db.executescript(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Multi-statement injection vulnerability (variant B)"
+  },
+  {
+    "code": "def lookup_token(tok):\n    '''Security audit module function.'''\n    return db.execute(f'SELECT valid, expiry FROM api_tokens WHERE token = \"{tok}\"').fetchone()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "API token formatted into SQL string (variant A)"
+  },
+  {
+    "code": "def lookup_token(tok):\n    import logging\n    logging.debug('Executing operation')\n    return db.execute(f'SELECT valid, expiry FROM api_tokens WHERE token = \"{tok}\"').fetchone()",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "API token formatted into SQL string (variant B)"
+  },
+  {
+    "code": "def get_comments(post_id, sort_order):\n    '''Security audit module function.'''\n    return db.execute(f'SELECT * FROM comments WHERE post_id = {post_id} ORDER BY created_at {sort_order}')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Order clause injection via unvalidated string (variant A)"
+  },
+  {
+    "code": "def get_comments(post_id, sort_order):\n    import logging\n    logging.debug('Executing operation')\n    return db.execute(f'SELECT * FROM comments WHERE post_id = {post_id} ORDER BY created_at {sort_order}')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Order clause injection via unvalidated string (variant B)"
+  },
+  {
+    "code": "def change_role(user, new_role):\n    '''Security audit module function.'''\n    db.execute('UPDATE members SET role = \"' + new_role + '\" WHERE username = \"' + user + '\"')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Role update using raw string concatenation (variant A)"
+  },
+  {
+    "code": "def change_role(user, new_role):\n    import logging\n    logging.debug('Executing operation')\n    db.execute('UPDATE members SET role = \"' + new_role + '\" WHERE username = \"' + user + '\"')",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Role update using raw string concatenation (variant B)"
+  },
+  {
+    "code": "def search_customers(city, state):\n    '''Security audit module function.'''\n    sql = 'SELECT name, phone FROM contacts WHERE city = \"' + city + '\" AND state = \"' + state + '\"'\n    return db.query(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Unsanitized city/state search parameters (variant A)"
+  },
+  {
+    "code": "def search_customers(city, state):\n    import logging\n    logging.debug('Executing operation')\n    sql = 'SELECT name, phone FROM contacts WHERE city = \"' + city + '\" AND state = \"' + state + '\"'\n    return db.query(sql)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Unsanitized city/state search parameters (variant B)"
+  },
+  {
+    "code": "def get_metric_stats(metric_name, start_date):\n    '''Security audit module function.'''\n    query = f'SELECT avg(val) FROM metrics WHERE metric = \"{metric_name}\" AND date >= \"{start_date}\"'\n    return db.run(query)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Dynamic metric query via f-string (variant A)"
+  },
+  {
+    "code": "def get_metric_stats(metric_name, start_date):\n    import logging\n    logging.debug('Executing operation')\n    query = f'SELECT avg(val) FROM metrics WHERE metric = \"{metric_name}\" AND date >= \"{start_date}\"'\n    return db.run(query)",
+    "label": 1,
+    "category": "SQL_Injection",
+    "description": "Dynamic metric query via f-string (variant B)"
+  },
+  {
+    "code": "def get_user_profile(user_id):\n    '''Security audit module function.'''\n    query = 'SELECT * FROM users WHERE id = ?'\n    return db.execute(query, (user_id,)).fetchall()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized query with positional tuple (variant A)"
+  },
+  {
+    "code": "def get_user_profile(user_id):\n    import logging\n    logging.debug('Executing operation')\n    query = 'SELECT * FROM users WHERE id = ?'\n    return db.execute(query, (user_id,)).fetchall()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized query with positional tuple (variant B)"
+  },
+  {
+    "code": "def search_products(term):\n    '''Security audit module function.'''\n    sql = 'SELECT * FROM inventory WHERE name LIKE :term'\n    return cursor.execute(sql, {'term': f'%{term}%'})",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Named parameter binding with wildcard (variant A)"
+  },
+  {
+    "code": "def search_products(term):\n    import logging\n    logging.debug('Executing operation')\n    sql = 'SELECT * FROM inventory WHERE name LIKE :term'\n    return cursor.execute(sql, {'term': f'%{term}%'})",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Named parameter binding with wildcard (variant B)"
+  },
+  {
+    "code": "def authenticate(username, password_hash):\n    '''Security audit module function.'''\n    stmt = 'SELECT id, role FROM accounts WHERE user = ? AND pass_hash = ?'\n    return db.query(stmt, (username, password_hash)).first()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe parameterized credential check (variant A)"
+  },
+  {
+    "code": "def authenticate(username, password_hash):\n    import logging\n    logging.debug('Executing operation')\n    stmt = 'SELECT id, role FROM accounts WHERE user = ? AND pass_hash = ?'\n    return db.query(stmt, (username, password_hash)).first()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe parameterized credential check (variant B)"
+  },
+  {
+    "code": "def delete_record(record_id):\n    '''Security audit module function.'''\n    db.execute('DELETE FROM records WHERE id = ?', (record_id,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized single-record deletion (variant A)"
+  },
+  {
+    "code": "def delete_record(record_id):\n    import logging\n    logging.debug('Executing operation')\n    db.execute('DELETE FROM records WHERE id = ?', (record_id,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized single-record deletion (variant B)"
+  },
+  {
+    "code": "def filter_orders(status, customer_id):\n    '''Security audit module function.'''\n    sql = 'SELECT * FROM orders WHERE status = :status AND cust_id = :cid'\n    return db.engine.execute(sql, {'status': status, 'cid': customer_id})",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Strict dictionary binding in ORM engine (variant A)"
+  },
+  {
+    "code": "def filter_orders(status, customer_id):\n    import logging\n    logging.debug('Executing operation')\n    sql = 'SELECT * FROM orders WHERE status = :status AND cust_id = :cid'\n    return db.engine.execute(sql, {'status': status, 'cid': customer_id})",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Strict dictionary binding in ORM engine (variant B)"
+  },
+  {
+    "code": "def get_article_by_slug(slug):\n    '''Security audit module function.'''\n    return db.session.execute('SELECT title, content FROM posts WHERE slug = ?', (slug,)).fetchone()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe slug parameterization (variant A)"
+  },
+  {
+    "code": "def get_article_by_slug(slug):\n    import logging\n    logging.debug('Executing operation')\n    return db.session.execute('SELECT title, content FROM posts WHERE slug = ?', (slug,)).fetchone()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe slug parameterization (variant B)"
+  },
+  {
+    "code": "def update_balance(account_num, amount):\n    '''Security audit module function.'''\n    cursor.execute('UPDATE accounts SET balance = balance + ? WHERE acc = ?', (amount, account_num))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized numerical update (variant A)"
+  },
+  {
+    "code": "def update_balance(account_num, amount):\n    import logging\n    logging.debug('Executing operation')\n    cursor.execute('UPDATE accounts SET balance = balance + ? WHERE acc = ?', (amount, account_num))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized numerical update (variant B)"
+  },
+  {
+    "code": "def fetch_logs(severity, limit):\n    '''Security audit module function.'''\n    query = 'SELECT timestamp, msg FROM logs WHERE level = ? LIMIT ?'\n    return db.fetch(query, (severity, int(limit)))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Type cast limit and parameterized severity (variant A)"
+  },
+  {
+    "code": "def fetch_logs(severity, limit):\n    import logging\n    logging.debug('Executing operation')\n    query = 'SELECT timestamp, msg FROM logs WHERE level = ? LIMIT ?'\n    return db.fetch(query, (severity, int(limit)))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Type cast limit and parameterized severity (variant B)"
+  },
+  {
+    "code": "def find_email(domain):\n    '''Security audit module function.'''\n    q = 'SELECT email FROM clients WHERE email LIKE ?'\n    return db.cursor().execute(q, (f'%{domain}',)).fetchall()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Bound parameter with domain suffix (variant A)"
+  },
+  {
+    "code": "def find_email(domain):\n    import logging\n    logging.debug('Executing operation')\n    q = 'SELECT email FROM clients WHERE email LIKE ?'\n    return db.cursor().execute(q, (f'%{domain}',)).fetchall()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Bound parameter with domain suffix (variant B)"
+  },
+  {
+    "code": "def remove_user(uid):\n    '''Security audit module function.'''\n    db.execute('DELETE FROM users WHERE user_id = ?', (uid,))\n    db.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Separate parameterized atomic queries (variant A)"
+  },
+  {
+    "code": "def remove_user(uid):\n    import logging\n    logging.debug('Executing operation')\n    db.execute('DELETE FROM users WHERE user_id = ?', (uid,))\n    db.execute('DELETE FROM sessions WHERE user_id = ?', (uid,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Separate parameterized atomic queries (variant B)"
+  },
+  {
+    "code": "def lookup_token(tok):\n    '''Security audit module function.'''\n    return db.execute('SELECT valid, expiry FROM api_tokens WHERE token = ?', (tok,)).fetchone()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized token validation lookup (variant A)"
+  },
+  {
+    "code": "def lookup_token(tok):\n    import logging\n    logging.debug('Executing operation')\n    return db.execute('SELECT valid, expiry FROM api_tokens WHERE token = ?', (tok,)).fetchone()",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Parameterized token validation lookup (variant B)"
+  },
+  {
+    "code": "def get_comments(post_id, sort_order):\n    '''Security audit module function.'''\n    allowed_orders = {'asc': 'ASC', 'desc': 'DESC'}\n    order = allowed_orders.get(sort_order.lower(), 'DESC')\n    return db.execute(f'SELECT * FROM comments WHERE post_id = ? ORDER BY created_at {order}', (post_id,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Whitelist validation for order clause and parameterized id (variant A)"
+  },
+  {
+    "code": "def get_comments(post_id, sort_order):\n    import logging\n    logging.debug('Executing operation')\n    allowed_orders = {'asc': 'ASC', 'desc': 'DESC'}\n    order = allowed_orders.get(sort_order.lower(), 'DESC')\n    return db.execute(f'SELECT * FROM comments WHERE post_id = ? ORDER BY created_at {order}', (post_id,))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Whitelist validation for order clause and parameterized id (variant B)"
+  },
+  {
+    "code": "def change_role(user, new_role):\n    '''Security audit module function.'''\n    allowed_roles = {'admin', 'viewer', 'editor'}\n    if new_role not in allowed_roles:\n        raise ValueError('Invalid role')\n    db.execute('UPDATE members SET role = ? WHERE username = ?', (new_role, user))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Role validation against whitelist before parameterized query (variant A)"
+  },
+  {
+    "code": "def change_role(user, new_role):\n    import logging\n    logging.debug('Executing operation')\n    allowed_roles = {'admin', 'viewer', 'editor'}\n    if new_role not in allowed_roles:\n        raise ValueError('Invalid role')\n    db.execute('UPDATE members SET role = ? WHERE username = ?', (new_role, user))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Role validation against whitelist before parameterized query (variant B)"
+  },
+  {
+    "code": "def search_customers(city, state):\n    '''Security audit module function.'''\n    sql = 'SELECT name, phone FROM contacts WHERE city = ? AND state = ?'\n    return db.query(sql, (city, state))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Dual parameterized string filtering (variant A)"
+  },
+  {
+    "code": "def search_customers(city, state):\n    import logging\n    logging.debug('Executing operation')\n    sql = 'SELECT name, phone FROM contacts WHERE city = ? AND state = ?'\n    return db.query(sql, (city, state))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Dual parameterized string filtering (variant B)"
+  },
+  {
+    "code": "def get_metric_stats(metric_name, start_date):\n    '''Security audit module function.'''\n    query = 'SELECT avg(val) FROM metrics WHERE metric = ? AND date >= ?'\n    return db.run(query, (metric_name, start_date))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe metric aggregation with bound parameters (variant A)"
+  },
+  {
+    "code": "def get_metric_stats(metric_name, start_date):\n    import logging\n    logging.debug('Executing operation')\n    query = 'SELECT avg(val) FROM metrics WHERE metric = ? AND date >= ?'\n    return db.run(query, (metric_name, start_date))",
+    "label": 0,
+    "category": "Safe_SQL",
+    "description": "Safe metric aggregation with bound parameters (variant B)"
+  },
+  {
+    "code": "def ping_server(host):\n    '''Security audit module function.'''\n    import os\n    return os.system(f'ping -c 1 {host}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Direct host concatenation in os.system ping (variant A)"
+  },
+  {
+    "code": "def ping_server(host):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    return os.system(f'ping -c 1 {host}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Direct host concatenation in os.system ping (variant B)"
+  },
+  {
+    "code": "def evaluate_formula(expr):\n    '''Security audit module function.'''\n    return eval(expr)",
+    "label": 1,
+    "category": "RCE_Eval",
+    "description": "Arbitrary code execution via raw eval (variant A)"
+  },
+  {
+    "code": "def evaluate_formula(expr):\n    import logging\n    logging.debug('Executing operation')\n    return eval(expr)",
+    "label": 1,
+    "category": "RCE_Eval",
+    "description": "Arbitrary code execution via raw eval (variant B)"
+  },
+  {
+    "code": "def run_calculation(user_math):\n    '''Security audit module function.'''\n    return exec(f'result = {user_math}')",
+    "label": 1,
+    "category": "RCE_Exec",
+    "description": "Unbounded dynamic code execution via exec (variant A)"
+  },
+  {
+    "code": "def run_calculation(user_math):\n    import logging\n    logging.debug('Executing operation')\n    return exec(f'result = {user_math}')",
+    "label": 1,
+    "category": "RCE_Exec",
+    "description": "Unbounded dynamic code execution via exec (variant B)"
+  },
+  {
+    "code": "def convert_pdf(filename):\n    '''Security audit module function.'''\n    import subprocess\n    cmd = f'pdftotext {filename} output.txt'\n    return subprocess.Popen(cmd, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Subprocess execution with shell=True and user string (variant A)"
+  },
+  {
+    "code": "def convert_pdf(filename):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess\n    cmd = f'pdftotext {filename} output.txt'\n    return subprocess.Popen(cmd, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Subprocess execution with shell=True and user string (variant B)"
+  },
+  {
+    "code": "def unzip_file(archive_path, target_dir):\n    '''Security audit module function.'''\n    import os\n    os.system('unzip ' + archive_path + ' -d ' + target_dir)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "os.system unzip command concatenation (variant A)"
+  },
+  {
+    "code": "def unzip_file(archive_path, target_dir):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    os.system('unzip ' + archive_path + ' -d ' + target_dir)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "os.system unzip command concatenation (variant B)"
+  },
+  {
+    "code": "def backup_database(db_name):\n    '''Security audit module function.'''\n    import subprocess\n    return subprocess.call(f'pg_dump {db_name} > backup.sql', shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Database dump with shell=True (variant A)"
+  },
+  {
+    "code": "def backup_database(db_name):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess\n    return subprocess.call(f'pg_dump {db_name} > backup.sql', shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Database dump with shell=True (variant B)"
+  },
+  {
+    "code": "def resize_image(image_path, width, height):\n    '''Security audit module function.'''\n    import os\n    os.system(f'convert {image_path} -resize {width}x{height} out.png')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "ImageMagick CLI injection vulnerability (variant A)"
+  },
+  {
+    "code": "def resize_image(image_path, width, height):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    os.system(f'convert {image_path} -resize {width}x{height} out.png')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "ImageMagick CLI injection vulnerability (variant B)"
+  },
+  {
+    "code": "def run_git_clone(repo_url):\n    '''Security audit module function.'''\n    import subprocess\n    return subprocess.check_output(f'git clone {repo_url}', shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "git clone with shell=True and user-controlled URL (variant A)"
+  },
+  {
+    "code": "def run_git_clone(repo_url):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess\n    return subprocess.check_output(f'git clone {repo_url}', shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "git clone with shell=True and user-controlled URL (variant B)"
+  },
+  {
+    "code": "def check_disk_usage(mount_point):\n    '''Security audit module function.'''\n    import os\n    return os.popen('df -h ' + mount_point).read()",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "os.popen with unsanitized mount point parameter (variant A)"
+  },
+  {
+    "code": "def check_disk_usage(mount_point):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    return os.popen('df -h ' + mount_point).read()",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "os.popen with unsanitized mount point parameter (variant B)"
+  },
+  {
+    "code": "def kill_process(proc_name):\n    '''Security audit module function.'''\n    import subprocess\n    subprocess.run('pkill -f ' + proc_name, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Process kill command injection via shell=True (variant A)"
+  },
+  {
+    "code": "def kill_process(proc_name):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess\n    subprocess.run('pkill -f ' + proc_name, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Process kill command injection via shell=True (variant B)"
+  },
+  {
+    "code": "def compile_code(source_file):\n    '''Security audit module function.'''\n    import os\n    os.system('gcc ' + source_file + ' -o output_bin')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "C compiler invocation with unquoted source file (variant A)"
+  },
+  {
+    "code": "def compile_code(source_file):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    os.system('gcc ' + source_file + ' -o output_bin')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "C compiler invocation with unquoted source file (variant B)"
+  },
+  {
+    "code": "def lookup_dns(domain):\n    '''Security audit module function.'''\n    import subprocess\n    return subprocess.getoutput(f'nslookup {domain}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "nslookup command injection via getoutput (variant A)"
+  },
+  {
+    "code": "def lookup_dns(domain):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess\n    return subprocess.getoutput(f'nslookup {domain}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "nslookup command injection via getoutput (variant B)"
+  },
+  {
+    "code": "def run_script(script_name, arg):\n    '''Security audit module function.'''\n    import os\n    os.system(f'bash {script_name}.sh {arg}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Shell script execution with unsanitized arguments (variant A)"
+  },
+  {
+    "code": "def run_script(script_name, arg):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    os.system(f'bash {script_name}.sh {arg}')",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Shell script execution with unsanitized arguments (variant B)"
+  },
+  {
+    "code": "def compress_folder(folder_name):\n    '''Security audit module function.'''\n    import subprocess\n    subprocess.call('tar -czf archive.tar.gz ' + folder_name, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Tar archiving injection via shell=True (variant A)"
+  },
+  {
+    "code": "def compress_folder(folder_name):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess\n    subprocess.call('tar -czf archive.tar.gz ' + folder_name, shell=True)",
+    "label": 1,
+    "category": "Command_Injection",
+    "description": "Tar archiving injection via shell=True (variant B)"
+  },
+  {
+    "code": "def parse_expression(user_input):\n    '''Security audit module function.'''\n    compiled = compile(user_input, '<string>', 'eval')\n    return eval(compiled)",
+    "label": 1,
+    "category": "RCE_Eval",
+    "description": "Dynamic code compilation and evaluation of user input (variant A)"
+  },
+  {
+    "code": "def parse_expression(user_input):\n    import logging\n    logging.debug('Executing operation')\n    compiled = compile(user_input, '<string>', 'eval')\n    return eval(compiled)",
+    "label": 1,
+    "category": "RCE_Eval",
+    "description": "Dynamic code compilation and evaluation of user input (variant B)"
+  },
+  {
+    "code": "def ping_server(host):\n    '''Security audit module function.'''\n    import subprocess, ipaddress\n    ipaddress.ip_address(host)\n    return subprocess.run(['ping', '-c', '1', host], capture_output=True, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Host validation with ipaddress and list arguments (variant A)"
+  },
+  {
+    "code": "def ping_server(host):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess, ipaddress\n    ipaddress.ip_address(host)\n    return subprocess.run(['ping', '-c', '1', host], capture_output=True, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Host validation with ipaddress and list arguments (variant B)"
+  },
+  {
+    "code": "def evaluate_formula(expr):\n    '''Security audit module function.'''\n    import ast\n    node = ast.parse(expr, mode='eval')\n    for n in ast.walk(node):\n        if not isinstance(n, (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.operator, ast.unaryop)):\n            raise ValueError('Unsafe expression')\n    return eval(compile(node, '<string>', 'eval'), {'__builtins__': None}, {})",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Safe AST-validated arithmetic expression evaluator (variant A)"
+  },
+  {
+    "code": "def evaluate_formula(expr):\n    import logging\n    logging.debug('Executing operation')\n    import ast\n    node = ast.parse(expr, mode='eval')\n    for n in ast.walk(node):\n        if not isinstance(n, (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.operator, ast.unaryop)):\n            raise ValueError('Unsafe expression')\n    return eval(compile(node, '<string>', 'eval'), {'__builtins__': None}, {})",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Safe AST-validated arithmetic expression evaluator (variant B)"
+  },
+  {
+    "code": "def run_calculation(op, a, b):\n    '''Security audit module function.'''\n    ops = {'+': lambda x, y: x + y, '-': lambda x, y: x - y, '*': lambda x, y: x * y}\n    if op not in ops:\n        raise ValueError('Unsupported operator')\n    return ops[op](float(a), float(b))",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Deterministic dictionary lookup for arithmetic operations (variant A)"
+  },
+  {
+    "code": "def run_calculation(op, a, b):\n    import logging\n    logging.debug('Executing operation')\n    ops = {'+': lambda x, y: x + y, '-': lambda x, y: x - y, '*': lambda x, y: x * y}\n    if op not in ops:\n        raise ValueError('Unsupported operator')\n    return ops[op](float(a), float(b))",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Deterministic dictionary lookup for arithmetic operations (variant B)"
+  },
+  {
+    "code": "def convert_pdf(filename):\n    '''Security audit module function.'''\n    import subprocess, os\n    if not os.path.isfile(filename):\n        raise FileNotFoundError('File does not exist')\n    return subprocess.run(['pdftotext', filename, 'output.txt'], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Subprocess execution using explicit argument array without shell (variant A)"
+  },
+  {
+    "code": "def convert_pdf(filename):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess, os\n    if not os.path.isfile(filename):\n        raise FileNotFoundError('File does not exist')\n    return subprocess.run(['pdftotext', filename, 'output.txt'], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Subprocess execution using explicit argument array without shell (variant B)"
+  },
+  {
+    "code": "def unzip_file(archive_path, target_dir):\n    '''Security audit module function.'''\n    import zipfile\n    with zipfile.ZipFile(archive_path, 'r') as zip_ref:\n        zip_ref.extractall(target_dir)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native zipfile library extraction without shell invocation (variant A)"
+  },
+  {
+    "code": "def unzip_file(archive_path, target_dir):\n    import logging\n    logging.debug('Executing operation')\n    import zipfile\n    with zipfile.ZipFile(archive_path, 'r') as zip_ref:\n        zip_ref.extractall(target_dir)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native zipfile library extraction without shell invocation (variant B)"
+  },
+  {
+    "code": "def backup_database(db_name):\n    '''Security audit module function.'''\n    import subprocess, re\n    if not re.match(r'^[a-zA-Z0-9_]+$', db_name):\n        raise ValueError('Invalid database name')\n    with open('backup.sql', 'w') as out_f:\n        return subprocess.run(['pg_dump', db_name], stdout=out_f, shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Alphanumeric regex validation and argument list invocation (variant A)"
+  },
+  {
+    "code": "def backup_database(db_name):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess, re\n    if not re.match(r'^[a-zA-Z0-9_]+$', db_name):\n        raise ValueError('Invalid database name')\n    with open('backup.sql', 'w') as out_f:\n        return subprocess.run(['pg_dump', db_name], stdout=out_f, shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Alphanumeric regex validation and argument list invocation (variant B)"
+  },
+  {
+    "code": "def resize_image(image_path, width, height):\n    '''Security audit module function.'''\n    from PIL import Image\n    with Image.open(image_path) as img:\n        resized = img.resize((int(width), int(height)))\n        resized.save('out.png')",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native Pillow image processing API (variant A)"
+  },
+  {
+    "code": "def resize_image(image_path, width, height):\n    import logging\n    logging.debug('Executing operation')\n    from PIL import Image\n    with Image.open(image_path) as img:\n        resized = img.resize((int(width), int(height)))\n        resized.save('out.png')",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native Pillow image processing API (variant B)"
+  },
+  {
+    "code": "def run_git_clone(repo_url):\n    '''Security audit module function.'''\n    import subprocess, re\n    if not re.match(r'^https://github\\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$', repo_url):\n        raise ValueError('Invalid GitHub repository URL')\n    return subprocess.run(['git', 'clone', '--depth', '1', repo_url], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Strict URL regex check and non-shell git execution (variant A)"
+  },
+  {
+    "code": "def run_git_clone(repo_url):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess, re\n    if not re.match(r'^https://github\\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_.-]+$', repo_url):\n        raise ValueError('Invalid GitHub repository URL')\n    return subprocess.run(['git', 'clone', '--depth', '1', repo_url], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Strict URL regex check and non-shell git execution (variant B)"
+  },
+  {
+    "code": "def check_disk_usage(mount_point):\n    '''Security audit module function.'''\n    import shutil\n    usage = shutil.disk_usage(mount_point)\n    return {'total': usage.total, 'used': usage.used, 'free': usage.free}",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native shutil.disk_usage system call (variant A)"
+  },
+  {
+    "code": "def check_disk_usage(mount_point):\n    import logging\n    logging.debug('Executing operation')\n    import shutil\n    usage = shutil.disk_usage(mount_point)\n    return {'total': usage.total, 'used': usage.used, 'free': usage.free}",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Native shutil.disk_usage system call (variant B)"
+  },
+  {
+    "code": "def kill_process(pid):\n    '''Security audit module function.'''\n    import os, signal\n    pid_int = int(pid)\n    if pid_int > 1:\n        os.kill(pid_int, signal.SIGTERM)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Typed integer conversion and direct OS signal (variant A)"
+  },
+  {
+    "code": "def kill_process(pid):\n    import logging\n    logging.debug('Executing operation')\n    import os, signal\n    pid_int = int(pid)\n    if pid_int > 1:\n        os.kill(pid_int, signal.SIGTERM)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Typed integer conversion and direct OS signal (variant B)"
+  },
+  {
+    "code": "def compile_code(source_file):\n    '''Security audit module function.'''\n    import subprocess, os\n    if not source_file.endswith('.c') or not os.path.exists(source_file):\n        raise ValueError('Invalid source path')\n    subprocess.run(['gcc', source_file, '-o', 'output_bin'], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "File extension check and argument vector execution (variant A)"
+  },
+  {
+    "code": "def compile_code(source_file):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess, os\n    if not source_file.endswith('.c') or not os.path.exists(source_file):\n        raise ValueError('Invalid source path')\n    subprocess.run(['gcc', source_file, '-o', 'output_bin'], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "File extension check and argument vector execution (variant B)"
+  },
+  {
+    "code": "def lookup_dns(domain):\n    '''Security audit module function.'''\n    import socket\n    return socket.gethostbyname(domain)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Standard library socket lookup without external binary (variant A)"
+  },
+  {
+    "code": "def lookup_dns(domain):\n    import logging\n    logging.debug('Executing operation')\n    import socket\n    return socket.gethostbyname(domain)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Standard library socket lookup without external binary (variant B)"
+  },
+  {
+    "code": "def run_script(script_name, arg):\n    '''Security audit module function.'''\n    import subprocess\n    allowed_scripts = {'daily_cleanup', 'sync_cache'}\n    if script_name not in allowed_scripts:\n        raise ValueError('Unauthorized script')\n    subprocess.run(['bash', f'{script_name}.sh', str(arg)], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Whitelist of allowed script names and non-shell subprocess (variant A)"
+  },
+  {
+    "code": "def run_script(script_name, arg):\n    import logging\n    logging.debug('Executing operation')\n    import subprocess\n    allowed_scripts = {'daily_cleanup', 'sync_cache'}\n    if script_name not in allowed_scripts:\n        raise ValueError('Unauthorized script')\n    subprocess.run(['bash', f'{script_name}.sh', str(arg)], shell=False, check=True)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Whitelist of allowed script names and non-shell subprocess (variant B)"
+  },
+  {
+    "code": "def compress_folder(folder_path, output_archive):\n    '''Security audit module function.'''\n    import shutil\n    return shutil.make_archive(output_archive, 'gztar', folder_path)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Standard library shutil archiving API (variant A)"
+  },
+  {
+    "code": "def compress_folder(folder_path, output_archive):\n    import logging\n    logging.debug('Executing operation')\n    import shutil\n    return shutil.make_archive(output_archive, 'gztar', folder_path)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Standard library shutil archiving API (variant B)"
+  },
+  {
+    "code": "def parse_expression(value_str):\n    '''Security audit module function.'''\n    import json\n    return json.loads(value_str)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Strict JSON parser for data deserialization (variant A)"
+  },
+  {
+    "code": "def parse_expression(value_str):\n    import logging\n    logging.debug('Executing operation')\n    import json\n    return json.loads(value_str)",
+    "label": 0,
+    "category": "Safe_Command",
+    "description": "Strict JSON parser for data deserialization (variant B)"
+  },
+  {
+    "code": "def read_file(filename):\n    '''Security audit module function.'''\n    with open('/var/www/uploads/' + filename, 'r') as f:\n        return f.read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Arbitrary path traversal via directory concatenation (variant A)"
+  },
+  {
+    "code": "def read_file(filename):\n    import logging\n    logging.debug('Executing operation')\n    with open('/var/www/uploads/' + filename, 'r') as f:\n        return f.read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Arbitrary path traversal via directory concatenation (variant B)"
+  },
+  {
+    "code": "def delete_user_file(file_path):\n    '''Security audit module function.'''\n    import os\n    os.remove('/home/storage/' + file_path)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Direct removal of file using unsanitized path suffix (variant A)"
+  },
+  {
+    "code": "def delete_user_file(file_path):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    os.remove('/home/storage/' + file_path)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Direct removal of file using unsanitized path suffix (variant B)"
+  },
+  {
+    "code": "def download_attachment(name):\n    '''Security audit module function.'''\n    return send_file('/app/documents/' + name)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "File serving without directory escape check (variant A)"
+  },
+  {
+    "code": "def download_attachment(name):\n    import logging\n    logging.debug('Executing operation')\n    return send_file('/app/documents/' + name)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "File serving without directory escape check (variant B)"
+  },
+  {
+    "code": "def save_avatar(user_id, ext, data):\n    '''Security audit module function.'''\n    path = f'uploads/{user_id}.{ext}'\n    with open(path, 'wb') as f:\n        f.write(data)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Unvalidated file extension leading to path traversal or script upload (variant A)"
+  },
+  {
+    "code": "def save_avatar(user_id, ext, data):\n    import logging\n    logging.debug('Executing operation')\n    path = f'uploads/{user_id}.{ext}'\n    with open(path, 'wb') as f:\n        f.write(data)",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Unvalidated file extension leading to path traversal or script upload (variant B)"
+  },
+  {
+    "code": "def display_log(log_name):\n    '''Security audit module function.'''\n    filepath = f'/logs/{log_name}'\n    return open(filepath, 'r').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Arbitrary log file traversal (variant A)"
+  },
+  {
+    "code": "def display_log(log_name):\n    import logging\n    logging.debug('Executing operation')\n    filepath = f'/logs/{log_name}'\n    return open(filepath, 'r').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Arbitrary log file traversal (variant B)"
+  },
+  {
+    "code": "def load_plugin(plugin_name):\n    '''Security audit module function.'''\n    import importlib\n    return importlib.import_module(f'plugins.{plugin_name}')",
+    "label": 1,
+    "category": "Insecure_Import",
+    "description": "Dynamic import without validation (variant A)"
+  },
+  {
+    "code": "def load_plugin(plugin_name):\n    import logging\n    logging.debug('Executing operation')\n    import importlib\n    return importlib.import_module(f'plugins.{plugin_name}')",
+    "label": 1,
+    "category": "Insecure_Import",
+    "description": "Dynamic import without validation (variant B)"
+  },
+  {
+    "code": "def stream_video(video_id):\n    '''Security audit module function.'''\n    return open(f'/media/videos/{video_id}.mp4', 'rb').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Unsanitized video file identifier (variant A)"
+  },
+  {
+    "code": "def stream_video(video_id):\n    import logging\n    logging.debug('Executing operation')\n    return open(f'/media/videos/{video_id}.mp4', 'rb').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Unsanitized video file identifier (variant B)"
+  },
+  {
+    "code": "def export_report(folder, report_name):\n    '''Security audit module function.'''\n    target = folder + '/' + report_name\n    with open(target, 'w') as f:\n        f.write('Report data')",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Dual parameter concatenation allowing arbitrary destination write (variant A)"
+  },
+  {
+    "code": "def export_report(folder, report_name):\n    import logging\n    logging.debug('Executing operation')\n    target = folder + '/' + report_name\n    with open(target, 'w') as f:\n        f.write('Report data')",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Dual parameter concatenation allowing arbitrary destination write (variant B)"
+  },
+  {
+    "code": "def get_template(theme, page):\n    '''Security audit module function.'''\n    path = f'templates/{theme}/{page}.html'\n    return open(path).read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Template injection and path traversal (variant A)"
+  },
+  {
+    "code": "def get_template(theme, page):\n    import logging\n    logging.debug('Executing operation')\n    path = f'templates/{theme}/{page}.html'\n    return open(path).read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Template injection and path traversal (variant B)"
+  },
+  {
+    "code": "def read_config_file(path_arg):\n    '''Security audit module function.'''\n    return open(path_arg, 'r').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Completely unvalidated file path input (variant A)"
+  },
+  {
+    "code": "def read_config_file(path_arg):\n    import logging\n    logging.debug('Executing operation')\n    return open(path_arg, 'r').read()",
+    "label": 1,
+    "category": "Path_Traversal",
+    "description": "Completely unvalidated file path input (variant B)"
+  },
+  {
+    "code": "def read_file(filename):\n    '''Security audit module function.'''\n    import os\n    base_dir = os.path.abspath('/var/www/uploads')\n    safe_path = os.path.abspath(os.path.join(base_dir, os.path.basename(filename)))\n    if not safe_path.startswith(base_dir) or not os.path.exists(safe_path):\n        raise PermissionError('Access denied')\n    with open(safe_path, 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Basename extraction and canonical path boundary validation (variant A)"
+  },
+  {
+    "code": "def read_file(filename):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    base_dir = os.path.abspath('/var/www/uploads')\n    safe_path = os.path.abspath(os.path.join(base_dir, os.path.basename(filename)))\n    if not safe_path.startswith(base_dir) or not os.path.exists(safe_path):\n        raise PermissionError('Access denied')\n    with open(safe_path, 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Basename extraction and canonical path boundary validation (variant B)"
+  },
+  {
+    "code": "def delete_user_file(file_path):\n    '''Security audit module function.'''\n    import os\n    base = os.path.abspath('/home/storage')\n    target = os.path.abspath(os.path.join(base, os.path.basename(file_path)))\n    if target.startswith(base) and os.path.isfile(target):\n        os.remove(target)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Canonical path prefix check before file removal (variant A)"
+  },
+  {
+    "code": "def delete_user_file(file_path):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    base = os.path.abspath('/home/storage')\n    target = os.path.abspath(os.path.join(base, os.path.basename(file_path)))\n    if target.startswith(base) and os.path.isfile(target):\n        os.remove(target)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Canonical path prefix check before file removal (variant B)"
+  },
+  {
+    "code": "def download_attachment(name):\n    '''Security audit module function.'''\n    import os\n    clean_name = os.path.basename(name)\n    base = os.path.abspath('/app/documents')\n    full = os.path.abspath(os.path.join(base, clean_name))\n    if not full.startswith(base) or not os.path.exists(full):\n        raise FileNotFoundError('File not found')\n    return send_file(full)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Path sanitization and containment validation (variant A)"
+  },
+  {
+    "code": "def download_attachment(name):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    clean_name = os.path.basename(name)\n    base = os.path.abspath('/app/documents')\n    full = os.path.abspath(os.path.join(base, clean_name))\n    if not full.startswith(base) or not os.path.exists(full):\n        raise FileNotFoundError('File not found')\n    return send_file(full)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Path sanitization and containment validation (variant B)"
+  },
+  {
+    "code": "def save_avatar(user_id, ext, data):\n    '''Security audit module function.'''\n    import os\n    allowed_exts = {'png', 'jpg', 'jpeg'}\n    clean_ext = ext.lower().strip('.')\n    if clean_ext not in allowed_exts:\n        raise ValueError('Invalid image format')\n    safe_name = f'{int(user_id)}.{clean_ext}'\n    path = os.path.join('/app/uploads', safe_name)\n    with open(path, 'wb') as f:\n        f.write(data)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Extension whitelist and integer sanitization (variant A)"
+  },
+  {
+    "code": "def save_avatar(user_id, ext, data):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    allowed_exts = {'png', 'jpg', 'jpeg'}\n    clean_ext = ext.lower().strip('.')\n    if clean_ext not in allowed_exts:\n        raise ValueError('Invalid image format')\n    safe_name = f'{int(user_id)}.{clean_ext}'\n    path = os.path.join('/app/uploads', safe_name)\n    with open(path, 'wb') as f:\n        f.write(data)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Extension whitelist and integer sanitization (variant B)"
+  },
+  {
+    "code": "def display_log(log_name):\n    '''Security audit module function.'''\n    import os\n    allowed_logs = {'access.log', 'error.log', 'audit.log'}\n    if log_name not in allowed_logs:\n        raise ValueError('Unauthorized log file')\n    full = os.path.join('/logs', log_name)\n    with open(full, 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Strict log filename whitelist (variant A)"
+  },
+  {
+    "code": "def display_log(log_name):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    allowed_logs = {'access.log', 'error.log', 'audit.log'}\n    if log_name not in allowed_logs:\n        raise ValueError('Unauthorized log file')\n    full = os.path.join('/logs', log_name)\n    with open(full, 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Strict log filename whitelist (variant B)"
+  },
+  {
+    "code": "def load_plugin(plugin_name):\n    '''Security audit module function.'''\n    import importlib\n    allowed = {'auth_plugin', 'metrics_plugin', 'cache_plugin'}\n    if plugin_name not in allowed:\n        raise ValueError('Unauthorized plugin')\n    return importlib.import_module(f'plugins.{plugin_name}')",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Plugin name whitelist validation (variant A)"
+  },
+  {
+    "code": "def load_plugin(plugin_name):\n    import logging\n    logging.debug('Executing operation')\n    import importlib\n    allowed = {'auth_plugin', 'metrics_plugin', 'cache_plugin'}\n    if plugin_name not in allowed:\n        raise ValueError('Unauthorized plugin')\n    return importlib.import_module(f'plugins.{plugin_name}')",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Plugin name whitelist validation (variant B)"
+  },
+  {
+    "code": "def stream_video(video_id):\n    '''Security audit module function.'''\n    import os\n    safe_id = int(video_id)\n    path = f'/media/videos/{safe_id}.mp4'\n    with open(path, 'rb') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Type-casting video ID to positive integer (variant A)"
+  },
+  {
+    "code": "def stream_video(video_id):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    safe_id = int(video_id)\n    path = f'/media/videos/{safe_id}.mp4'\n    with open(path, 'rb') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Type-casting video ID to positive integer (variant B)"
+  },
+  {
+    "code": "def export_report(report_name, data):\n    '''Security audit module function.'''\n    import os\n    base = os.path.abspath('/reports')\n    clean = os.path.basename(report_name)\n    target = os.path.abspath(os.path.join(base, clean))\n    if not target.startswith(base):\n        raise PermissionError('Escape attempted')\n    with open(target, 'w') as f:\n        f.write(data)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Target directory containment check (variant A)"
+  },
+  {
+    "code": "def export_report(report_name, data):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    base = os.path.abspath('/reports')\n    clean = os.path.basename(report_name)\n    target = os.path.abspath(os.path.join(base, clean))\n    if not target.startswith(base):\n        raise PermissionError('Escape attempted')\n    with open(target, 'w') as f:\n        f.write(data)",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Target directory containment check (variant B)"
+  },
+  {
+    "code": "def get_template(theme, page):\n    '''Security audit module function.'''\n    import os\n    allowed_themes = {'dark', 'light'}\n    allowed_pages = {'index', 'contact', 'about'}\n    if theme not in allowed_themes or page not in allowed_pages:\n        raise ValueError('Invalid template parameters')\n    path = f'templates/{theme}/{page}.html'\n    with open(path) as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Strict set membership check for template paths (variant A)"
+  },
+  {
+    "code": "def get_template(theme, page):\n    import logging\n    logging.debug('Executing operation')\n    import os\n    allowed_themes = {'dark', 'light'}\n    allowed_pages = {'index', 'contact', 'about'}\n    if theme not in allowed_themes or page not in allowed_pages:\n        raise ValueError('Invalid template parameters')\n    path = f'templates/{theme}/{page}.html'\n    with open(path) as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Strict set membership check for template paths (variant B)"
+  },
+  {
+    "code": "def read_config_file(config_type):\n    '''Security audit module function.'''\n    config_map = {'app': '/etc/app.conf', 'db': '/etc/db.conf'}\n    if config_type not in config_map:\n        raise KeyError('Config not found')\n    with open(config_map[config_type], 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Lookup table mapping rather than raw path access (variant A)"
+  },
+  {
+    "code": "def read_config_file(config_type):\n    import logging\n    logging.debug('Executing operation')\n    config_map = {'app': '/etc/app.conf', 'db': '/etc/db.conf'}\n    if config_type not in config_map:\n        raise KeyError('Config not found')\n    with open(config_map[config_type], 'r') as f:\n        return f.read()",
+    "label": 0,
+    "category": "Safe_Path",
+    "description": "Lookup table mapping rather than raw path access (variant B)"
+  },
+  {
+    "code": "def load_session_state(raw_data):\n    '''Security audit module function.'''\n    import pickle\n    return pickle.loads(raw_data)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "Arbitrary object execution via untrusted pickle (variant A)"
+  },
+  {
+    "code": "def load_session_state(raw_data):\n    import logging\n    logging.debug('Executing operation')\n    import pickle\n    return pickle.loads(raw_data)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "Arbitrary object execution via untrusted pickle (variant B)"
+  },
+  {
+    "code": "def parse_yaml_config(yaml_str):\n    '''Security audit module function.'''\n    import yaml\n    return yaml.load(yaml_str, Loader=yaml.Loader)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "Unsafe YAML deserialization (variant A)"
+  },
+  {
+    "code": "def parse_yaml_config(yaml_str):\n    import logging\n    logging.debug('Executing operation')\n    import yaml\n    return yaml.load(yaml_str, Loader=yaml.Loader)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "Unsafe YAML deserialization (variant B)"
+  },
+  {
+    "code": "def read_large_dataset(filepath):\n    '''Security audit module function.'''\n    f = open(filepath, 'r')\n    data = f.readlines()\n    return len(data)",
+    "label": 1,
+    "category": "Resource_Leak",
+    "description": "File descriptor leak without close or context manager (variant A)"
+  },
+  {
+    "code": "def read_large_dataset(filepath):\n    import logging\n    logging.debug('Executing operation')\n    f = open(filepath, 'r')\n    data = f.readlines()\n    return len(data)",
+    "label": 1,
+    "category": "Resource_Leak",
+    "description": "File descriptor leak without close or context manager (variant B)"
+  },
+  {
+    "code": "def divide_metrics(total, count):\n    '''Security audit module function.'''\n    return total / count",
+    "label": 1,
+    "category": "Unhandled_Zero_Division",
+    "description": "ZeroDivisionError unhandled when count is zero (variant A)"
+  },
+  {
+    "code": "def divide_metrics(total, count):\n    import logging\n    logging.debug('Executing operation')\n    return total / count",
+    "label": 1,
+    "category": "Unhandled_Zero_Division",
+    "description": "ZeroDivisionError unhandled when count is zero (variant B)"
+  },
+  {
+    "code": "def access_matrix_element(matrix, r, c):\n    '''Security audit module function.'''\n    return matrix[r][c]",
+    "label": 1,
+    "category": "Unchecked_Index",
+    "description": "Potential IndexError on out-of-bounds access (variant A)"
+  },
+  {
+    "code": "def access_matrix_element(matrix, r, c):\n    import logging\n    logging.debug('Executing operation')\n    return matrix[r][c]",
+    "label": 1,
+    "category": "Unchecked_Index",
+    "description": "Potential IndexError on out-of-bounds access (variant B)"
+  },
+  {
+    "code": "def query_key_value(dictionary, key):\n    '''Security audit module function.'''\n    return dictionary[key]",
+    "label": 1,
+    "category": "Unchecked_Key",
+    "description": "KeyError unhandled on missing dictionary key (variant A)"
+  },
+  {
+    "code": "def query_key_value(dictionary, key):\n    import logging\n    logging.debug('Executing operation')\n    return dictionary[key]",
+    "label": 1,
+    "category": "Unchecked_Key",
+    "description": "KeyError unhandled on missing dictionary key (variant B)"
+  },
+  {
+    "code": "def parse_json_unsafe(raw_json):\n    '''Security audit module function.'''\n    import json\n    return json.loads(raw_json)",
+    "label": 1,
+    "category": "Uncaught_Parse_Error",
+    "description": "JSONDecodeError unhandled on corrupted string (variant A)"
+  },
+  {
+    "code": "def parse_json_unsafe(raw_json):\n    import logging\n    logging.debug('Executing operation')\n    import json\n    return json.loads(raw_json)",
+    "label": 1,
+    "category": "Uncaught_Parse_Error",
+    "description": "JSONDecodeError unhandled on corrupted string (variant B)"
+  },
+  {
+    "code": "def compute_ratio(a, b):\n    '''Security audit module function.'''\n    val = a / b\n    return val * 100",
+    "label": 1,
+    "category": "Unhandled_Zero_Division",
+    "description": "Unhandled division leading to crash (variant A)"
+  },
+  {
+    "code": "def compute_ratio(a, b):\n    import logging\n    logging.debug('Executing operation')\n    val = a / b\n    return val * 100",
+    "label": 1,
+    "category": "Unhandled_Zero_Division",
+    "description": "Unhandled division leading to crash (variant B)"
+  },
+  {
+    "code": "def deserialize_payload(payload):\n    '''Security audit module function.'''\n    import _pickle as cPickle\n    return cPickle.loads(payload)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "cPickle deserialization of user-provided data (variant A)"
+  },
+  {
+    "code": "def deserialize_payload(payload):\n    import logging\n    logging.debug('Executing operation')\n    import _pickle as cPickle\n    return cPickle.loads(payload)",
+    "label": 1,
+    "category": "Insecure_Deserialization",
+    "description": "cPickle deserialization of user-provided data (variant B)"
+  },
+  {
+    "code": "def write_audit_log(entry):\n    '''Security audit module function.'''\n    f = open('/var/log/audit.log', 'a')\n    f.write(entry + '\\n')",
+    "label": 1,
+    "category": "Resource_Leak",
+    "description": "Unclosed append handle (variant A)"
+  },
+  {
+    "code": "def write_audit_log(entry):\n    import logging\n    logging.debug('Executing operation')\n    f = open('/var/log/audit.log', 'a')\n    f.write(entry + '\\n')",
+    "label": 1,
+    "category": "Resource_Leak",
+    "description": "Unclosed append handle (variant B)"
+  },
+  {
+    "code": "def load_session_state(raw_data):\n    '''Security audit module function.'''\n    import json\n    return json.loads(raw_data.decode('utf-8'))",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Safe JSON deserialization of state data (variant A)"
+  },
+  {
+    "code": "def load_session_state(raw_data):\n    import logging\n    logging.debug('Executing operation')\n    import json\n    return json.loads(raw_data.decode('utf-8'))",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Safe JSON deserialization of state data (variant B)"
+  },
+  {
+    "code": "def parse_yaml_config(yaml_str):\n    '''Security audit module function.'''\n    import yaml\n    return yaml.safe_load(yaml_str)",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Strict yaml.safe_load avoiding code execution (variant A)"
+  },
+  {
+    "code": "def parse_yaml_config(yaml_str):\n    import logging\n    logging.debug('Executing operation')\n    import yaml\n    return yaml.safe_load(yaml_str)",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Strict yaml.safe_load avoiding code execution (variant B)"
+  },
+  {
+    "code": "def read_large_dataset(filepath):\n    '''Security audit module function.'''\n    with open(filepath, 'r') as f:\n        return len(f.readlines())",
+    "label": 0,
+    "category": "Safe_Resource",
+    "description": "Deterministic resource cleanup via context manager (variant A)"
+  },
+  {
+    "code": "def read_large_dataset(filepath):\n    import logging\n    logging.debug('Executing operation')\n    with open(filepath, 'r') as f:\n        return len(f.readlines())",
+    "label": 0,
+    "category": "Safe_Resource",
+    "description": "Deterministic resource cleanup via context manager (variant B)"
+  },
+  {
+    "code": "def divide_metrics(total, count):\n    '''Security audit module function.'''\n    if not count or count == 0:\n        return 0.0\n    return total / count",
+    "label": 0,
+    "category": "Safe_Arithmetic",
+    "description": "Explicit zero guard before division (variant A)"
+  },
+  {
+    "code": "def divide_metrics(total, count):\n    import logging\n    logging.debug('Executing operation')\n    if not count or count == 0:\n        return 0.0\n    return total / count",
+    "label": 0,
+    "category": "Safe_Arithmetic",
+    "description": "Explicit zero guard before division (variant B)"
+  },
+  {
+    "code": "def access_matrix_element(matrix, r, c):\n    '''Security audit module function.'''\n    if 0 <= r < len(matrix) and 0 <= c < len(matrix[r]):\n        return matrix[r][c]\n    return None",
+    "label": 0,
+    "category": "Safe_Access",
+    "description": "Explicit boundary validation before indexing (variant A)"
+  },
+  {
+    "code": "def access_matrix_element(matrix, r, c):\n    import logging\n    logging.debug('Executing operation')\n    if 0 <= r < len(matrix) and 0 <= c < len(matrix[r]):\n        return matrix[r][c]\n    return None",
+    "label": 0,
+    "category": "Safe_Access",
+    "description": "Explicit boundary validation before indexing (variant B)"
+  },
+  {
+    "code": "def query_key_value(dictionary, key, default=None):\n    '''Security audit module function.'''\n    return dictionary.get(key, default)",
+    "label": 0,
+    "category": "Safe_Access",
+    "description": "Safe dictionary get method with default fallback (variant A)"
+  },
+  {
+    "code": "def query_key_value(dictionary, key, default=None):\n    import logging\n    logging.debug('Executing operation')\n    return dictionary.get(key, default)",
+    "label": 0,
+    "category": "Safe_Access",
+    "description": "Safe dictionary get method with default fallback (variant B)"
+  },
+  {
+    "code": "def parse_json_safe(raw_json):\n    '''Security audit module function.'''\n    import json\n    try:\n        return json.loads(raw_json)\n    except (json.JSONDecodeError, TypeError):\n        return {}",
+    "label": 0,
+    "category": "Safe_Parsing",
+    "description": "Handled JSON decode errors with fallback empty dict (variant A)"
+  },
+  {
+    "code": "def parse_json_safe(raw_json):\n    import logging\n    logging.debug('Executing operation')\n    import json\n    try:\n        return json.loads(raw_json)\n    except (json.JSONDecodeError, TypeError):\n        return {}",
+    "label": 0,
+    "category": "Safe_Parsing",
+    "description": "Handled JSON decode errors with fallback empty dict (variant B)"
+  },
+  {
+    "code": "def compute_ratio(a, b):\n    '''Security audit module function.'''\n    try:\n        return (a / b) * 100\n    except ZeroDivisionError:\n        return 0.0",
+    "label": 0,
+    "category": "Safe_Arithmetic",
+    "description": "Caught ZeroDivisionError returning 0.0 (variant A)"
+  },
+  {
+    "code": "def compute_ratio(a, b):\n    import logging\n    logging.debug('Executing operation')\n    try:\n        return (a / b) * 100\n    except ZeroDivisionError:\n        return 0.0",
+    "label": 0,
+    "category": "Safe_Arithmetic",
+    "description": "Caught ZeroDivisionError returning 0.0 (variant B)"
+  },
+  {
+    "code": "def deserialize_payload(payload):\n    '''Security audit module function.'''\n    import json\n    return json.loads(payload)",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Standard JSON parsing replacing dangerous pickle (variant A)"
+  },
+  {
+    "code": "def deserialize_payload(payload):\n    import logging\n    logging.debug('Executing operation')\n    import json\n    return json.loads(payload)",
+    "label": 0,
+    "category": "Safe_Deserialization",
+    "description": "Standard JSON parsing replacing dangerous pickle (variant B)"
+  },
+  {
+    "code": "def write_audit_log(entry):\n    '''Security audit module function.'''\n    with open('/var/log/audit.log', 'a') as f:\n        f.write(str(entry) + '\\n')",
+    "label": 0,
+    "category": "Safe_Resource",
+    "description": "Auto-closing context manager for audit logs (variant A)"
+  },
+  {
+    "code": "def write_audit_log(entry):\n    import logging\n    logging.debug('Executing operation')\n    with open('/var/log/audit.log', 'a') as f:\n        f.write(str(entry) + '\\n')",
+    "label": 0,
+    "category": "Safe_Resource",
+    "description": "Auto-closing context manager for audit logs (variant B)"
+  }
+]
