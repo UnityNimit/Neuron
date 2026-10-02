@@ -3,6 +3,8 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { 
   Minus, Square, Copy, X, Check 
 } from 'lucide-react';
+import NeuronLogo from '../common/NeuronLogo';
+import { useTheme } from '../../config/themeConfig';
 
 export default function TopBar({ 
   onOpenFolder, 
@@ -15,6 +17,7 @@ export default function TopBar({
   onOpenCommandPalette, 
   onOpenSettings 
 }) {
+  const { theme } = useTheme();
   const [activeMenu, setActiveMenu] = useState(null);
   const [showRecentSubmenu, setShowRecentSubmenu] = useState(false);
   const [recentProjects, setRecentProjects] = useState([]);
@@ -206,13 +209,17 @@ export default function TopBar({
       {/* ----------------------------------------------------------------- */}
       <div className="flex items-center gap-3 pointer-events-auto" data-tauri-drag-region>
         
-        {/* Flat Matte Logo */}
-        <div className="flex items-center pr-1 cursor-pointer" onClick={onOpenSettings} title="Neuron IDE">
-          <img 
-            src="/logo.png" 
-            alt="Neuron" 
-            className="h-5 w-5 object-contain opacity-95" 
-            onError={(e) => { e.target.style.display = 'none'; }}
+        {/* Official Vector Theme-Customizable Logo */}
+        <div 
+          className="flex items-center pr-1 cursor-pointer group transition-transform active:scale-95" 
+          onClick={onOpenSettings} 
+          title="Neuron IDE - Settings"
+        >
+          <NeuronLogo 
+            size={18} 
+            color={theme?.accent || 'var(--theme-accent, #3b82f6)'}
+            style={{ color: theme?.accent || 'var(--theme-accent, #3b82f6)' }}
+            className="group-hover:brightness-125 transition-all" 
           />
         </div>
 
@@ -225,7 +232,7 @@ export default function TopBar({
                   setActiveMenu(activeMenu === item ? null : item);
                   setShowRecentSubmenu(false);
                 }}
-                className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-[11.5px] font-mono transition-colors cursor-pointer ${
                   activeMenu === item 
                     ? 'bg-[var(--theme-surface-active)] text-[var(--theme-text-bright)] font-medium' 
                     : 'text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]'
@@ -237,18 +244,18 @@ export default function TopBar({
               {/* Primary Dropdown Menu */}
               {activeMenu === item && (
                 <div 
-                  className="absolute top-full left-0 mt-1 w-60 border shadow-2xl rounded-xl py-1.5 text-xs font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none z-[200]"
+                  className="absolute top-full left-0 mt-1 w-56 border shadow-2xl rounded-xl p-1 text-[11px] font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 select-none z-[200]"
                   style={{
                     backgroundColor: 'var(--theme-secondary, #191a1b)',
-                    borderColor: 'var(--theme-border-subtle, #2e3032)',
+                    borderColor: 'var(--theme-border, #242628)',
                     color: 'var(--theme-text-primary, #cbd5e1)'
                   }}
                 >
                   {getDropdownItems(item).map((opt, idx) => (
                     opt.separator ? (
-                      <div key={idx} className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
+                      <div key={idx} className="my-1 border-t mx-1" style={{ borderColor: 'var(--theme-border, #242628)' }} />
                     ) : opt.isSubmenu ? (
-                      /* 🚀 OPEN RECENT SUBMENU TRIGGER */
+                      /*  OPEN RECENT SUBMENU TRIGGER */
                       <div 
                         key={idx}
                         onMouseEnter={() => setShowRecentSubmenu(true)}
@@ -256,35 +263,50 @@ export default function TopBar({
                       >
                         <button 
                           onClick={(e) => { e.stopPropagation(); setShowRecentSubmenu(!showRecentSubmenu); }}
-                          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
+                          className="w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
                         >
                           <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)]">
                             {opt.label}
                           </span>
                           <span className="text-[10px] text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-bright)]">
-                            &gt;
+                            ›
                           </span>
                         </button>
 
                         {/* Recent Projects Flyout Submenu */}
                         {showRecentSubmenu && (
                           <div 
-                            className="absolute top-0 left-full ml-1.5 w-80 border shadow-2xl rounded-2xl p-1.5 text-xs font-mono backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-100 z-[210]"
+                            className="absolute top-0 left-full ml-1 w-72 border shadow-2xl rounded-xl p-1 text-[11px] font-mono backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 z-[210]"
                             style={{
-                              backgroundColor: 'var(--theme-surface, #161719)',
+                              backgroundColor: 'var(--theme-secondary, #191a1b)',
                               borderColor: 'var(--theme-border, #242628)',
-                              color: 'var(--theme-text-primary, #cbd5e1)',
-                              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--theme-border, #242628)'
+                              color: 'var(--theme-text-primary, #cbd5e1)'
                             }}
                           >
-                            <div className="px-2.5 py-1 text-[9px] uppercase font-semibold tracking-wider border-b mb-1 flex items-center justify-between" style={{ borderColor: 'var(--theme-border, #242628)', color: 'var(--theme-text-muted, #64748b)' }}>
-                              <span>Recent Workspaces</span>
-                              <span className="opacity-50">{recentProjects.length}</span>
+                            <div 
+                              className="h-7 px-2.5 border-b flex items-center justify-between shrink-0 mb-1" 
+                              style={{ borderColor: 'var(--theme-border, #242628)' }}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-mono font-medium text-[var(--theme-text-bright)] tracking-wide">
+                                  Recent Workspaces
+                                </span>
+                                {recentProjects.length > 0 && (
+                                  <span 
+                                    className="text-[9px] font-mono px-1.5 py-0.5 rounded text-[var(--theme-text-muted)] leading-none"
+                                    style={{
+                                      backgroundColor: 'var(--theme-surface-active, #222426)',
+                                    }}
+                                  >
+                                    {recentProjects.length}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             {recentProjects.length === 0 ? (
-                              <div className="px-3 py-4 text-[var(--theme-text-muted)] text-[11px] text-center italic">
-                                No recent workspaces found
+                              <div className="py-4 px-3 flex flex-col items-center justify-center gap-1 text-center text-[var(--theme-text-muted)] text-[11px] font-mono">
+                                <span>No recent workspaces</span>
                               </div>
                             ) : (
                               <>
@@ -295,10 +317,10 @@ export default function TopBar({
                                       <button
                                         key={pIdx}
                                         onClick={() => handleSelectRecent(pPath)}
-                                        className="w-full px-2.5 py-2 text-left rounded-xl hover:bg-[var(--theme-surface-hover)] transition-all flex flex-col gap-0.5 group cursor-pointer"
+                                        className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-[var(--theme-surface-hover)] transition-all flex flex-col gap-0.5 group cursor-pointer"
                                         title={pPath}
                                       >
-                                        <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)] truncate font-semibold text-[11px]">
+                                        <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)] truncate font-medium text-[11px]">
                                           {baseName}
                                         </span>
                                         <span className="text-[9.5px] text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-secondary)] truncate opacity-70">
@@ -308,7 +330,7 @@ export default function TopBar({
                                     );
                                   })}
                                 </div>
-                                <div className="my-1 border-t" style={{ borderColor: 'var(--theme-border, #242628)' }} />
+                                <div className="my-1 border-t mx-1" style={{ borderColor: 'var(--theme-border, #242628)' }} />
                                 <button
                                   onClick={handleClearRecent}
                                   className="w-full px-2.5 py-1.5 text-center text-[10px] font-mono rounded-lg transition-colors hover:bg-rose-500/10 hover:text-rose-400 cursor-pointer"
@@ -332,7 +354,7 @@ export default function TopBar({
                             setShowRecentSubmenu(false);
                           }
                         }} 
-                        className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
+                        className="w-full px-2.5 py-1.5 rounded-lg flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
                       >
                         <span className="text-[var(--theme-text-primary)] group-hover:text-[var(--theme-text-bright)]">{opt.label}</span>
 

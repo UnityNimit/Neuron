@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { X, ShieldCheck, FileText, Lock, Database } from 'lucide-react';
 import ThemeLangControls from './ThemeLangControls';
+import NeuronLogo from './common/NeuronLogo';
 
 const GithubIcon = ({ size = 14 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -108,8 +109,8 @@ export default function Footer({ className = "mt-4 sm:mt-6" }) {
         
         {/* Left: Brand Column */}
         <div className="flex flex-col gap-3 max-w-sm">
-          <Link to="/" onClick={scrollToTop} className="flex items-center gap-2.5 cursor-pointer">
-            <img src="/logo.png" alt="Neuron" className="h-6 w-6 object-contain" />
+          <Link to="/" onClick={scrollToTop} className="flex items-center gap-2.5 cursor-pointer group">
+            <NeuronLogo size={22} color="white" className="text-white group-hover:brightness-125 transition-all" />
             <span className="font-semibold text-white tracking-wide text-sm">Neuron</span>
           </Link>
           <p className="text-slate-400 text-xs leading-relaxed">

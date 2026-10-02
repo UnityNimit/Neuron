@@ -85,7 +85,7 @@ export default function App() {
   const [focusIsolationId, setFocusIsolationId] = useState(null);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
-  // --- 🚀 HORIZON 2: CAMERA WARP TARGET STATE ---
+  // ---  HORIZON 2: CAMERA WARP TARGET STATE ---
   const [warpTargetNodeId, setWarpTargetNodeId] = useState(null);
 
   // --- VS CODE-STYLE DIRTY/UNSAVED FILES TRACKER ---
@@ -184,10 +184,11 @@ export default function App() {
     workspace.wsRef, 
     workspace.isGraphLoaded, 
     centerView,
-    settings?.physicsSimulation ?? true
+    settings?.physicsSimulation ?? true,
+    settings?.spatialAnimationSpeed ?? 1.0
   );
 
-  // --- 🛡️ PERMANENT DESKTOP & WEB AUTH RESOLVER ---
+  // ---  PERMANENT DESKTOP & WEB AUTH RESOLVER ---
   useEffect(() => {
     let isMounted = true;
 
@@ -301,14 +302,14 @@ export default function App() {
     return map;
   }, [workspace.nodes]);
 
-  // --- 🚀 ATOMIC SAVE & AUTO-SAVE CONTROLLER ---
+  // ---  ATOMIC SAVE & AUTO-SAVE CONTROLLER ---
   const activeCodeStr = useMemo(() => {
     if (!workspace.currentFile) return "";
     const fileNode = nodesMap.get(workspace.currentFile);
     return (fileNode && fileNode.data?.nodeType === 'file') ? (fileNode.data?.code || "") : "";
   }, [nodesMap, workspace.currentFile]);
 
-  // --- 🚀 FILE TYPE CLASSIFIER (Images, Unsupported Binaries, Code) ---
+  // ---  FILE TYPE CLASSIFIER (Images, Unsupported Binaries, Code) ---
   const fileExt = useMemo(() => {
     if (!workspace.currentFile) return "";
     const clean = workspace.currentFile.split('?')[0];
@@ -341,19 +342,31 @@ export default function App() {
         content: content
       }));
 
-      // Optimistically clear dirty indicator
+      // Synchronize the file node's code in workspace.nodes immediately so activeCodeStr matches saved content
+      if (workspace.setNodes) {
+        workspace.setNodes(prev => prev.map(n => {
+          if (n.id === target && n.data) {
+            return { ...n, data: { ...n.data, code: content } };
+          }
+          return n;
+        }));
+      }
+
+      // Optimistically clear dirty indicator if no newer edits occurred
       setDirtyFiles(prev => {
         if (!prev.has(target)) return prev;
         const next = new Set(prev);
         next.delete(target);
         return next;
       });
-      delete currentCodeBufferRef.current[target];
+      if (currentCodeBufferRef.current[target] === content) {
+        delete currentCodeBufferRef.current[target];
+      }
 
       // Reset saving indicator after brief visual feedback
       setTimeout(() => setIsSaving(false), 500);
     }
-  }, [workspace.currentFile, workspace.wsRef, activeCodeStr]);
+  }, [workspace.currentFile, workspace.wsRef, workspace.setNodes, activeCodeStr]);
 
   const handleCodeChange = useCallback((newCode, targetFile) => {
     const file = targetFile || workspace.currentFile;
@@ -361,7 +374,7 @@ export default function App() {
 
     currentCodeBufferRef.current[file] = newCode;
     
-    // 🚀 ALWAYS immediately mark file as dirty on any code edit (0ms latency)
+    // Always immediately mark file as dirty on any code edit (0ms latency)
     setDirtyFiles(prev => {
       if (prev.has(file)) return prev;
       const next = new Set(prev);
@@ -520,7 +533,7 @@ export default function App() {
         setIsCommandPaletteOpen(true); 
         return;
       }
-      // 🚀 Save Active File (Ctrl+S / Cmd+S)
+      //  Save Active File (Ctrl+S / Cmd+S)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { 
         e.preventDefault(); 
         handleSaveFile(); 
@@ -662,7 +675,7 @@ export default function App() {
     }
   }, [workspace.wsRef, refactorEnabled, workspace.addNotification]);
 
-  // --- 🚀 3D CAMERA WARP DISPATCHER ---
+  // ---  3D CAMERA WARP DISPATCHER ---
   const handleWarpToNode = useCallback((nodeId) => {
     setCenterView('spatial');
     setWarpTargetNodeId(nodeId);
@@ -673,7 +686,7 @@ export default function App() {
     }, 250);
   }, [setCenterView]);
 
-  // 🚀 UNIVERSAL POLYGLOT CODE RUNNER (C++, C, Java, Python, JS)
+  // UNIVERSAL POLYGLOT CODE RUNNER (Interactive Terminal & Compiler Engine)
   const handleRunCode = useCallback(async () => {
     if (!workspace.currentFile || isImageFile || isUnsupportedFile) return;
 
@@ -681,11 +694,55 @@ export default function App() {
     if (workspace.currentFile && dirtyFiles.has(workspace.currentFile)) {
       handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
     }
-    workspace.setActiveSessionId('output');
-    const activeExt = workspace.currentFile?.split('.').pop()?.toLowerCase();
 
-    // 1. Primary: Run via Backend Compiler Engine with STDIN
+    setLayout(prev => ({ ...prev, terminal: true }));
+
+    const activeExt = workspace.currentFile?.split('.').pop()?.toLowerCase();
+    const cleanPath = workspace.currentFile.replace(/\\/g, '/');
+
+    // Build the execution command for interactive execution
+    let runCmd = '';
+    if (activeExt === 'py') {
+      runCmd = `python -u "${cleanPath}"`;
+    } else if (activeExt === 'js' || activeExt === 'mjs') {
+      runCmd = `node "${cleanPath}"`;
+    } else if (activeExt === 'ts') {
+      runCmd = `npx ts-node "${cleanPath}"`;
+    } else if (activeExt === 'sh' || activeExt === 'bash') {
+      runCmd = `bash "${cleanPath}"`;
+    } else if (activeExt === 'ps1') {
+      runCmd = `powershell -ExecutionPolicy Bypass -File "${cleanPath}"`;
+    } else {
+      runCmd = `python -u "${cleanPath}"`;
+    }
+
+    // 1. Interactive Terminal Session (VS Code standard with real-time output and live keyboard controls)
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
+      const termSession = workspace.terminalSessions?.find(s => s.id !== 'output');
+      if (termSession && workspace.sendTerminalCommand) {
+        workspace.setActiveSessionId(termSession.id);
+        workspace.sendTerminalCommand(termSession.id, runCmd);
+        workspace.addNotification?.('info', 'Running in Terminal', `${workspace.currentFile}`, 'runtime');
+        return;
+      }
+
+      // If no interactive session exists yet, create one
+      if (workspace.createTerminalSession) {
+        workspace.createTerminalSession('powershell');
+        setTimeout(() => {
+          const sessions = workspace.terminalSessions || [];
+          const created = sessions.find(s => s.id !== 'output');
+          if (created && workspace.sendTerminalCommand) {
+            workspace.setActiveSessionId(created.id);
+            workspace.sendTerminalCommand(created.id, runCmd);
+          }
+        }, 120);
+        workspace.addNotification?.('info', 'Running in Terminal', `${workspace.currentFile}`, 'runtime');
+        return;
+      }
+
+      // Fallback: Primary Backend Polyglot Runner with STDIN
+      workspace.setActiveSessionId('output');
       const isCompiled = ['cpp', 'cc', 'cxx', 'c', 'rs'].includes(activeExt);
       const actionText = isCompiled ? 'Compiling & Running' : 'Running';
 
@@ -720,7 +777,7 @@ export default function App() {
         workspace.addNotification?.('error', 'Execution Error', error.message, 'runtime');
       }
     }
-  }, [workspace, isCompilerReady, stdin, activeCodeStr, dirtyFiles, handleSaveFile, isImageFile, isUnsupportedFile]);
+  }, [workspace, setLayout, isCompilerReady, stdin, activeCodeStr, dirtyFiles, handleSaveFile, isImageFile, isUnsupportedFile]);
 
   const handleSwitchFile = useCallback((filename) => { 
     if (!filename) return;
@@ -728,7 +785,7 @@ export default function App() {
     if ((settings?.autoSave ?? true) && workspace.currentFile && workspace.currentFile !== filename && dirtyFiles.has(workspace.currentFile)) {
       handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
     }
-    // 🚀 0ms Optimistic UI updates: instantly select tab, update path & breadcrumbs
+    //  0ms Optimistic UI updates: instantly select tab, update path & breadcrumbs
     workspace.setCurrentFile(filename);
     workspace.setOpenFiles(prev => prev.includes(filename) ? prev : [...prev, filename]);
     if (filename !== workspace.currentFile) { 
@@ -860,7 +917,7 @@ export default function App() {
         initialTab={settingsInitialTab} 
       />
       
-      {/* 🚀 Sleek Custom TopBar (With Active Save, Auto Save & Open Recent) */}
+      {/*  Sleek Custom TopBar (With Active Save, Auto Save & Open Recent) */}
       <TopBar 
         onOpenFolder={handleOpenFolder} 
         onOpenRecent={handleOpenRecentWorkspace}
@@ -891,7 +948,8 @@ export default function App() {
             const total = staged.length + unstaged.length + extraDirty;
             return total > 0 ? total : Object.values(workspace.gitStatuses || {}).filter(s => s === 'M' || s === 'U' || s === 'A' || s === 'D').length;
           })()}
-          onOpenSettings={() => handleOpenSettings('general')} 
+          isSettingsOpen={isSettingsOpen}
+          onOpenSettings={() => isSettingsOpen ? setIsSettingsOpen(false) : handleOpenSettings('general')} 
           session={session}
           onLogin={handleLogin}
           onLogout={handleLogout} 
@@ -981,7 +1039,7 @@ export default function App() {
                   />
                 )}
               </Panel>
-              {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (Sidebar) */}
+              {/* RAZOR-THIN 1PX RESIZE DIVIDER (Sidebar) */}
               <Separator 
                 className="w-[1px] hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
                 style={{ backgroundColor: 'var(--theme-border, #242628)' }}
@@ -994,51 +1052,34 @@ export default function App() {
               <Panel id="canvas-area" order={1} className="relative flex flex-col" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
                 
                 {/* ----------------------------------------------------------- */}
-                {/* CENTER TAB STRIP (Unified Curved Connected Tabs)            */}
+                {/* CENTER TAB STRIP (Detached Floating Cards + Bottom Line)    */}
                 {/* ----------------------------------------------------------- */}
                 <div 
-                  className="h-8 shrink-0 flex items-center justify-between px-0 z-40 relative select-none"
+                  className="h-8 shrink-0 flex items-center justify-between px-0 border-b z-40 relative select-none"
                   style={{
-                    backgroundColor: 'var(--theme-secondary)'
+                    backgroundColor: 'var(--theme-secondary)',
+                    borderColor: 'var(--theme-border)'
                   }}
                 >
-                  {/* Full-width 1px bottom joining line (hidden under active tab) */}
-                  <div 
-                    className="absolute bottom-0 left-0 right-0 border-b z-0 pointer-events-none"
-                    style={{ borderColor: 'var(--theme-border)' }}
-                  />
-
-                  <div className="h-full flex items-end pt-1 px-1.5 gap-1 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
+                  <div className="h-full flex items-center px-1.5 gap-1.5 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
                     {/* Spatial Map Tab */}
                     <button 
                       onClick={() => setCenterView('spatial')} 
-                      className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
+                      className={`neuron-tab-card px-3 gap-1.5 font-mono shrink-0 cursor-pointer group ${
                         centerView === 'spatial' 
-                          ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
-                          : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
+                          ? 'neuron-tab-card-active' 
+                          : 'neuron-tab-card-inactive'
                       }`}
-                      style={{
-                        backgroundColor: centerView === 'spatial' ? 'var(--theme-background)' : 'transparent',
-                        borderColor: centerView === 'spatial' ? 'var(--theme-border)' : 'transparent',
-                        color: centerView === 'spatial' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
-                      }}
                     >
+                      <span className="leading-none">Spatial Map</span>
                       <span
-                        className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
-                          centerView === 'spatial' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+                        className={`neuron-tab-indicator ${
+                          centerView === 'spatial' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
                         }`}
-                        style={{ borderColor: 'var(--theme-accent)' }}
                       />
-                      {centerView === 'spatial' && (
-                        <span
-                          className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
-                          style={{ borderColor: 'var(--theme-background)' }}
-                        />
-                      )}
-                      <span>Spatial Map</span>
                     </button>
 
-                    {/* Dynamic Multi-File Tabs (With VS Code Dirty Dot Indicator ●) */}
+                    {/* Dynamic Multi-File Tabs */}
                     {(workspace.openFiles || []).map(file => {
                       const isDirty = dirtyFiles.has(file);
                       const rawGStat = (workspace.gitStatuses || {})[file];
@@ -1049,7 +1090,7 @@ export default function App() {
                       const isDeleted = gStat === 'D';
                       const isActive = centerView === 'editor' && workspace.currentFile === file;
                       
-                      let tabTextClass = isActive ? "font-semibold" : "group-hover:text-[var(--theme-text-bright)]";
+                      let tabTextClass = "group-hover:text-[var(--theme-text-bright)]";
                       let tabTextStyle = {
                         color: isActive ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
                       };
@@ -1060,19 +1101,19 @@ export default function App() {
                       let badgeColor = "";
 
                       if (isDirty) {
-                        tabTextClass = isActive ? "italic text-amber-500 font-semibold" : "italic text-amber-500";
+                        tabTextClass = "italic text-amber-500";
                         tabTextStyle = {};
                         iconClass = "text-amber-500";
                         iconStyle = {};
                         badgeColor = "text-amber-500";
                       } else if (isModified) {
-                        tabTextClass = isActive ? "text-amber-500 font-semibold" : "text-amber-500";
+                        tabTextClass = "text-amber-500";
                         tabTextStyle = {};
                         iconClass = "text-amber-500";
                         iconStyle = {};
                         badgeColor = "text-amber-500";
                       } else if (isUntracked || isAdded) {
-                        tabTextClass = isActive ? "text-emerald-500 font-semibold" : "text-emerald-500";
+                        tabTextClass = "text-emerald-500";
                         tabTextStyle = {};
                         iconClass = "text-emerald-500";
                         iconStyle = {};
@@ -1089,50 +1130,32 @@ export default function App() {
                         <div 
                           key={file} 
                           onClick={() => handleSwitchFile(file)} 
-                          className={`relative px-3.5 flex items-center gap-2 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out cursor-pointer shrink-0 group ${
+                          className={`neuron-tab-card px-3 gap-1.5 font-mono cursor-pointer shrink-0 group ${
                             isActive 
-                              ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
-                              : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60'
+                              ? 'neuron-tab-card-active' 
+                              : 'neuron-tab-card-inactive'
                           }`}
-                          style={{
-                            backgroundColor: isActive ? 'var(--theme-background)' : 'transparent',
-                            borderColor: isActive ? 'var(--theme-border)' : 'transparent',
-                            color: isActive ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
-                          }}
                         >
-                          <span
-                            className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
-                              isActive ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
-                            }`}
-                            style={{ borderColor: 'var(--theme-accent)' }}
-                          />
-                          {isActive && (
-                            <span
-                              className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
-                              style={{ borderColor: 'var(--theme-background)' }}
-                            />
-                          )}
-
-                          <FileCode2 size={12} className={`transition-colors duration-150 ${iconClass}`} style={iconStyle} /> 
+                          <FileCode2 size={12} className={`transition-colors duration-150 shrink-0 ${iconClass}`} style={iconStyle} /> 
                           
-                          <span className={`transition-colors duration-150 ${tabTextClass}`} style={tabTextStyle}>
+                          <span className={`leading-none transition-colors duration-150 ${tabTextClass}`} style={tabTextStyle}>
                             {file.split('/').pop()}
                           </span>
                           
                           {gStat && gStat !== 'I' && (
-                            <span className={`text-[10px] font-mono font-bold ${badgeColor} pr-0.5`}>
+                            <span className={`text-[10px] leading-none font-mono font-bold ${badgeColor} pr-0.5`}>
                               {gStat}
                             </span>
                           )}
 
                           {workspace.isFileSyncing && workspace.currentFile === file && (
-                            <Loader2 size={11} className="animate-spin" style={{ color: 'var(--theme-accent)' }} />
+                            <Loader2 size={11} className="animate-spin shrink-0" style={{ color: 'var(--theme-accent)' }} />
                           )}
                           
-                          {/* 🚀 VS CODE-STYLE CLOSE BUTTON OR DIRTY CIRCLE (●) */}
+                          {/* Close Button or Unsaved Dirty Circle */}
                           <button 
                             onClick={(e) => handleCloseTab(file, e)} 
-                            className="rounded p-0.5 ml-0.5 transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] flex items-center justify-center relative w-4 h-4 group/btn"
+                            className="rounded p-0.5 ml-0.5 transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface)] flex items-center justify-center relative w-4 h-4 group/btn"
                             title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
                           >
                             {isDirty ? (
@@ -1144,12 +1167,18 @@ export default function App() {
                               <X size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]" />
                             )}
                           </button>
+
+                          <span
+                            className={`neuron-tab-indicator ${
+                              isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
+                            }`}
+                          />
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* 🚀 RUN BUTTON (F5) */}
+                  {/* RUN BUTTON (F5) */}
                   {!isImageFile && !isUnsupportedFile && (
                     <div className="ml-auto flex items-center pr-2.5 shrink-0 relative z-10">
                       <button 
@@ -1170,7 +1199,7 @@ export default function App() {
                 >
                   {centerView === 'spatial' ? (
                     <div className="relative w-full h-full flex flex-col">
-                      {/* 🚀 SPATIAL MAP TOP BAR (Exact match to CodeEditor breadcrumb bar) */}
+                      {/*  SPATIAL MAP TOP BAR (Exact match to CodeEditor breadcrumb bar) */}
                       <div 
                         className="h-6 shrink-0 border-b px-3 flex items-center justify-between text-[11px] font-mono select-none z-20"
                         style={{
@@ -1208,7 +1237,7 @@ export default function App() {
                       </div>
 
                       <div className="relative flex-1 w-full min-h-0 overflow-hidden">
-                        {/* 🌌 THE WEBGPU SPATIAL ENGINE 🌌 */}
+                        {/*  THE WEBGPU SPATIAL ENGINE  */}
                         <PixiSpatialEngine 
                           simDataRef={simDataRef}
                           activeRay={activeRay}
@@ -1227,7 +1256,7 @@ export default function App() {
                           settings={settings}
                         />
 
-                        {/* 🚀 EMPTY WORKSPACE ONBOARDING HERO CARD */}
+                        {/*  EMPTY WORKSPACE ONBOARDING HERO CARD */}
                         {(workspace.files || []).length === 0 && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-30 select-none">
                             <div 
@@ -1258,7 +1287,7 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* 📡 SPATIAL RADAR MINIMAP OVERLAY */}
+                        {/*  SPATIAL RADAR MINIMAP OVERLAY */}
                         {(settings?.spatialMinimap ?? true) && (
                           <SpatialMinimap 
                             nodes={workspace.nodes || []} 
@@ -1266,7 +1295,7 @@ export default function App() {
                           />
                         )}
                         
-                        {/* 🚀 SUPER-MINIMALIST FLOATING AI OVERVIEW PANEL */}
+                        {/*  SUPER-MINIMALIST FLOATING AI OVERVIEW PANEL */}
                         {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
                           <div 
                             className="absolute top-4 right-4 max-w-sm border rounded-xl p-3.5 z-[100] pointer-events-none animate-in fade-in duration-150"
@@ -1360,7 +1389,7 @@ export default function App() {
               </Panel>
               {layout.terminal && ( 
                 <>
-                  {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (Terminal) */}
+                  {/*  RAZOR-THIN 1PX RESIZE DIVIDER (Terminal) */}
                   <Separator 
                     className="h-[1px] hover:bg-[var(--theme-accent)] cursor-row-resize z-50 flex items-center transition-colors outline-none" 
                     style={{ backgroundColor: 'var(--theme-border, #242628)' }}
@@ -1393,7 +1422,7 @@ export default function App() {
           </Panel>
           {layout.stdin && ( 
             <>
-              {/* 🚀 RAZOR-THIN 1PX RESIZE DIVIDER (STDIN) */}
+              {/*  RAZOR-THIN 1PX RESIZE DIVIDER (STDIN) */}
               <Separator 
                 className="w-[1px] hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
                 style={{ backgroundColor: 'var(--theme-border, #242628)' }}
@@ -1421,7 +1450,7 @@ export default function App() {
         </Group>
       </div>
 
-      {/* 🚀 HORIZON 3: AI AGENT SUPERVISOR LIVE PR BLAST RADIUS HUD */}
+      {/*  HORIZON 3: AI AGENT SUPERVISOR LIVE PR BLAST RADIUS HUD */}
       {blastProtectionEnabled && workspace.agentBatch && (
         <AgentSupervisorHUD 
           agentBatch={workspace.agentBatch}
@@ -1433,7 +1462,7 @@ export default function App() {
         />
       )}
 
-      {/* 🚀 BOTTOM STATUS BAR (#191a1b Secondary Theme) */}
+      {/*  BOTTOM STATUS BAR (#191a1b Secondary Theme) */}
       <StatusBar 
         activeFile={workspace.currentFile} 
         lineCount={isImageFile || isUnsupportedFile ? "" : (activeCodeStr?.split("\n").length || 0).toString()} 

@@ -158,10 +158,10 @@ export default function CommandPalette({
 
     if (item.type === 'semantic_node') {
       if (actionType === 'warp') {
-        // 🚀 A. Warp 3D Camera on WebGPU Canvas
+        //  A. Warp 3D Camera on WebGPU Canvas
         if (onWarpToNode) onWarpToNode(item.id);
       } else {
-        // 🚀 B. Open Directly in Code Editor at Line
+        //  B. Open Directly in Code Editor at Line
         if (onSwitchFile && item.filePath) {
           onSwitchFile(item.filePath);
         } else {

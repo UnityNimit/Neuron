@@ -3,10 +3,10 @@ import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 
-import { registerMonacoThemes, useTheme } from '../../config/themeConfig';
+import { registerMonacoThemes, syncMonacoTheme, useTheme } from '../../config/themeConfig';
 import FindReplaceWidget from './FindReplaceWidget';
 
-// 🚀 CRITICAL FIX: Direct local bundling (Zero CDN network requests, 100% offline)
+// Direct local bundling (Zero CDN network requests, 100% offline)
 loader.config({ monaco });
 
 // Central dynamic Monaco theme registrations (Obsidian Black, Alabaster White, Sakura Rose)
@@ -27,9 +27,16 @@ export default function CodeEditor({
   const monacoTheme = theme?.monacoTheme || 'neuron-obsidian';
   const editorRef = useRef(null);
   const modelsMapRef = useRef(new Map()); // Map<filePath, ITextModel>
-  const timerRef = useRef(null);
+  const lastUserEditRef = useRef(new Map()); // Map<filePath, string>
   const isDirtyRef = useRef(isDirty);
   const isExternalSyncRef = useRef(false);
+
+  // Synchronize Monaco accents (cursor & active line number) when theme changes
+  useEffect(() => {
+    if (theme) {
+      syncMonacoTheme(monaco, theme);
+    }
+  }, [theme]);
 
   const onCodeChangeRef = useRef(onCodeChange);
   const onSaveRef = useRef(onSave);
@@ -50,6 +57,58 @@ export default function CodeEditor({
   useEffect(() => {
     filenameRef.current = filename;
   }, [filename]);
+
+  // Helper: Updates a Monaco model without resetting cursor position, selection, or scroll offset
+  const applyModelTextPreservingCursor = useCallback((model, newText) => {
+    if (!model || model.isDisposed() || newText === undefined) return;
+    const currentText = model.getValue();
+    if (currentText === newText) return;
+
+    const editor = editorRef.current;
+    const isActiveModel = editor && editor.getModel() === model;
+    const savedPosition = isActiveModel ? editor.getPosition() : null;
+    const savedSelections = isActiveModel ? editor.getSelections() : null;
+    const savedScrollTop = isActiveModel ? editor.getScrollTop() : null;
+    const savedScrollLeft = isActiveModel ? editor.getScrollLeft() : null;
+
+    isExternalSyncRef.current = true;
+    try {
+      model.pushEditOperations(
+        [],
+        [{ range: model.getFullModelRange(), text: newText }],
+        () => null
+      );
+    } catch {
+      model.setValue(newText);
+    } finally {
+      isExternalSyncRef.current = false;
+    }
+
+    if (isActiveModel && savedPosition) {
+      const lineCount = Math.max(1, model.getLineCount());
+      const safeLine = Math.min(Math.max(1, savedPosition.lineNumber), lineCount);
+      const safeColumn = Math.min(Math.max(1, savedPosition.column), model.getLineMaxColumn(safeLine));
+      editor.setPosition({ lineNumber: safeLine, column: safeColumn });
+
+      if (savedSelections && savedSelections.length > 0) {
+        try {
+          const clampedSelections = savedSelections.map(sel => {
+            const sLine = Math.min(Math.max(1, sel.selectionStartLineNumber), lineCount);
+            const sCol = Math.min(Math.max(1, sel.selectionStartColumn), model.getLineMaxColumn(sLine));
+            const pLine = Math.min(Math.max(1, sel.positionLineNumber), lineCount);
+            const pCol = Math.min(Math.max(1, sel.positionColumn), model.getLineMaxColumn(pLine));
+            return new monaco.Selection(sLine, sCol, pLine, pCol);
+          });
+          editor.setSelections(clampedSelections);
+        } catch {
+          // ignore selection clamp fallback
+        }
+      }
+
+      if (typeof savedScrollTop === 'number') editor.setScrollTop(savedScrollTop);
+      if (typeof savedScrollLeft === 'number') editor.setScrollLeft(savedScrollLeft);
+    }
+  }, []);
 
   // -------------------------------------------------------------------------
   // 2. POLYGLOT LANGUAGE DETECTION
@@ -84,7 +143,7 @@ export default function CodeEditor({
   }, [filename]);
 
   // -------------------------------------------------------------------------
-  // 3. 🚀 MULTI-MODEL ISOLATION (Fixes Ctrl+Z Cross-File Bug)
+  // 3. MULTI-MODEL ISOLATION (Preserves Undo Stack & Cursor Across Saves)
   // -------------------------------------------------------------------------
   const getOrCreateModel = useCallback((file, codeContent, lang) => {
     if (!file) return null;
@@ -96,33 +155,31 @@ export default function CodeEditor({
       
       if (!model) {
         model = monaco.editor.createModel(codeContent || "", lang, uri);
-      } else {
-        if (codeContent !== undefined && model.getValue() !== codeContent) {
-          isExternalSyncRef.current = true;
-          try {
-            model.setValue(codeContent);
-          } finally {
-            isExternalSyncRef.current = false;
-          }
-        }
+      } else if (codeContent !== undefined && model.getValue() !== codeContent) {
+        applyModelTextPreservingCursor(model, codeContent);
       }
       modelsMapRef.current.set(file, model);
     } else {
-      // Sync model if code updated externally and file is not dirty
-      if (codeContent !== undefined && model.getValue() !== codeContent && !isDirtyRef.current) {
-        isExternalSyncRef.current = true;
-        try {
-          model.setValue(codeContent);
-        } finally {
-          isExternalSyncRef.current = false;
-        }
+      // Only sync existing model if it is empty (initial async load) or if changed externally while unfocused
+      const currentVal = model.getValue();
+      const hasTyped = lastUserEditRef.current.has(file);
+      const isFocusedActive = editorRef.current && editorRef.current.getModel() === model && editorRef.current.hasTextFocus();
+
+      if (
+        codeContent !== undefined &&
+        currentVal !== codeContent &&
+        !isDirtyRef.current &&
+        !isFocusedActive &&
+        (!hasTyped || currentVal === "")
+      ) {
+        applyModelTextPreservingCursor(model, codeContent);
       }
     }
     
     // Ensure language mode is synchronized
     monaco.editor.setModelLanguage(model, lang);
     return model;
-  }, []);
+  }, [applyModelTextPreservingCursor]);
 
   // Switch Monaco Models on Tab Switch (0ms execution, Isolated Undo Stack) or live external sync
   useEffect(() => {
@@ -132,19 +189,19 @@ export default function CodeEditor({
     if (targetModel) {
       if (editorRef.current.getModel() !== targetModel) {
         editorRef.current.setModel(targetModel);
-      } else if (!isDirty && initialCode !== undefined && targetModel.getValue() !== initialCode) {
-        // Live external update while viewing the file (and file has no unsaved in-memory edits)
-        isExternalSyncRef.current = true;
-        try {
-          targetModel.setValue(initialCode);
-        } finally {
-          isExternalSyncRef.current = false;
-        }
+      } else if (
+        !isDirty &&
+        initialCode !== undefined &&
+        targetModel.getValue() !== initialCode &&
+        !editorRef.current.hasTextFocus() &&
+        (!lastUserEditRef.current.has(filename) || targetModel.getValue() === "")
+      ) {
+        applyModelTextPreservingCursor(targetModel, initialCode);
       }
     }
-  }, [filename, initialCode, language, isDirty, getOrCreateModel]);
+  }, [filename, initialCode, language, isDirty, getOrCreateModel, applyModelTextPreservingCursor]);
 
-  // 🚀 CRITICAL FIX: External Code Update Dispatcher (e.g. AI Refactor Applied)
+  // External Code Update Dispatcher (e.g. AI Refactor Applied)
   useEffect(() => {
     const handleExternalCodeUpdate = (e) => {
       const { filePath, code } = e.detail || {};
@@ -153,33 +210,37 @@ export default function CodeEditor({
       const cleanTarget = filePath.replace(/\\/g, '/').toLowerCase();
       const cleanCurrent = (filenameRef.current || '').replace(/\\/g, '/').toLowerCase();
 
-      // 1. Update matching cached model in modelsMapRef
+      // 1. Update matching cached model in modelsMapRef while preserving cursor
       for (const [key, model] of modelsMapRef.current.entries()) {
         if (key.replace(/\\/g, '/').toLowerCase() === cleanTarget && !model.isDisposed()) {
-          if (model.getValue() !== code) {
-            model.setValue(code);
-          }
+          lastUserEditRef.current.set(key, code);
+          applyModelTextPreservingCursor(model, code);
         }
       }
 
       // 2. If active editor is currently viewing this file, ensure model updates live
       if (editorRef.current && cleanCurrent === cleanTarget) {
         const curModel = editorRef.current.getModel();
-        if (curModel && curModel.getValue() !== code) {
-          curModel.setValue(code);
+        if (curModel) {
+          applyModelTextPreservingCursor(curModel, code);
         }
       }
     };
 
     window.addEventListener('neuron-update-editor-code', handleExternalCodeUpdate);
     return () => window.removeEventListener('neuron-update-editor-code', handleExternalCodeUpdate);
-  }, []);
+  }, [applyModelTextPreservingCursor]);
 
   // -------------------------------------------------------------------------
   // 4. EDITOR MOUNT & KEYBINDINGS (Ctrl+S Save & Ctrl+/ Line Commenting)
   // -------------------------------------------------------------------------
   const handleMount = (editor) => {
     editorRef.current = editor;
+
+    // Immediately synchronize theme accent colors (cursor & active line number)
+    if (theme) {
+      syncMonacoTheme(monaco, theme);
+    }
 
     // Attach initial file model
     if (filename) {
@@ -189,10 +250,13 @@ export default function CodeEditor({
       }
     }
 
-    // 🚀 BIND CTRL + S / CMD + S (SAVE ACTIVE FILE)
+    // BIND CTRL + S / CMD + S (SAVE ACTIVE FILE)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       const currentVal = editor.getValue();
       const currentFile = filenameRef.current;
+      if (currentFile) {
+        lastUserEditRef.current.set(currentFile, currentVal);
+      }
       if (onCodeChangeRef.current && currentFile) {
         onCodeChangeRef.current(currentVal, currentFile);
       }
@@ -201,7 +265,7 @@ export default function CodeEditor({
       }
     });
 
-    // 🚀 BIND CTRL + F / CMD + F (CUSTOM THEMED FIND WIDGET)
+    // BIND CTRL + F / CMD + F (CUSTOM THEMED FIND WIDGET)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => {
       const selection = editor.getSelection();
       const selectedText = selection && !selection.isEmpty() ? editor.getModel()?.getValueInRange(selection) : "";
@@ -210,7 +274,7 @@ export default function CodeEditor({
       }));
     });
 
-    // 🚀 BIND CTRL + H / CMD + H (CUSTOM THEMED REPLACE WIDGET)
+    // BIND CTRL + H / CMD + H (CUSTOM THEMED REPLACE WIDGET)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyH, () => {
       const selection = editor.getSelection();
       const selectedText = selection && !selection.isEmpty() ? editor.getModel()?.getValueInRange(selection) : "";
@@ -219,12 +283,12 @@ export default function CodeEditor({
       }));
     });
 
-    // 🚀 BIND CTRL + K / CMD + K (SEARCH / COMMAND PALETTE)
+    // BIND CTRL + K / CMD + K (SEARCH / COMMAND PALETTE)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
       window.dispatchEvent(new CustomEvent('neuron-open-command-palette'));
     });
 
-    // 🚀 BIND CTRL + / (TOGGLE LINE COMMENT) FOR ALL LANGUAGES
+    // BIND CTRL + / (TOGGLE LINE COMMENT) FOR ALL LANGUAGES
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => {
       editor.trigger('keyboard', 'editor.action.commentLine', null);
     });
@@ -240,6 +304,9 @@ export default function CodeEditor({
 
       const currentVal = editor.getValue();
       const currentFile = filenameRef.current;
+      if (currentFile) {
+        lastUserEditRef.current.set(currentFile, currentVal);
+      }
       
       if (onCodeChangeRef.current && currentFile) {
         onCodeChangeRef.current(currentVal, currentFile);
@@ -289,7 +356,7 @@ export default function CodeEditor({
       className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0"
       style={{ backgroundColor: 'var(--theme-background, #121314)' }}
     >
-      {/* 🚀 MINIMALIST FILE PATH BREADCRUMB BAR (e.g. frontend > src > App.jsx) */}
+      {/* MINIMALIST FILE PATH BREADCRUMB BAR (e.g. frontend > src > App.jsx) */}
       {breadcrumbSegments.length > 0 && (
         <div 
           className="h-6 shrink-0 border-b px-3 flex items-center justify-between text-[11px] font-mono select-none z-20"
@@ -320,7 +387,7 @@ export default function CodeEditor({
         </div>
       )}
 
-      {/* 🚀 RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
+      {/* RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
       {isSyncing && (
         <div 
           className="h-[1.5px] w-full overflow-hidden shrink-0 z-20"

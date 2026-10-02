@@ -44,7 +44,7 @@ export default function UnsupportedFileViewer({
       className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 select-none"
       style={{ backgroundColor: 'var(--theme-background, #121314)' }}
     >
-      {/* 🚀 TOP BREADCRUMB BAR (Matches CodeEditor.jsx exactly) */}
+      {/*  TOP BREADCRUMB BAR (Matches CodeEditor.jsx exactly) */}
       <div 
         className="h-6 shrink-0 border-b px-3 flex items-center gap-1.5 text-[11px] font-mono select-none overflow-x-auto [&::-webkit-scrollbar]:hidden"
         style={{
@@ -66,7 +66,7 @@ export default function UnsupportedFileViewer({
         })}
       </div>
 
-      {/* 🚀 MINIMALIST FALLBACK CARD (Editor Dark Theme) */}
+      {/*  MINIMALIST FALLBACK CARD (Editor Dark Theme) */}
       <div 
         className="w-full flex-1 min-h-0 flex items-center justify-center p-6"
         style={{ backgroundColor: 'var(--theme-background, #121314)' }}

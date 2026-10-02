@@ -53,85 +53,56 @@ export default function RightPanelContainer({
       }}
     >
       {/* ------------------------------------------------------------- */}
-      {/* TOP TAB BAR: [ Input ] vs [ AI ] + Model Selector             */}
+      {/* TOP TAB BAR: [ Input ] vs [ Agent ] + Model Selector          */}
       {/* ------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 flex items-center justify-between px-0 select-none relative z-30"
+        className="h-8 shrink-0 flex items-center justify-between px-0 border-b select-none relative z-30"
         style={{
-          backgroundColor: 'var(--theme-secondary)'
+          backgroundColor: 'var(--theme-secondary)',
+          borderColor: 'var(--theme-border)'
         }}
       >
-        {/* Full-width 1px bottom joining line (hidden under active tab) */}
-        <div 
-          className="absolute bottom-0 left-0 right-0 border-b z-0 pointer-events-none"
-          style={{ borderColor: 'var(--theme-border)' }}
-        />
-
-        <div className="h-full flex items-end pt-1 px-1.5 gap-1 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
+        <div className="h-full flex items-center px-1.5 gap-1.5 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
           {/* Input Tab */}
           <button
             type="button"
             onClick={() => handleTabChange('stdin')}
-            className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
+            className={`neuron-tab-card px-3 gap-1.5 font-mono shrink-0 cursor-pointer group ${
               activeTab === 'stdin' 
-                ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
-                : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
+                ? 'neuron-tab-card-active' 
+                : 'neuron-tab-card-inactive'
             }`}
-            style={{
-              backgroundColor: activeTab === 'stdin' ? 'var(--theme-background)' : 'transparent',
-              borderColor: activeTab === 'stdin' ? 'var(--theme-border)' : 'transparent',
-              color: activeTab === 'stdin' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
-            }}
           >
+            <span className="leading-none">Input</span>
             <span
-              className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
-                activeTab === 'stdin' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+              className={`neuron-tab-indicator ${
+                activeTab === 'stdin' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
               }`}
-              style={{ borderColor: 'var(--theme-accent)' }}
             />
-            {activeTab === 'stdin' && (
-              <span
-                className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
-                style={{ borderColor: 'var(--theme-background)' }}
-              />
-            )}
-            <span>Input</span>
           </button>
 
-          {/* AI Tab */}
+          {/* Agent Tab */}
           <button
             type="button"
             onClick={() => handleTabChange('ai')}
-            className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
+            className={`neuron-tab-card px-3 gap-1.5 font-mono shrink-0 cursor-pointer group ${
               activeTab === 'ai' 
-                ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
-                : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
+                ? 'neuron-tab-card-active' 
+                : 'neuron-tab-card-inactive'
             }`}
-            style={{
-              backgroundColor: activeTab === 'ai' ? 'var(--theme-background)' : 'transparent',
-              borderColor: activeTab === 'ai' ? 'var(--theme-border)' : 'transparent',
-              color: activeTab === 'ai' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
-            }}
           >
-            <span
-              className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
-                activeTab === 'ai' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
-              }`}
-              style={{ borderColor: 'var(--theme-accent)' }}
-            />
-            {activeTab === 'ai' && (
-              <span
-                className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
-                style={{ borderColor: 'var(--theme-background)' }}
-              />
-            )}
-            <span>AI</span>
+            <span className="leading-none">Agent</span>
             {isStreaming && (
               <span 
-                className="w-1.5 h-1.5 rounded-full animate-pulse" 
+                className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" 
                 style={{ backgroundColor: 'var(--theme-accent)' }}
               />
             )}
+            <span
+              className={`neuron-tab-indicator ${
+                activeTab === 'ai' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
+              }`}
+            />
           </button>
         </div>
 

@@ -208,7 +208,7 @@ async def fetch_ast_summary(
 
 
 # -------------------------------------------------------------------------
-# 3. 🚀 STREAMING TOKEN PIPELINE (Live Typewriter over WebSockets)
+# 3. STREAMING TOKEN PIPELINE (Live Typewriter over WebSockets)
 # -------------------------------------------------------------------------
 async def stream_ast_summary(
     code_string: str,
@@ -363,7 +363,7 @@ def load_conversations(target_dir: Optional[str] = None) -> List[Dict[str, Any]]
     # Auto-seed default conversation for the active workspace
     default_conv = {
         "id": "conv_default",
-        "title": "Welcome to AI",
+        "title": "Agent",
         "project": project_name,
         "model": "auto",
         "updated_at": datetime.utcnow().isoformat() + "Z",
@@ -373,12 +373,10 @@ def load_conversations(target_dir: Optional[str] = None) -> List[Dict[str, Any]]
                 "id": "msg_welcome",
                 "role": "assistant",
                 "content": (
-                    "Welcome to **AI** in Neuron.\n\n"
-                    "Configure your API keys with custom aliases in **Settings > AI** or use your local hardware engine. "
-                    "Neuron automatically detects available models for your active key and selects the best model.\n\n"
-                    "Ask architectural questions, request refactors, or inspect code dependencies in real time."
+                    "Ready. Configure API keys in **Settings > Agent** or use local models. "
+                    "How can I help you with your code today?"
                 ),
-                "thoughts": "AI agent initialized with automatic model discovery.",
+                "thoughts": "Agent initialized.",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }
         ]
@@ -961,12 +959,23 @@ def tool_write_to_file(
             )
 
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    added = len(effective_content.splitlines())
+    removed = 0
     if os.path.exists(full_path):
         if not overwrite:
             return f"[Error: File '{clean_path}' already exists and overwrite=False]"
         try:
             with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                FILE_SNAPSHOTS[clean_path] = f.read()
+                old_content = f.read()
+                FILE_SNAPSHOTS[clean_path] = old_content
+                diff_lines = list(difflib.unified_diff(
+                    old_content.splitlines(keepends=True),
+                    effective_content.splitlines(keepends=True),
+                    fromfile=f"a/{clean_path}",
+                    tofile=f"b/{clean_path}"
+                ))
+                added = sum(1 for l in diff_lines if l.startswith('+') and not l.startswith('+++'))
+                removed = sum(1 for l in diff_lines if l.startswith('-') and not l.startswith('---'))
         except Exception:
             pass
 
@@ -974,7 +983,7 @@ def tool_write_to_file(
         f.write(effective_content)
 
     line_count = len(effective_content.splitlines())
-    return f"[Successfully wrote '{clean_path}' ({line_count} lines, {len(effective_content.encode('utf-8'))} bytes)]"
+    return f"[Successfully wrote '{clean_path}' (+{added} -{removed}, {line_count} lines)]"
 
 
 def tool_replace_file_content(
@@ -1070,8 +1079,10 @@ def tool_replace_file_content(
             n=2
         ))
         diff_preview = "".join(diff_lines[:40]) if diff_lines else "(identical content)"
+        added = sum(1 for l in diff_lines if l.startswith('+') and not l.startswith('+++'))
+        removed = sum(1 for l in diff_lines if l.startswith('-') and not l.startswith('---'))
 
-        return f"[Successfully updated '{clean_path}']\n[Unified Diff Preview]:\n{diff_preview}"
+        return f"[Successfully updated '{clean_path}' (+{added} -{removed})]\n[Unified Diff Preview]:\n{diff_preview}"
     except Exception as e:
         return f"[Error updating '{clean_path}': {e}]"
 
@@ -1117,10 +1128,45 @@ def tool_run_command(command: str = "", cmd: Optional[str] = None, cwd: str = ""
 
     proc = None
     try:
+        # Check if command launches an interactive terminal/console game on Windows
+        has_interactive_input = False
+        target_script_match = re.search(r'([a-zA-Z0-9_\-\.\/\\]+\.py)', resolved_cmd)
+        if target_script_match and sys.platform == "win32":
+            script_candidate = os.path.join(work_dir, target_script_match.group(1))
+            if os.path.isfile(script_candidate):
+                try:
+                    with open(script_candidate, "r", encoding="utf-8", errors="ignore") as sf:
+                        s_content = sf.read()
+                        if "msvcrt" in s_content or "curses" in s_content:
+                            has_interactive_input = True
+                except Exception:
+                    pass
+
+        is_console_game = (
+            sys.platform == "win32"
+            and (
+                has_interactive_input
+                or any(term in resolved_cmd.lower() for term in ["snake", "game", "play", "tetris", "pong", "tictactoe", "hangman", "cli", "interactive"])
+            )
+            and not any(g in resolved_cmd.lower() for g in ["pygame", "turtle", "tkinter", "py_compile", "pytest"])
+            and not resolved_cmd.strip().lower().startswith("start ")
+        )
+        if is_console_game:
+            proc = subprocess.Popen(
+                f'start "Neuron Terminal" cmd /k {resolved_cmd}',
+                shell=True,
+                cwd=work_dir
+            )
+            return (
+                f"[Command: {command}]\n"
+                f"[Exit Code: 0]\n"
+                f"STDOUT:\nInteractive terminal game launched in a new terminal window. You can play directly using keyboard controls."
+            )
+
         # Check if command launches a continuous GUI app or long-running web server
         is_daemon_or_gui = any(k in resolved_cmd.lower() for k in [
-            "tkinter", "turtle", "pygame", "node ", "npm start", "npm run", "uvicorn", "flask", "http.server"
-        ]) or ("game" in resolved_cmd.lower())
+            "tkinter", "turtle", "pygame", "node ", "npm start", "npm run", "uvicorn", "flask", "http.server", "fastapi"
+        ]) or ("game" in resolved_cmd.lower()) or ("snake" in resolved_cmd.lower())
 
         proc = subprocess.Popen(
             resolved_cmd,
@@ -1139,6 +1185,8 @@ def tool_run_command(command: str = "", cmd: Optional[str] = None, cwd: str = ""
             # Non-blocking health probe: Allow 2.5s for immediate crashes/tracebacks
             time.sleep(2.5)
             if proc.poll() is None:
+                if CURRENT_CANCEL_CTX is not None:
+                    CURRENT_CANCEL_CTX.setdefault("daemons", []).append(proc)
                 return (
                     f"[Command: {command}]\n"
                     f"[PID: {proc.pid}]\n"
@@ -1174,7 +1222,8 @@ def tool_run_command(command: str = "", cmd: Optional[str] = None, cwd: str = ""
         return f"[Command: {command}]\n[Error: {e}]"
     finally:
         if CURRENT_CANCEL_CTX is not None and CURRENT_CANCEL_CTX.get("proc") == proc:
-            CURRENT_CANCEL_CTX["proc"] = None
+            if proc not in CURRENT_CANCEL_CTX.get("daemons", []):
+                CURRENT_CANCEL_CTX["proc"] = None
 
 
 def tool_get_blast_radius(symbol_or_file: str) -> str:
@@ -1268,14 +1317,17 @@ def score_discovered_model(model_id: str, meta: Optional[Dict[str, Any]] = None)
     score = 0.0
 
     # 1. Strip date stamps, build numbers, context sizes, and parameter counts before version extraction
-    m_clean = re.sub(r'[-_]?20\d{2}[-_]\d{2}[-_]\d{2}', '', m_lower)
+    m_clean = re.sub(r'[-_]?(?:19|20)\d{2}[-_]\d{2}[-_]\d{2}', '', m_lower)
+    m_clean = re.sub(r'[-_]?(?:0[1-9]|1[0-2])[-_](?:19|20)\d{2}(?=[-_]|$)', '', m_clean)
+    m_clean = re.sub(r'[-_]?(?:19|20)\d{2}[-_](?:0[1-9]|1[0-2])(?=[-_]|$)', '', m_clean)
+    m_clean = re.sub(r'[-_]?(?:19|20)\d{2}(?=[-_]|$)', '', m_clean)
     m_clean = re.sub(r'[-_]?20\d{6}', '', m_clean)
     m_clean = re.sub(r'[-_](?:0[1-9]|1[0-2])[-_](?:0[1-9]|[12]\d|3[01])(?=[-_]|$)', '', m_clean)
     m_clean = re.sub(r'[-_]\d{3,6}(?=[-_]|$)', '', m_clean)
     m_clean = re.sub(r'(?:^|[-_/])\d+x\d+(?:\.\d+)?b(?=[-_/]|$)', '', m_clean)
     m_clean = re.sub(r'(?:^|[-_/])\d+(?:\.\d+)?[bkm](?=[-_/]|$)', '', m_clean)
 
-    # Normalize hyphenated major-minor versions (e.g. -3-7- -> -3.7-)
+    # Normalize hyphenated major-minor versions (e.g. -3-8- -> -3.8-, -3-7- -> -3.7-)
     m_clean = re.sub(r'(?<=[-_a-z])([1-9])-(\d)(?=[-_]|$)', r'\1.\2', m_clean)
 
     ver_tokens = re.findall(r'(?:^|[-_/a-z])(\d+(?:\.\d+)?)(?=[-_/a-z]|$)', m_clean)
@@ -1285,7 +1337,7 @@ def score_discovered_model(model_id: str, meta: Optional[Dict[str, Any]] = None)
             continue
         try:
             val = float(vt)
-            if 1.0 <= val < 20.0:
+            if 1.0 <= val < 10.0:  # Valid generation releases are 1.0 through 9.9
                 valid_versions.append(val)
         except ValueError:
             pass
@@ -1323,7 +1375,9 @@ def score_discovered_model(model_id: str, meta: Optional[Dict[str, Any]] = None)
     if isinstance(created, (int, float)) and created > 1500000000:
         score += min(max((created - 1700000000) / 500000.0, 0.0), 300.0)
 
-    # 5. Structural tier modifiers (no model names hardcoded)
+    # 5. Structural tier modifiers & brand priority
+    if "gemini" in m_lower:
+        score += 500.0
     if any(t in m_lower for t in ("flagship", "opus", "pro", "sonnet", "large", "versatile", "coder")):
         score += 220.0
     if "flash" in m_lower and "lite" not in m_lower and "8b" not in m_lower:
@@ -1332,7 +1386,7 @@ def score_discovered_model(model_id: str, meta: Optional[Dict[str, Any]] = None)
     if any(t in m_lower for t in ("lite", "nano", "mini", "haiku", "tiny", "micro", "instant", "small")):
         score -= 180.0
     if any(t in m_lower for t in ("exp", "preview", "beta", "test")):
-        score -= 60.0
+        score -= 450.0
     if "latest" in m_lower:
         score += 25.0
 
@@ -1343,7 +1397,8 @@ async def _probe_google_models(api_key: str) -> Optional[Dict[str, Any]]:
     """Queries Google's live /v1beta/models endpoint to discover available models for this key."""
     excluded_terms = (
         "embedding", "imagen", "veo", "aqa", "tts", "whisper", "audio",
-        "robotics", "learnlm", "bisect", "-vision", "computer-use", "image-generation"
+        "robotics", "learnlm", "bisect", "-vision", "computer-use", "image-generation",
+        "deep-research", "lyria", "transcribe", "-image", "customtools", "banana", "gemma"
     )
     scored_models = []
     try:
@@ -1390,13 +1445,45 @@ async def _probe_google_models(api_key: str) -> Optional[Dict[str, Any]]:
         for _, mid in scored_models:
             if mid not in ranked:
                 ranked.append(mid)
+
+        best_model = ranked[0]
+        try:
+            async with httpx.AsyncClient(timeout=4.5) as client:
+                async def check_health(m_id: str) -> Tuple[str, bool, int]:
+                    try:
+                        probe_url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_id}:generateContent?key={api_key}"
+                        r = await client.post(probe_url, json={"contents": [{"parts": [{"text": "ping"}]}]})
+                        return m_id, r.status_code == 200, r.status_code
+                    except Exception:
+                        return m_id, False, 0
+
+                probe_candidates = ranked[:10]
+                health_checks = [check_health(m) for m in probe_candidates]
+                results = await asyncio.gather(*health_checks, return_exceptions=True)
+                healthy_models = []
+                exhausted_models = []
+                for res in results:
+                    if isinstance(res, tuple):
+                        m_id, is_ok, status_code = res
+                        if is_ok:
+                            healthy_models.append(m_id)
+                        elif status_code in (429, 503):
+                            exhausted_models.append(m_id)
+
+                if healthy_models:
+                    best_model = healthy_models[0]
+                    remaining = [m for m in ranked if m not in healthy_models and m not in exhausted_models]
+                    ranked = healthy_models + remaining + exhausted_models
+        except Exception:
+            pass
+
         return {
             "valid": True,
             "provider": "Google AI",
             "protocol": "google",
             "base_url": "https://generativelanguage.googleapis.com/v1beta",
             "models": ranked,
-            "best_model": ranked[0]
+            "best_model": best_model
         }
     return None
 
@@ -1446,7 +1533,8 @@ async def _probe_openai_compat_models(
     excluded_terms = (
         "embedding", "tts", "whisper", "dall-e", "moderation", "realtime",
         "audio", "transcribe", "guard", "babbage", "davinci", "canary",
-        "search", "image", "vision-preview", "omni-moderation"
+        "search", "image", "vision-preview", "omni-moderation",
+        "deep-research", "lyria", "customtools", "banana"
     )
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
@@ -1493,13 +1581,20 @@ async def _probe_openai_compat_models(
     return None
 
 
-async def discover_key_and_models(api_key: str, force_refresh: bool = False) -> Dict[str, Any]:
+async def discover_key_and_models(
+    api_key: str, 
+    force_refresh: bool = False, 
+    custom_base_url: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Automatically detects which AI provider an API key belongs to by running live discovery requests,
     retrieves all available models for that key, and ranks them to select the best model automatically.
+    Supports Google Gemini (AIza, AQ), Grok / xAI (xai-), Groq (gsk_), OpenRouter (sk-or-), Cerebras (csk-),
+    DeepSeek, Mistral, and local/custom OpenAI-compatible endpoints with custom base URLs.
     Contains ZERO hardcoded model names.
     """
     clean_key = (api_key or "").strip()
+    clean_base_url = (custom_base_url or "").strip().rstrip("/") if custom_base_url else None
     if not clean_key:
         return {
             "valid": False,
@@ -1511,29 +1606,36 @@ async def discover_key_and_models(api_key: str, force_refresh: bool = False) -> 
             "error": "Empty API key"
         }
 
-    key_hash = hashlib.sha256(clean_key.encode("utf-8")).hexdigest()
+    cache_identity = f"{clean_key}::{clean_base_url or ''}"
+    key_hash = hashlib.sha256(cache_identity.encode("utf-8")).hexdigest()
     now = time.time()
     if not force_refresh and key_hash in DISCOVERED_KEY_CACHE:
         cached = DISCOVERED_KEY_CACHE[key_hash]
         if now - cached.get("timestamp", 0) < 600:
             return cached["data"]
 
-    # 1. Fast prefix-prioritized probe
     result = None
-    if clean_key.startswith("AIza"):
-        result = await _probe_google_models(clean_key)
-    elif clean_key.startswith("sk-ant-"):
-        result = await _probe_anthropic_models(clean_key)
-    elif clean_key.startswith("gsk_"):
-        result = await _probe_openai_compat_models(clean_key, "Groq", "https://api.groq.com/openai/v1")
-    elif clean_key.startswith("sk-or-"):
-        result = await _probe_openai_compat_models(
-            clean_key, "OpenRouter", "https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1/auth/key"
-        )
-    elif clean_key.startswith("xai-"):
-        result = await _probe_openai_compat_models(clean_key, "xAI", "https://api.x.ai/v1")
-    elif clean_key.startswith("csk-"):
-        result = await _probe_openai_compat_models(clean_key, "Cerebras", "https://api.cerebras.ai/v1")
+
+    # 0. User-specified custom base URL probe (for custom proxies, local vLLM/LM Studio, or custom providers)
+    if clean_base_url:
+        result = await _probe_openai_compat_models(clean_key, "Custom Endpoint", clean_base_url)
+
+    # 1. Fast prefix-prioritized probe
+    if not result:
+        if clean_key.startswith("AIza") or clean_key.startswith("AQ.") or clean_key.startswith("AQ"):
+            result = await _probe_google_models(clean_key)
+        elif clean_key.startswith("sk-ant-"):
+            result = await _probe_anthropic_models(clean_key)
+        elif clean_key.startswith("gsk_"):
+            result = await _probe_openai_compat_models(clean_key, "Groq", "https://api.groq.com/openai/v1")
+        elif clean_key.startswith("sk-or-"):
+            result = await _probe_openai_compat_models(
+                clean_key, "OpenRouter", "https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1/auth/key"
+            )
+        elif clean_key.startswith("xai-"):
+            result = await _probe_openai_compat_models(clean_key, "xAI", "https://api.x.ai/v1")
+        elif clean_key.startswith("csk-"):
+            result = await _probe_openai_compat_models(clean_key, "Cerebras", "https://api.cerebras.ai/v1")
 
     # 2. Universal parallel probe across all supported providers if prefix didn't resolve
     if not result:
@@ -1543,6 +1645,7 @@ async def discover_key_and_models(api_key: str, force_refresh: bool = False) -> 
             _probe_anthropic_models(clean_key),
             _probe_openai_compat_models(clean_key, "Groq", "https://api.groq.com/openai/v1"),
             _probe_openai_compat_models(clean_key, "DeepSeek", "https://api.deepseek.com"),
+            _probe_openai_compat_models(clean_key, "DeepSeek", "https://api.deepseek.com/v1"),
             _probe_openai_compat_models(clean_key, "xAI", "https://api.x.ai/v1"),
             _probe_openai_compat_models(clean_key, "Mistral", "https://api.mistral.ai/v1"),
             _probe_openai_compat_models(clean_key, "Cerebras", "https://api.cerebras.ai/v1"),
@@ -1962,6 +2065,7 @@ async def stream_ai_chat(
     conversation_id: str,
     model: str = "auto",
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
     context_code: Optional[str] = None,
     file_path: Optional[str] = None,
     target_dir: Optional[str] = None,
@@ -1998,7 +2102,7 @@ async def stream_ai_chat(
             "step": "Auto-detecting API key & discovering available models...",
             "status": "running"
         }
-        discovery = await discover_key_and_models(effective_api_key)
+        discovery = await discover_key_and_models(effective_api_key, custom_base_url=base_url)
         if discovery.get("valid") and discovery.get("models"):
             prov = discovery.get("provider", "Cloud AI")
             best_m = discovery.get("best_model", "")
@@ -2019,7 +2123,7 @@ async def stream_ai_chat(
                 "### API Key Verification Failed\n\n"
                 "Could not authenticate the configured API key or no compatible models were returned:\n\n"
                 f"```\n{discovery.get('error', 'Authentication failed')}\n```\n\n"
-                "Please check your API key in **Settings > AI** or switch to **Local AI**."
+                "Please check your API key in **Settings > Agent** or switch to **Local AI**."
             )
             yield {"type": "token", "content": err_msg}
             yield {"type": "step", "step": "API Key Error", "status": "done"}
@@ -2031,8 +2135,8 @@ async def stream_ai_chat(
     # =========================================================================
     if intent == "CONVERSE":
         conv_system = (
-            "You are Neuron AI, the elite software engineer and coding assistant inside Neuron IDE. "
-            "You are articulate, polite, concise, and helpful. "
+            "You are a software engineering assistant. "
+            "Be direct, concise, and helpful. "
             "Answer the user conversationally and directly in markdown. "
             "Do NOT run shell commands, file tools, or inspections for general conversation."
         )
@@ -2056,26 +2160,73 @@ async def stream_ai_chat(
                     }
                     accumulated_text = ""
 
-                    if protocol == "google" and GENAI_SDK_AVAILABLE:
-                        client = genai.Client(api_key=effective_api_key)
-                        config = genai_types.GenerateContentConfig(
-                            system_instruction=conv_system,
-                            temperature=0.7
-                        )
-                        stream_resp = await client.aio.models.generate_content_stream(
-                            model=cand_model,
-                            contents=prompt,
-                            config=config
-                        )
-                        async for chunk in stream_resp:
-                            if cancel_ctx and cancel_ctx.get("is_cancelled"):
-                                yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
-                                yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
-                                return
-                            c_text = chunk.text or ""
-                            if c_text:
-                                accumulated_text += c_text
-                                yield {"type": "token", "content": c_text}
+                    if protocol == "google":
+                        if GENAI_SDK_AVAILABLE:
+                            try:
+                                client = genai.Client(api_key=effective_api_key)
+                                config = genai_types.GenerateContentConfig(
+                                    system_instruction=conv_system,
+                                    temperature=0.7
+                                )
+                                stream_resp = await client.aio.models.generate_content_stream(
+                                    model=cand_model,
+                                    contents=prompt,
+                                    config=config
+                                )
+                                async for chunk in stream_resp:
+                                    if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                        yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                        yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                        return
+                                    c_text = chunk.text or ""
+                                    if c_text:
+                                        accumulated_text += c_text
+                                        yield {"type": "token", "content": c_text}
+                            except Exception as g_sdk_err:
+                                print(f"[DEBUG] Google SDK conv error on {cand_model}: {g_sdk_err}")
+
+                        # HTTP fallback via Google's official OpenAI-compatible endpoint
+                        if not accumulated_text.strip():
+                            headers = {
+                                "Authorization": f"Bearer {effective_api_key}",
+                                "Content-Type": "application/json"
+                            }
+                            payload = {
+                                "model": cand_model,
+                                "messages": [
+                                    {"role": "system", "content": conv_system},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                "stream": True,
+                                "temperature": 0.7
+                            }
+                            try:
+                                async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=6.0)) as client:
+                                    async with client.stream("POST", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", headers=headers, json=payload) as resp:
+                                        if resp.status_code == 200:
+                                            async for line in resp.aiter_lines():
+                                                if cancel_ctx and cancel_ctx.get("is_cancelled"):
+                                                    yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
+                                                    yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
+                                                    return
+                                                if not line or not line.startswith("data:"):
+                                                    continue
+                                                data_str = line[5:].strip()
+                                                if data_str == "[DONE]":
+                                                    break
+                                                try:
+                                                    chunk_obj = json.loads(data_str)
+                                                    choices = chunk_obj.get("choices") or []
+                                                    if choices:
+                                                        delta = choices[0].get("delta") or {}
+                                                        c_text = delta.get("content") or ""
+                                                        if c_text:
+                                                            accumulated_text += c_text
+                                                            yield {"type": "token", "content": c_text}
+                                                except Exception:
+                                                    continue
+                            except Exception as g_http_err:
+                                print(f"[DEBUG] Google HTTP conv fallback error on {cand_model}: {g_http_err}")
 
                     elif protocol == "openai_compat":
                         headers = {
@@ -2212,7 +2363,7 @@ async def stream_ai_chat(
             except Exception as ollama_err:
                 print(f"[DEBUG] Ollama converse error: {ollama_err}")
 
-        fallback_msg = "Hello! I am Neuron AI. How can I assist you with your code today?"
+        fallback_msg = "How can I help you with your code today?"
         yield {"type": "token", "content": fallback_msg}
         yield {"type": "step", "step": "Completed", "status": "done"}
         yield {"type": "done", "content": fallback_msg, "refactor": None}
@@ -2336,7 +2487,7 @@ async def stream_ai_chat(
                     ]
 
                     system_inst = (
-                        "You are Neuron AI, an elite autonomous software engineering assistant inside Neuron IDE. "
+                        "You are an autonomous software engineering assistant. "
                         f"You are working in project '{project_name}' at '{target_dir or os.getcwd()}'. "
                         f"{project_rules}\n\n"
                         "AUTONOMOUS AGENT DIRECTIVES:\n"
@@ -2345,11 +2496,10 @@ async def stream_ai_chat(
                         "3. `tool_grep_search` / `tool_find_by_name`: Search codebase for symbols, functions, or files.\n"
                         "4. `tool_write_to_file`: Create new scripts, test files, or overwrite files.\n"
                         "5. `tool_replace_file_content`: Surgically edit specific code blocks with instant unified diffs.\n"
-                        "6. `tool_run_command`: Run Python scripts, unit tests, or install packages in the virtual environment.\n"
+                        "6. `tool_run_command`: Run Python scripts, terminal commands, unit tests, or install packages. CRITICAL MANDATE: When the user asks to run, test, start, or play a game or script, you MUST actively execute the script using `tool_run_command` (e.g. `python snake.py`). Merely running py_compile is NOT running the game. You must call `tool_run_command` with the actual execution command to start the program for the user.\n"
                         "7. `tool_get_blast_radius`: Analyze AST dependency graph impact before modifying shared symbols.\n"
                         "8. `tool_update_memory`: Persist developer rules and architectural conventions to '.neuron/memory.md'.\n"
-                        "9. SELF-CORRECTION MANDATE: When running tests or commands, if an error, traceback, or non-zero exit code occurs, "
-                        "DO NOT stop and ask the user! Read the traceback, inspect the code, fix the issue, and re-run to verify!\n"
+                        "9. AUTOMATIC SELF-CORRECTION MANDATE: If any tool execution results in an error, traceback, syntax failure, or non-zero exit code, you MUST autonomously self-correct immediately without asking the user. Analyze the error output, inspect the relevant file lines with `tool_view_file`, apply a surgical fix via `tool_replace_file_content` or `tool_write_to_file`, and re-run the verification command until it succeeds. Continue diagnosing and repairing until the goal is fully achieved.\n"
                         "10. Once satisfied, provide a clean architectural summary with code explanations."
                     )
 
@@ -2363,7 +2513,7 @@ async def stream_ai_chat(
                     chat = client.aio.chats.create(model=cand_model, config=config)
                     current_input: Any = full_prompt
                     accumulated_text = ""
-                    max_turns = 10
+                    max_turns = 25
                     tools_executed = False
 
                     for turn in range(max_turns):
@@ -2402,13 +2552,23 @@ async def stream_ai_chat(
                             tool_responses = []
                             for fc in turn_function_calls:
                                 fn_name = fc.name
+                                call_id = getattr(fc, "id", None)
                                 raw_args = dict(fc.args or {})
                                 fn_args = {k: clean_tool_arg(v) for k, v in raw_args.items()}
                                 step_desc = describe_tool_step(fn_name, fn_args)
 
                                 mutating_tools = {"tool_run_command", "tool_write_to_file", "tool_replace_file_content"}
                                 if approval_mode == "manual" and fn_name in mutating_tools and approval_handler:
-                                    yield {"type": "step", "step": f"Awaiting approval for {step_desc}...", "status": "running"}
+                                    step_file = clean_tool_arg(fn_args.get("file_path") or fn_args.get("path") or "")
+                                    step_cmd = clean_tool_arg(fn_args.get("command") or fn_args.get("cmd") or "")
+                                    yield {
+                                        "type": "step",
+                                        "step": f"Awaiting approval for {step_desc}...",
+                                        "status": "running",
+                                        "tool": fn_name,
+                                        "file": step_file,
+                                        "command": step_cmd
+                                    }
                                     try:
                                         approved, feedback = await approval_handler(conversation_id, fn_name, fn_args, step_desc)
                                     except Exception as err:
@@ -2421,16 +2581,41 @@ async def stream_ai_chat(
 
                                     if not approved:
                                         rejection_note = f"[Action rejected by user. Feedback: {feedback or 'User denied approval. Please provide an alternative plan.'}]"
-                                        yield {"type": "step", "step": f"Rejected: {step_desc}", "status": "done"}
-                                        tool_responses.append(
-                                            genai_types.Part.from_function_response(
-                                                name=fn_name,
-                                                response={"result": rejection_note}
+                                        yield {
+                                            "type": "step",
+                                            "step": f"Rejected: {step_desc}",
+                                            "status": "done",
+                                            "tool": fn_name,
+                                            "file": step_file,
+                                            "command": step_cmd
+                                        }
+                                        if call_id:
+                                            tool_responses.append(
+                                                genai_types.Part(
+                                                    function_response=genai_types.FunctionResponse(
+                                                        name=fn_name,
+                                                        response={"result": rejection_note},
+                                                        id=call_id
+                                                    )
+                                                )
                                             )
-                                        )
+                                        else:
+                                            tool_responses.append(
+                                                genai_types.Part.from_function_response(
+                                                    name=fn_name,
+                                                    response={"result": rejection_note}
+                                                )
+                                            )
                                         continue
 
-                                yield {"type": "step", "step": f"{step_desc}...", "status": "running"}
+                                yield {
+                                    "type": "step",
+                                    "step": f"{step_desc}...",
+                                    "status": "running",
+                                    "tool": fn_name,
+                                    "file": clean_tool_arg(fn_args.get("file_path") or fn_args.get("path") or ""),
+                                    "command": clean_tool_arg(fn_args.get("command") or fn_args.get("cmd") or "")
+                                }
 
                                 tool_fn = TOOL_DISPATCH.get(fn_name)
                                 if tool_fn:
@@ -2440,14 +2625,40 @@ async def stream_ai_chat(
 
                                 is_failure = "Error" in str(raw_res) or "Exit Code: 1" in str(raw_res) or "Exit Code: 2" in str(raw_res)
                                 completion_status = f"{step_desc} (Self-correcting...)" if is_failure else step_desc
-                                yield {"type": "step", "step": completion_status, "status": "done"}
+                                diff_m = re.search(r'\(\+(\d+)\s+-(\d+)', str(raw_res))
+                                added_cnt = int(diff_m.group(1)) if diff_m else None
+                                removed_cnt = int(diff_m.group(2)) if diff_m else None
 
-                                tool_responses.append(
-                                    genai_types.Part.from_function_response(
-                                        name=fn_name,
-                                        response={"result": str(raw_res)}
+                                step_payload = {
+                                    "type": "step",
+                                    "step": completion_status,
+                                    "status": "done",
+                                    "tool": fn_name,
+                                    "file": clean_tool_arg(fn_args.get("file_path") or fn_args.get("path") or ""),
+                                    "command": clean_tool_arg(fn_args.get("command") or fn_args.get("cmd") or "")
+                                }
+                                if added_cnt is not None:
+                                    step_payload["added"] = added_cnt
+                                    step_payload["removed"] = removed_cnt
+                                yield step_payload
+
+                                if call_id:
+                                    tool_responses.append(
+                                        genai_types.Part(
+                                            function_response=genai_types.FunctionResponse(
+                                                name=fn_name,
+                                                response={"result": str(raw_res)},
+                                                id=call_id
+                                            )
+                                        )
                                     )
-                                )
+                                else:
+                                    tool_responses.append(
+                                        genai_types.Part.from_function_response(
+                                            name=fn_name,
+                                            response={"result": str(raw_res)}
+                                        )
+                                    )
 
                             current_input = tool_responses
                         else:
@@ -2460,19 +2671,41 @@ async def stream_ai_chat(
 
                 except Exception as genai_err:
                     print(f"[DEBUG] Google candidate {cand_model} exception: {genai_err}")
-                    # Automatically try next discovered live model if quota/rate-limit/unsupported/not-found
+                    err_str = str(genai_err)
+                    is_transient = any(term in err_str for term in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "quota"))
+                    if tools_executed:
+                        yield {"type": "step", "step": f"Error: {genai_err}", "status": "done"}
+                        yield {"type": "done", "content": accumulated_text + f"\n\n[Error encountered: {genai_err}]", "refactor": None}
+                        return
+                    if is_transient:
+                        accumulated_text = ""
+                        yield {
+                            "type": "step",
+                            "step": f"Model {cand_model} high demand/quota limit, trying fallback...",
+                            "status": "done"
+                        }
+                        continue
+                    if accumulated_text.strip():
+                        yield {"type": "step", "step": f"Error: {genai_err}", "status": "done"}
+                        yield {"type": "done", "content": accumulated_text + f"\n\n[Error encountered: {genai_err}]", "refactor": None}
+                        return
+                    yield {
+                        "type": "step",
+                        "step": f"Model {cand_model} unavailable, trying fallback...",
+                        "status": "done"
+                    }
                     continue
 
-        # A2: OpenAI-Compatible & Anthropic Protocols (OpenAI, Groq, OpenRouter, DeepSeek, xAI, Mistral, Cerebras, Anthropic)
-        elif protocol in ("openai_compat", "anthropic"):
+        # A2: HTTP-Based Autonomous Agent Protocol (OpenAI, Groq, OpenRouter, DeepSeek, xAI, Mistral, Cerebras, Anthropic, and Google HTTP fallback)
+        if protocol in ("openai_compat", "anthropic") or protocol == "google":
             system_inst = (
-                "You are Neuron AI, an elite autonomous software engineering assistant inside Neuron IDE. "
+                "You are an autonomous software engineering assistant. "
                 f"You are working in project '{project_name}' at '{target_dir or os.getcwd()}'. "
                 f"{project_rules}\n\n"
                 "AUTONOMOUS AGENT DIRECTIVES:\n"
                 "1. You have DIRECT EXECUTION TOOLS. Call the appropriate tool to inspect, create, edit, or run files.\n"
                 "2. `tool_write_to_file`: Create new scripts or overwrite files on disk.\n"
-                "3. `tool_run_command`: Run Python scripts, terminal commands, or install packages.\n"
+                "3. `tool_run_command`: Run Python scripts, terminal commands, or install packages. CRITICAL MANDATE: When the user asks to run, test, start, or play a game or script, you MUST actively execute the script using `tool_run_command` (e.g. `python snake.py`). Merely running py_compile is NOT running the game. You must call `tool_run_command` with the actual execution command to start the program for the user.\n"
                 "4. `tool_replace_file_content`: Surgically edit specific code blocks.\n"
                 "5. `tool_view_file` / `tool_get_file_outline`: Inspect files and code outlines.\n"
                 "6. `tool_grep_search` / `tool_find_by_name`: Search codebase symbols and filenames.\n"
@@ -2481,7 +2714,8 @@ async def stream_ai_chat(
                 "```json\n"
                 '{"name": "tool_name", "arguments": {"param_key": "param_value"}}\n'
                 "```\n"
-                "9. Once you receive tool observation output, analyze it and provide a clean architectural summary or explanation."
+                "9. AUTOMATIC SELF-CORRECTION MANDATE: If any tool execution results in an error, traceback, or failure, you MUST autonomously self-correct immediately. Inspect the code, apply the fix, and re-run to verify.\n"
+                "10. Once satisfied, provide a clean architectural summary with code explanations."
             )
 
             for cand_model in candidate_models:
@@ -2506,7 +2740,7 @@ async def stream_ai_chat(
                     prev_turn_failed = False
                     model_succeeded = False
 
-                    for turn in range(8):
+                    for turn in range(25):
                         if cancel_ctx and cancel_ctx.get("is_cancelled"):
                             yield {"type": "step", "step": "Execution stopped by user", "status": "done"}
                             yield {"type": "done", "content": accumulated_text + "\n\n[Stopped by user]", "refactor": None}
@@ -2514,7 +2748,7 @@ async def stream_ai_chat(
 
                         turn_content_chunks = []
 
-                        if protocol == "openai_compat":
+                        if protocol in ("openai_compat", "google"):
                             headers = {
                                 "Authorization": f"Bearer {effective_api_key}",
                                 "Content-Type": "application/json"
@@ -2525,8 +2759,9 @@ async def stream_ai_chat(
                                 "stream": True,
                                 "temperature": 0.2
                             }
+                            endpoint_url = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" if protocol == "google" else f"{base_url}/chat/completions"
                             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=6.0)) as client:
-                                async with client.stream("POST", f"{base_url}/chat/completions", headers=headers, json=payload) as resp:
+                                async with client.stream("POST", endpoint_url, headers=headers, json=payload) as resp:
                                     if resp.status_code != 200:
                                         raise RuntimeError(f"HTTP {resp.status_code}")
                                     model_succeeded = True
@@ -2610,7 +2845,16 @@ async def stream_ai_chat(
 
                                 mutating_tools = {"tool_run_command", "tool_write_to_file", "tool_replace_file_content"}
                                 if approval_mode == "manual" and fn_name in mutating_tools and approval_handler:
-                                    yield {"type": "step", "step": f"Awaiting approval for {step_desc}...", "status": "running"}
+                                    step_file = clean_tool_arg(fn_args.get("file_path") or fn_args.get("path") or "")
+                                    step_cmd = clean_tool_arg(fn_args.get("command") or fn_args.get("cmd") or "")
+                                    yield {
+                                        "type": "step",
+                                        "step": f"Awaiting approval for {step_desc}...",
+                                        "status": "running",
+                                        "tool": fn_name,
+                                        "file": step_file,
+                                        "command": step_cmd
+                                    }
                                     try:
                                         approved, feedback = await approval_handler(conversation_id, fn_name, fn_args, step_desc)
                                     except Exception as err:
@@ -2623,12 +2867,26 @@ async def stream_ai_chat(
 
                                     if not approved:
                                         rejection_note = f"[Action rejected by user. Feedback: {feedback or 'User denied approval. Please provide an alternative plan.'}]"
-                                        yield {"type": "step", "step": f"Rejected: {step_desc}", "status": "done"}
+                                        yield {
+                                            "type": "step",
+                                            "step": f"Rejected: {step_desc}",
+                                            "status": "done",
+                                            "tool": fn_name,
+                                            "file": step_file,
+                                            "command": step_cmd
+                                        }
                                         messages.append({"role": "assistant", "content": json.dumps({"name": fn_name, "arguments": fn_args})})
                                         messages.append({"role": "user", "content": rejection_note})
                                         continue
 
-                                yield {"type": "step", "step": f"{step_desc}...", "status": "running"}
+                                yield {
+                                    "type": "step",
+                                    "step": f"{step_desc}...",
+                                    "status": "running",
+                                    "tool": fn_name,
+                                    "file": clean_tool_arg(fn_args.get("file_path") or fn_args.get("path") or ""),
+                                    "command": clean_tool_arg(fn_args.get("command") or fn_args.get("cmd") or "")
+                                }
                                 tool_fn = TOOL_DISPATCH.get(fn_name)
                                 if tool_fn:
                                     raw_res = await asyncio.to_thread(tool_fn, **fn_args)
@@ -2638,7 +2896,22 @@ async def stream_ai_chat(
                                 is_failure = "Error" in str(raw_res) or "Exit Code: 1" in str(raw_res) or "Exit Code: 2" in str(raw_res)
                                 prev_turn_failed = is_failure
                                 completion_status = f"{step_desc} (Self-correcting...)" if is_failure else step_desc
-                                yield {"type": "step", "step": completion_status, "status": "done"}
+                                diff_m = re.search(r'\(\+(\d+)\s+-(\d+)', str(raw_res))
+                                added_cnt = int(diff_m.group(1)) if diff_m else None
+                                removed_cnt = int(diff_m.group(2)) if diff_m else None
+
+                                step_payload = {
+                                    "type": "step",
+                                    "step": completion_status,
+                                    "status": "done",
+                                    "tool": fn_name,
+                                    "file": clean_tool_arg(fn_args.get("file_path") or fn_args.get("path") or ""),
+                                    "command": clean_tool_arg(fn_args.get("command") or fn_args.get("cmd") or "")
+                                }
+                                if added_cnt is not None:
+                                    step_payload["added"] = added_cnt
+                                    step_payload["removed"] = removed_cnt
+                                yield step_payload
 
                                 messages.append({"role": "assistant", "content": json.dumps({"name": fn_name, "arguments": fn_args})})
                                 messages.append({
@@ -2663,13 +2936,26 @@ async def stream_ai_chat(
                         return
                 except Exception as compat_err:
                     print(f"[DEBUG] Provider candidate {cand_model} exception: {compat_err}")
+                    err_str = str(compat_err)
+                    is_transient = any(term in err_str for term in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "quota"))
+                    if tools_executed:
+                        yield {"type": "step", "step": f"Error: {compat_err}", "status": "done"}
+                        yield {"type": "done", "content": accumulated_text + f"\n\n[Error encountered: {compat_err}]", "refactor": None}
+                        return
+                    if is_transient:
+                        accumulated_text = ""
+                        continue
+                    if accumulated_text.strip():
+                        yield {"type": "step", "step": f"Error: {compat_err}", "status": "done"}
+                        yield {"type": "done", "content": accumulated_text + f"\n\n[Error encountered: {compat_err}]", "refactor": None}
+                        return
                     continue
 
     # --- STRATEGY B: LOCAL OLLAMA ENGINE (DYNAMICALLY DISCOVERED MODEL) ---
     ollama_model = await resolve_best_ollama_model()
     if ollama_model:
         system_inst = (
-            "You are Neuron AI, an elite autonomous software engineering assistant inside Neuron IDE. "
+            "You are an autonomous software engineering assistant. "
             f"You are working in project '{project_name}' at '{target_dir or os.getcwd()}'. "
             f"{project_rules}\n\n"
             "AUTONOMOUS AGENT DIRECTIVES:\n"
@@ -2780,8 +3066,17 @@ async def stream_ai_chat(
                         step_desc = describe_tool_step(fn_name, fn_args)
 
                         mutating_tools = {"tool_run_command", "tool_write_to_file", "tool_replace_file_content"}
+                        step_file = clean_tool_arg(fn_args.get("file_path") or fn_args.get("path") or "")
+                        step_cmd = clean_tool_arg(fn_args.get("command") or fn_args.get("cmd") or "")
                         if approval_mode == "manual" and fn_name in mutating_tools and approval_handler:
-                            yield {"type": "step", "step": f"Awaiting approval for {step_desc}...", "status": "running"}
+                            yield {
+                                "type": "step",
+                                "step": f"Awaiting approval for {step_desc}...",
+                                "status": "running",
+                                "tool": fn_name,
+                                "file": step_file,
+                                "command": step_cmd
+                            }
                             try:
                                 approved, feedback = await approval_handler(conversation_id, fn_name, fn_args, step_desc)
                             except Exception as err:
@@ -2794,7 +3089,14 @@ async def stream_ai_chat(
 
                             if not approved:
                                 rejection_note = f"[Action rejected by user. Feedback: {feedback or 'User denied approval. Please provide an alternative plan.'}]"
-                                yield {"type": "step", "step": f"Rejected: {step_desc}", "status": "done"}
+                                yield {
+                                    "type": "step",
+                                    "step": f"Rejected: {step_desc}",
+                                    "status": "done",
+                                    "tool": fn_name,
+                                    "file": step_file,
+                                    "command": step_cmd
+                                }
                                 messages.append({
                                     "role": "assistant",
                                     "content": json.dumps({"name": fn_name, "arguments": fn_args})
@@ -2805,7 +3107,14 @@ async def stream_ai_chat(
                                 })
                                 continue
 
-                        yield {"type": "step", "step": f"{step_desc}...", "status": "running"}
+                        yield {
+                            "type": "step",
+                            "step": f"{step_desc}...",
+                            "status": "running",
+                            "tool": fn_name,
+                            "file": step_file,
+                            "command": step_cmd
+                        }
 
                         tool_fn = TOOL_DISPATCH.get(fn_name)
                         if tool_fn:
@@ -2816,7 +3125,14 @@ async def stream_ai_chat(
                         is_failure = "Error" in str(raw_res) or "Exit Code: 1" in str(raw_res) or "Exit Code: 2" in str(raw_res)
                         prev_turn_failed = is_failure
                         completion_status = f"{step_desc} (Self-correcting...)" if is_failure else step_desc
-                        yield {"type": "step", "step": completion_status, "status": "done"}
+                        yield {
+                            "type": "step",
+                            "step": completion_status,
+                            "status": "done",
+                            "tool": fn_name,
+                            "file": step_file,
+                            "command": step_cmd
+                        }
 
                         messages.append({
                             "role": "assistant",
@@ -2847,14 +3163,33 @@ async def stream_ai_chat(
             print(f"[DEBUG] Local Ollama fallback error: {ollama_err}")
 
     # --- STRATEGY C: GRACEFUL DIAGNOSTIC GUIDANCE ---
-    guidance = (
-        "### AI Setup Required\n\n"
-        "To enable autonomous AI execution, please add an **API Key** in **Settings > AI**.\n\n"
-        "- Neuron automatically detects your key's provider and selects the best available model.\n"
-        "- Alternatively, ensure your local **Ollama** server is running on `http://127.0.0.1:11434` with at least one model installed."
-    )
-    yield {"type": "token", "content": guidance}
-    yield {"type": "step", "step": "Setup Required", "status": "done"}
-    yield {"type": "done", "content": guidance, "refactor": None}
+    if effective_api_key and discovery and discovery.get("valid"):
+        prov = discovery.get("provider", "Cloud AI")
+        guidance = (
+            f"### {prov} Quota / Capacity Notice\n\n"
+            f"Your request could not be fulfilled by the available {prov} models right now because the free tier limits were reached or the models are experiencing high regional demand (503 / 429).\n\n"
+            f"**Why this occurs and how to resolve it:**\n\n"
+            f"1. **Google AI Studio Free Tier Quota**:\n"
+            f"   - On the Free Tier, Google restricts API keys to **20 requests/day per model** and dynamically sheds traffic during peak hours with `503 UNAVAILABLE`.\n"
+            f"   - *Note*: A personal **Google One / Gemini Advanced (Consumer Pro)** subscription ($20/month at gemini.google.com) applies only to the web chat interface, not to the Google AI Studio developer API.\n"
+            f"   - To unlock high rate limits and priority routing with zero 503 load-shedding, visit [Google AI Studio](https://aistudio.google.com/), click **Get API key**, and choose **Set up billing** on your Google Cloud project (pay-as-you-go costs fractions of a cent per request).\n\n"
+            f"2. **Free Alternative Providers (Zero Billing Setup)**:\n"
+            f"   - You can get a free API key from **Groq** ([console.groq.com](https://console.groq.com/)) with generous rate limits (30 requests/minute) running fast open-source models.\n\n"
+            f"3. **Local Ollama (100% Offline & Free)**:\n"
+            f"   - Run `ollama run qwen2.5-coder:7b` locally. Neuron will automatically route autonomous tasks to Ollama on `http://127.0.0.1:11434` with unlimited requests."
+        )
+        yield {"type": "token", "content": guidance}
+        yield {"type": "step", "step": f"{prov} Notice", "status": "done"}
+        yield {"type": "done", "content": guidance, "refactor": None}
+    else:
+        guidance = (
+            "### Agent Setup Required\n\n"
+            "To enable autonomous execution, please add an **API Key** in **Settings > Agent**.\n\n"
+            "- Neuron automatically detects your key's provider and selects the best available model.\n"
+            "- Alternatively, ensure your local **Ollama** server is running on `http://127.0.0.1:11434` with at least one model installed."
+        )
+        yield {"type": "token", "content": guidance}
+        yield {"type": "step", "step": "Setup Required", "status": "done"}
+        yield {"type": "done", "content": guidance, "refactor": None}
 
 

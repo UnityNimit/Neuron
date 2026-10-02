@@ -16,6 +16,7 @@ import {
   Palette, ChevronDown, ChevronRight, FilePlus, FolderPlus,
   RefreshCw, ListCollapse, Network, Play, Bell, Check, CheckCircle2
 } from 'lucide-react';
+import NeuronLogo from '../common/NeuronLogo';
 
 // The 5 official built-in themes directly matching frontend/src/config/themeConfig.js
 const THEMES_MAP = {
@@ -1339,12 +1340,11 @@ export default function NeuronHeroEngine() {
       >
         {/* Left: Logo + Dropdown Menus */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center pr-1 cursor-pointer" title="Neuron IDE">
-            <img 
-              src="/logo.png" 
-              alt="Neuron" 
-              className="h-5 w-5 object-contain opacity-95" 
-              onError={(e) => { e.target.style.display = 'none'; }}
+          <div className="flex items-center pr-1 cursor-pointer group" title="Neuron IDE">
+            <NeuronLogo 
+              size={18} 
+              color={activeTheme.accent || '#3b82f6'} 
+              className="group-hover:brightness-125 transition-all" 
             />
           </div>
 

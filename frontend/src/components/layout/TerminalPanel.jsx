@@ -27,6 +27,8 @@ export default function TerminalPanel({
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showShellDropdown, setShowShellDropdown] = useState(false);
+  const [directKeysMode, setDirectKeysMode] = useState(false);
+  const prevIsRunningRef = useRef(false);
   
   const terminalEndRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -79,6 +81,14 @@ export default function TerminalPanel({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [activeSession?.isRunning, activeSessionId, onKillProcess]);
 
+  // Clean up inputCommand immediately when process exits so leftover game keys are never submitted as shell commands
+  useEffect(() => {
+    if (prevIsRunningRef.current && !activeSession?.isRunning) {
+      setInputCommand("");
+    }
+    prevIsRunningRef.current = Boolean(activeSession?.isRunning);
+  }, [activeSession?.isRunning]);
+
   // Focus input when clicking anywhere inside the terminal background
   const handleTerminalClick = () => {
     const selection = window.getSelection();
@@ -103,6 +113,45 @@ export default function TerminalPanel({
       e.preventDefault();
       if (onKillProcess) onKillProcess(activeSessionId);
       return;
+    }
+
+    // Direct live keystrokes for interactive games and CLI navigation
+    if (activeSession?.isRunning) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        onSendStdin?.(activeSessionId, '\x1b[A');
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        onSendStdin?.(activeSessionId, '\x1b[B');
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        onSendStdin?.(activeSessionId, '\x1b[C');
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        onSendStdin?.(activeSessionId, '\x1b[D');
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onSendStdin?.(activeSessionId, '\x1b');
+        return;
+      }
+
+      // Live game control keys (WASD, Q to quit, P to pause, R to restart)
+      const isGameControl = ['w', 'a', 's', 'd', 'q', 'p', 'r'].includes(e.key.toLowerCase());
+      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
+        if (directKeysMode || (inputCommand === "" && isGameControl)) {
+          e.preventDefault();
+          onSendStdin?.(activeSessionId, e.key.toLowerCase());
+          return;
+        }
+      }
     }
     
     if (e.key === 'Enter') {
@@ -164,50 +213,33 @@ export default function TerminalPanel({
     >
       
       {/* ----------------------------------------------------------------- */}
-      {/* 1. ULTRA-MINIMAL TERMINAL TAB STRIP (Unified Curved Connected)    */}
+      {/* 1. ULTRA-MINIMAL TERMINAL TAB STRIP (Detached Floating Cards)     */}
       {/* ----------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 flex items-center justify-between px-0 select-none relative z-30"
+        className="h-8 shrink-0 flex items-center justify-between px-0 border-b select-none relative z-30"
         style={{
-          backgroundColor: 'var(--theme-secondary)'
+          backgroundColor: 'var(--theme-secondary)',
+          borderColor: 'var(--theme-border)'
         }}
       >
-        {/* Full-width 1px bottom joining line (hidden under active tab) */}
-        <div 
-          className="absolute bottom-0 left-0 right-0 border-b z-0 pointer-events-none"
-          style={{ borderColor: 'var(--theme-border)' }}
-        />
-        
         {/* Session Tabs */}
-        <div className="h-full flex items-end pt-1 px-1.5 gap-1 overflow-x-auto flex-grow mr-2 [&::-webkit-scrollbar]:hidden relative z-10">
+        <div className="h-full flex items-center px-1.5 gap-1.5 overflow-x-auto flex-grow mr-2 [&::-webkit-scrollbar]:hidden relative z-10">
           
           {/* Output Log Tab */}
           <button 
             onClick={() => onSelectSession && onSelectSession('output')} 
-            className={`relative px-3.5 flex items-center gap-1.5 text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out shrink-0 cursor-pointer ${
+            className={`neuron-tab-card px-3 gap-1.5 font-mono shrink-0 cursor-pointer group ${
               activeSessionId === 'output' 
-                ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
-                : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
+                ? 'neuron-tab-card-active' 
+                : 'neuron-tab-card-inactive'
             }`}
-            style={{
-              backgroundColor: activeSessionId === 'output' ? 'var(--theme-background)' : 'transparent',
-              borderColor: activeSessionId === 'output' ? 'var(--theme-border)' : 'transparent',
-              color: activeSessionId === 'output' ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
-            }}
           >
+            <span className="leading-none">Output</span>
             <span
-              className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
-                activeSessionId === 'output' ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
+              className={`neuron-tab-indicator ${
+                activeSessionId === 'output' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
               }`}
-              style={{ borderColor: 'var(--theme-accent)' }}
             />
-            {activeSessionId === 'output' && (
-              <span
-                className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
-                style={{ borderColor: 'var(--theme-background)' }}
-              />
-            )}
-            <span>Output</span>
           </button>
 
           {/* Interactive Shell Sessions */}
@@ -217,34 +249,22 @@ export default function TerminalPanel({
               <div 
                 key={s.id} 
                 onClick={() => onSelectSession && onSelectSession(s.id)} 
-                className={`relative px-3.5 flex items-center gap-1.5 cursor-pointer text-[11px] font-mono rounded-t-[6px] transition-all duration-150 ease-out group shrink-0 ${
+                className={`neuron-tab-card px-3 gap-1.5 cursor-pointer font-mono group shrink-0 ${
                   isActive 
-                    ? 'h-[28px] mb-0 z-10 font-semibold border-t border-l border-r border-b-0' 
-                    : 'h-[25px] mb-[1px] font-medium border-t border-l border-r border-b-0 border-transparent hover:bg-[var(--theme-surface-hover)]/60 hover:text-[var(--theme-text-bright)]'
+                    ? 'neuron-tab-card-active' 
+                    : 'neuron-tab-card-inactive'
                 }`}
-                style={{
-                  backgroundColor: isActive ? 'var(--theme-background)' : 'transparent',
-                  borderColor: isActive ? 'var(--theme-border)' : 'transparent',
-                  color: isActive ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
-                }}
               >
-                <span
-                  className={`pointer-events-none absolute -top-[1px] rounded-full border-t-2 transition-all duration-150 ease-out ${
-                    isActive ? 'left-[6px] right-[6px] opacity-100' : 'left-1/2 right-1/2 opacity-0'
-                  }`}
-                  style={{ borderColor: 'var(--theme-accent)' }}
-                />
-                {isActive && (
-                  <span
-                    className="pointer-events-none absolute bottom-0 left-0 right-0 border-b"
-                    style={{ borderColor: 'var(--theme-background)' }}
-                  />
-                )}
                 <div 
-                  className={`w-1.5 h-1.5 rounded-full transition-colors duration-150 ${s.isRunning ? 'animate-pulse' : ''}`}
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${s.isRunning ? 'animate-pulse' : ''}`}
                   style={{ backgroundColor: s.isRunning ? 'var(--theme-accent)' : 'var(--theme-text-muted)' }}
                 />
-                <span>{s.name}</span>
+                <span className="leading-none">{s.name}</span>
+                <span
+                  className={`neuron-tab-indicator ${
+                    isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
+                  }`}
+                />
               </div>
             );
           })}
@@ -396,17 +416,37 @@ export default function TerminalPanel({
             {/* Live Prompt / Execution Indicator & Interactive Input */}
             {activeSession.isRunning ? (
               <div className="flex items-center gap-2 mt-1 select-text">
-                <span className="text-[var(--theme-accent)] font-semibold select-text animate-pulse">Running &gt;</span>
+                <span className="text-[var(--theme-accent)] font-semibold select-text animate-pulse shrink-0">Running &gt;</span>
                 <input 
                   ref={inputRef}
                   type="text" 
                   autoFocus 
                   value={inputCommand} 
-                  placeholder="Program running... Press Ctrl+C or click Stop to terminate"
+                  placeholder={directKeysMode ? "Direct Game Keys active (WASD / Arrows to steer, Q to quit)" : "Program running... Type input + Enter, use Arrow keys or WASD"}
                   onChange={(e) => setInputCommand(e.target.value)} 
                   onKeyDown={handleKeyDown} 
                   className="flex-grow bg-transparent text-[var(--theme-text-bright)] font-mono text-xs outline-none border-none caret-[var(--theme-accent)] select-text placeholder:text-[var(--theme-text-muted)] placeholder:text-[11px] placeholder:italic" 
                 />
+                <button
+                  type="button"
+                  onClick={() => setDirectKeysMode(prev => !prev)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-all border cursor-pointer shrink-0 ${
+                    directKeysMode 
+                      ? 'bg-[var(--theme-accent)] text-white border-transparent' 
+                      : 'bg-[var(--theme-surface, #161719)] text-[var(--theme-text-muted)] border-[var(--theme-border, #242628)] hover:text-[var(--theme-text-bright)]'
+                  }`}
+                  title="Toggle Direct Keystrokes for interactive games (WASD & single-key controls)"
+                >
+                  {directKeysMode ? "WASD: Direct" : "WASD Mode"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onKillProcess?.(activeSessionId)}
+                  className="px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-all bg-rose-600/90 hover:bg-rose-600 text-white shrink-0 cursor-pointer shadow-sm hover:brightness-110 active:scale-95"
+                  title="Stop running process (Ctrl+C)"
+                >
+                  Stop
+                </button>
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-0.5 select-text">

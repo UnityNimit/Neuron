@@ -1,7 +1,7 @@
 // frontend/src/components/layout/StatusBar.jsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
-  Bell, X, GitBranch, CheckCircle2, Loader2 
+  Bell, X, GitBranch, CheckCircle2, Loader2, Trash2 
 } from 'lucide-react';
 
 export default function StatusBar({ 
@@ -178,7 +178,7 @@ export default function StatusBar({
       {/* ------------------------------------------------------------------- */}
       <div className="flex items-center gap-2.5 h-full shrink-0">
         
-        {/* 🚀 SMART GIT INDICATOR (Repo / Branch or 'Not a git folder') */}
+        {/*  SMART GIT INDICATOR (Repo / Branch or 'Not a git folder') */}
         <div className="flex items-center gap-1.5 text-[10px] transition-colors">
           <GitBranch size={11} className={hasGit ? "text-[var(--theme-accent)]" : "text-[var(--theme-text-muted)]"} />
           {hasGit ? (
@@ -319,14 +319,14 @@ export default function StatusBar({
                 onMarkAllNotificationsRead();
               }
             }}
-            className={`p-1 flex items-center justify-center transition-colors relative cursor-pointer rounded hover:bg-[var(--theme-surface-hover)] ${
+            className={`px-1.5 py-0.5 flex items-center justify-center transition-colors relative cursor-pointer rounded-md hover:bg-[var(--theme-surface-hover)] ${
               isNotificationsOpen 
                 ? 'text-[var(--theme-text-bright)] bg-[var(--theme-surface-active)]' 
                 : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]'
             }`} 
             title="System Alerts & Notifications"
           >
-            <Bell size={12} />
+            <Bell size={12} strokeWidth={1.8} />
             {unreadCount > 0 && (
               <span 
                 className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full" 
@@ -335,68 +335,72 @@ export default function StatusBar({
             )}
           </button>
 
-          {/* Notifications Popover Menu */}
+          {/* Minimalist Notifications Popover Menu */}
           {isNotificationsOpen && (
             <div 
-              className="absolute bottom-full right-0 mb-2 w-88 max-w-[92vw] rounded-xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in fade-in slide-in-from-bottom-2 duration-150 z-[200] border"
+              className="absolute bottom-full right-0 mb-1 w-80 max-w-[90vw] rounded-xl border shadow-2xl p-1 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-100 z-[200] select-none"
               style={{
-                backgroundColor: 'var(--theme-surface, #191a1b)',
-                borderColor: 'var(--theme-border-subtle, #2e3032)',
+                backgroundColor: 'var(--theme-secondary, #191a1b)',
+                borderColor: 'var(--theme-border, #242628)',
                 color: 'var(--theme-text-primary, #cbd5e1)'
               }}
             >
+              {/* Header */}
               <div 
-                className="px-3.5 py-2 border-b flex items-center justify-between"
-                style={{
-                  backgroundColor: 'var(--theme-surface-active, #151617)',
-                  borderColor: 'var(--theme-border, #242628)'
-                }}
+                className="h-7 px-2.5 border-b flex items-center justify-between shrink-0 mb-1"
+                style={{ borderColor: 'var(--theme-border, #242628)' }}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono font-semibold text-[var(--theme-text-bright)] tracking-wide">
-                    System Alerts
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-mono font-medium text-[var(--theme-text-bright)] tracking-wide">
+                    Alerts
                   </span>
-                  <span 
-                    className="text-[9px] font-mono px-1.5 py-0.2 rounded-full border text-[var(--theme-text-muted)]"
-                    style={{
-                      backgroundColor: 'var(--theme-surface-hover, #222426)',
-                      borderColor: 'var(--theme-border, #242628)'
-                    }}
-                  >
-                    {notifications.length}
-                  </span>
+                  {notifications.length > 0 && (
+                    <span 
+                      className="text-[9px] font-mono px-1.5 py-0.5 rounded text-[var(--theme-text-muted)] leading-none"
+                      style={{
+                        backgroundColor: 'var(--theme-surface-active, #222426)',
+                      }}
+                    >
+                      {notifications.length}
+                    </span>
+                  )}
                 </div>
+
                 {notifications.length > 0 && onClearNotifications && (
                   <button 
                     onClick={onClearNotifications} 
-                    className="text-[10px] font-mono text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer hover:underline"
+                    className="p-1 rounded-lg text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] transition-colors cursor-pointer"
+                    title="Clear all alerts"
                   >
-                    Clear All
+                    <Trash2 size={12} strokeWidth={1.75} />
                   </button>
                 )}
               </div>
               
+              {/* Alerts List */}
               <div 
-                className="max-h-72 overflow-y-auto divide-y divide-[var(--theme-border)] [&::-webkit-scrollbar]:w-1"
-                style={{ borderColor: 'var(--theme-border)' }}
+                className="max-h-64 overflow-y-auto flex flex-col gap-0.5 [&::-webkit-scrollbar]:w-1"
               >
                 {notifications.length === 0 ? (
-                  <div className="px-4 py-8 flex flex-col items-center justify-center gap-2 text-center text-[var(--theme-text-muted)] text-xs font-mono">
-                    <span>No notifications</span>
+                  <div className="py-5 px-3 flex flex-col items-center justify-center gap-1 text-center text-[var(--theme-text-muted)] text-[11px] font-mono">
+                    <span>No alerts</span>
                   </div>
                 ) : (
                   notifications.map(notif => (
-                    <div key={notif.id} className="px-3.5 py-2.5 hover:bg-[var(--theme-surface-hover)] transition-colors flex items-start justify-between gap-2 group">
+                    <div 
+                      key={notif.id} 
+                      className="px-2.5 py-1.5 rounded-lg hover:bg-[var(--theme-surface-hover)] transition-colors flex items-start justify-between gap-2 group"
+                    >
                       <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-xs font-mono font-semibold truncate ${
+                          <span className={`text-[11px] font-mono font-medium truncate ${
                             notif.type === 'error' ? 'text-red-400' : notif.type === 'warning' ? 'text-amber-400' : 'text-[var(--theme-text-bright)]'
                           }`}>
                             {notif.title || (notif.type === 'error' ? 'System Alert' : 'Notification')}
                           </span>
                           {notif.source && (
                             <span 
-                              className="text-[8px] font-mono uppercase px-1 py-0.2 rounded border text-[var(--theme-text-muted)]"
+                              className="text-[8px] font-mono uppercase px-1 py-0.2 rounded border text-[var(--theme-text-muted)] leading-none shrink-0"
                               style={{
                                 backgroundColor: 'var(--theme-surface-active)',
                                 borderColor: 'var(--theme-border)'
@@ -406,10 +410,10 @@ export default function StatusBar({
                             </span>
                           )}
                         </div>
-                        <span className="text-[var(--theme-text-secondary)] text-[11px] leading-snug break-words font-sans">
+                        <span className="text-[var(--theme-text-secondary)] text-[11px] leading-relaxed break-words font-sans">
                           {notif.message || notif.text}
                         </span>
-                        <span className="text-[9px] text-[var(--theme-text-muted)] font-mono mt-0.5">
+                        <span className="text-[9px] text-[var(--theme-text-muted)] font-mono">
                           {notif.timestamp ? getRelativeTime(notif.timestamp) : (notif.time || 'Just now')}
                         </span>
                       </div>
@@ -419,10 +423,10 @@ export default function StatusBar({
                             e.stopPropagation();
                             onDismissNotification(notif.id);
                           }} 
-                          className="opacity-0 group-hover:opacity-100 hover:text-[var(--theme-text-bright)] p-1 rounded hover:bg-[var(--theme-surface-active)] transition-all text-[var(--theme-text-muted)] cursor-pointer shrink-0 mt-0.5"
+                          className="opacity-0 group-hover:opacity-100 hover:text-[var(--theme-text-bright)] p-0.5 rounded hover:bg-[var(--theme-surface-active)] transition-all text-[var(--theme-text-muted)] cursor-pointer shrink-0 mt-0.5"
                           title="Dismiss Alert"
                         >
-                          <X size={11} />
+                          <X size={11} strokeWidth={2} />
                         </button>
                       )}
                     </div>

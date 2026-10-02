@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, ExternalLink, Search } from 'lucide-react';
 import { useDocsSearch } from '../context/DocsSearchContext';
+import NeuronLogo from './common/NeuronLogo';
 
 export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -51,7 +52,7 @@ export default function Navbar() {
         {/* Left Side: Brand Logo (Aligned 16px from left and 16px from top) */}
         <div className="flex items-center gap-3">
           <Link to="/" className="flex items-center gap-2.5 group shrink-0">
-            <img src="/logo.png" alt="Neuron" className="h-6 w-6 object-contain" />
+            <NeuronLogo size={22} color="white" className="text-white group-hover:brightness-125 transition-all" />
             <span className="font-semibold text-white tracking-tight text-sm">Neuron</span>
           </Link>
         </div>

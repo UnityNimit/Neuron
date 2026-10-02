@@ -1,7 +1,7 @@
 # frontend/src-tauri/Cargo.toml
 [package]
 name = "neuron"
-version = "1.0.0"
+version = "1.1.0"
 description = "Neuron Spatial Code Intelligence IDE"
 authors = ["Neuron Team"]
 edition = "2021"

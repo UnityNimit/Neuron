@@ -92,7 +92,7 @@ export default function AiSidebar({
           className="font-medium tracking-wide"
           style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
         >
-          AI
+          Agent
         </span>
 
         <button
@@ -204,7 +204,7 @@ export default function AiSidebar({
                             className="hidden group-hover:flex w-4 h-4 items-center justify-center rounded text-[10px] opacity-60 hover:opacity-100 transition-opacity"
                             title="Delete thread"
                           >
-                            ✕
+                            
                           </button>
                         )}
                       </div>

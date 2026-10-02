@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 /**
- * 🌌 NEURON SPATIAL IDE - CENTRAL THEME CONFIGURATION SYSTEM
+ *  NEURON SPATIAL IDE - CENTRAL THEME CONFIGURATION SYSTEM
  * Built-in themes and dynamic user-customizable color token architecture.
  */
 export const DEFAULT_THEMES = {
@@ -226,6 +226,17 @@ const getStoredCustomThemes = () => {
 };
 
 /**
+ * Utility helper to convert any Hex String into a WebGL numeric integer
+ */
+export function hexToWebGLNumber(hexStr) {
+  if (typeof hexStr === 'number') return hexStr;
+  if (!hexStr) return 0x121314;
+  const clean = String(hexStr).replace('#', '0x').trim();
+  const parsed = parseInt(clean, 16);
+  return isNaN(parsed) ? 0x121314 : parsed;
+}
+
+/**
  * Constructs the active THEMES map by merging user overrides onto DEFAULT_THEMES
  */
 export const buildThemesMap = () => {
@@ -264,17 +275,6 @@ export const THEME_PALETTE = THEMES[DEFAULT_THEME_ID];
 export const THEME_WEBGL = THEMES[DEFAULT_THEME_ID].webgl;
 
 /**
- * Utility helper to convert any Hex String into a WebGL numeric integer
- */
-export const hexToWebGLNumber = (hexStr) => {
-  if (typeof hexStr === 'number') return hexStr;
-  if (!hexStr) return 0x121314;
-  const clean = String(hexStr).replace('#', '0x').trim();
-  const parsed = parseInt(clean, 16);
-  return isNaN(parsed) ? 0x121314 : parsed;
-};
-
-/**
  * Retrieves the currently active theme ID from localStorage
  */
 export const getCurrentThemeId = () => {
@@ -289,6 +289,193 @@ export const getCurrentThemeId = () => {
 
 let activeMonacoInstance = null;
 
+const getMonacoThemeColors = (t) => {
+  const accent = t.accent || '#3b82f6';
+  const isDark = t.isDark !== false;
+  return {
+    'editor.background': t.background || (isDark ? '#121314' : '#ffffff'),
+    'editor.foreground': t.textPrimary || (isDark ? '#e2e8f0' : '#1f2937'),
+    'editor.lineHighlightBackground': isDark ? (t.surface || '#181a1b') : (t.surfaceHover || '#f3f4f6'),
+    'editor.lineHighlightBorder': '#00000000',
+    'editorLineNumber.foreground': t.textMuted || (isDark ? '#4b5563' : '#9ca3af'),
+    'editorLineNumber.activeForeground': accent,
+    'editorGutter.background': t.background || (isDark ? '#121314' : '#ffffff'),
+    'editorIndentGuide.background': t.border || (isDark ? '#1e2227' : '#e5e7eb'),
+    'editorIndentGuide.activeBackground': `${accent}80`,
+    'editorCursor.foreground': accent,
+    'editor.selectionBackground': isDark ? `${accent}40` : `${accent}30`,
+    'editor.inactiveSelectionBackground': isDark ? `${accent}20` : `${accent}15`,
+    'scrollbarSlider.background': `${t.scrollbarThumb || (isDark ? '#262626' : '#cbd5e1')}60`,
+    'scrollbarSlider.hoverBackground': `${accent}60`,
+    'scrollbarSlider.activeBackground': `${accent}a0`,
+    'minimap.background': t.background || (isDark ? '#121314' : '#ffffff')
+  };
+};
+
+const SYNTAX_RULES = {
+  black: [
+    { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
+    { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
+    { token: 'keyword.directive', foreground: 'e06c75', fontStyle: 'bold' },
+    { token: 'keyword.directive.include', foreground: 'e06c75', fontStyle: 'bold' },
+    { token: 'type', foreground: 'e5c07b' },
+    { token: 'type.identifier', foreground: 'e5c07b' },
+    { token: 'type.primitive', foreground: '56b6c2' },
+    { token: 'class', foreground: 'e5c07b', fontStyle: 'bold' },
+    { token: 'struct', foreground: 'e5c07b', fontStyle: 'bold' },
+    { token: 'interface', foreground: 'e5c07b' },
+    { token: 'function', foreground: '61afef' },
+    { token: 'method', foreground: '61afef' },
+    { token: 'entity.name.function', foreground: '61afef' },
+    { token: 'string', foreground: '98c379' },
+    { token: 'string.escape', foreground: '56b6c2' },
+    { token: 'character', foreground: '98c379' },
+    { token: 'number', foreground: 'd19a66' },
+    { token: 'constant', foreground: 'd19a66' },
+    { token: 'variable', foreground: 'e06c75' },
+    { token: 'variable.parameter', foreground: 'abb2bf' },
+    { token: 'identifier', foreground: 'abb2bf' },
+    { token: 'tag', foreground: 'e06c75' },
+    { token: 'tag.attribute', foreground: 'd19a66' },
+    { token: 'delimiter', foreground: 'abb2bf' },
+    { token: 'delimiter.bracket', foreground: 'abb2bf' }
+  ],
+  white: [
+    { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
+    { token: 'keyword', foreground: '7c3aed', fontStyle: 'bold' },
+    { token: 'keyword.directive', foreground: 'dc2626', fontStyle: 'bold' },
+    { token: 'keyword.directive.include', foreground: 'dc2626', fontStyle: 'bold' },
+    { token: 'type', foreground: 'b45309' },
+    { token: 'type.identifier', foreground: 'b45309' },
+    { token: 'type.primitive', foreground: '0891b2' },
+    { token: 'class', foreground: 'b45309', fontStyle: 'bold' },
+    { token: 'struct', foreground: 'b45309', fontStyle: 'bold' },
+    { token: 'interface', foreground: 'b45309' },
+    { token: 'function', foreground: '2563eb' },
+    { token: 'method', foreground: '2563eb' },
+    { token: 'entity.name.function', foreground: '2563eb' },
+    { token: 'string', foreground: '15803d' },
+    { token: 'string.escape', foreground: '0891b2' },
+    { token: 'character', foreground: '15803d' },
+    { token: 'number', foreground: 'd97706' },
+    { token: 'constant', foreground: 'd97706' },
+    { token: 'variable', foreground: 'dc2626' },
+    { token: 'variable.parameter', foreground: '374151' },
+    { token: 'identifier', foreground: '1f2937' },
+    { token: 'tag', foreground: 'dc2626' },
+    { token: 'tag.attribute', foreground: 'd97706' },
+    { token: 'delimiter', foreground: '4b5563' },
+    { token: 'delimiter.bracket', foreground: '4b5563' }
+  ],
+  pink: [
+    { token: 'comment', foreground: '9d6a89', fontStyle: 'italic' },
+    { token: 'keyword', foreground: 'f472b6', fontStyle: 'bold' },
+    { token: 'keyword.directive', foreground: 'fb7185', fontStyle: 'bold' },
+    { token: 'keyword.directive.include', foreground: 'fb7185', fontStyle: 'bold' },
+    { token: 'type', foreground: 'fcd34d' },
+    { token: 'type.identifier', foreground: 'fcd34d' },
+    { token: 'type.primitive', foreground: '38bdf8' },
+    { token: 'class', foreground: 'fcd34d', fontStyle: 'bold' },
+    { token: 'struct', foreground: 'fcd34d', fontStyle: 'bold' },
+    { token: 'interface', foreground: 'fcd34d' },
+    { token: 'function', foreground: 'ec4899' },
+    { token: 'method', foreground: 'ec4899' },
+    { token: 'entity.name.function', foreground: 'ec4899' },
+    { token: 'string', foreground: 'a7f3d0' },
+    { token: 'string.escape', foreground: '38bdf8' },
+    { token: 'character', foreground: 'a7f3d0' },
+    { token: 'number', foreground: 'fb923c' },
+    { token: 'constant', foreground: 'fb923c' },
+    { token: 'variable', foreground: 'fda4af' },
+    { token: 'variable.parameter', foreground: 'fce7f3' },
+    { token: 'identifier', foreground: 'fce7f3' },
+    { token: 'tag', foreground: 'fb7185' },
+    { token: 'tag.attribute', foreground: 'fb923c' },
+    { token: 'delimiter', foreground: 'f472b6' },
+    { token: 'delimiter.bracket', foreground: 'f472b6' }
+  ],
+  galaxy: [
+    { token: 'comment', foreground: '506689', fontStyle: 'italic' },
+    { token: 'keyword', foreground: '38bdf8', fontStyle: 'bold' },
+    { token: 'keyword.directive', foreground: '818cf8', fontStyle: 'bold' },
+    { token: 'keyword.directive.include', foreground: '818cf8', fontStyle: 'bold' },
+    { token: 'type', foreground: 'a5b4fc' },
+    { token: 'type.identifier', foreground: 'a5b4fc' },
+    { token: 'type.primitive', foreground: '38bdf8' },
+    { token: 'class', foreground: 'c7d2fe', fontStyle: 'bold' },
+    { token: 'struct', foreground: 'c7d2fe', fontStyle: 'bold' },
+    { token: 'interface', foreground: 'c7d2fe' },
+    { token: 'function', foreground: '60a5fa' },
+    { token: 'method', foreground: '60a5fa' },
+    { token: 'entity.name.function', foreground: '60a5fa' },
+    { token: 'string', foreground: '34d399' },
+    { token: 'string.escape', foreground: '38bdf8' },
+    { token: 'character', foreground: '34d399' },
+    { token: 'number', foreground: 'fbbf24' },
+    { token: 'constant', foreground: 'fbbf24' },
+    { token: 'variable', foreground: '93c5fd' },
+    { token: 'variable.parameter', foreground: 'cbd5e1' },
+    { token: 'identifier', foreground: 'cbd5e1' },
+    { token: 'tag', foreground: '818cf8' },
+    { token: 'tag.attribute', foreground: 'fbbf24' },
+    { token: 'delimiter', foreground: '8ba2c4' },
+    { token: 'delimiter.bracket', foreground: '8ba2c4' }
+  ],
+  rosewater: [
+    { token: 'comment', foreground: '967285', fontStyle: 'italic' },
+    { token: 'keyword', foreground: 'db2777', fontStyle: 'bold' },
+    { token: 'keyword.directive', foreground: 'e11d48', fontStyle: 'bold' },
+    { token: 'keyword.directive.include', foreground: 'e11d48', fontStyle: 'bold' },
+    { token: 'type', foreground: '9333ea' },
+    { token: 'type.identifier', foreground: '9333ea' },
+    { token: 'type.primitive', foreground: '0284c7' },
+    { token: 'class', foreground: '9333ea', fontStyle: 'bold' },
+    { token: 'struct', foreground: '9333ea', fontStyle: 'bold' },
+    { token: 'interface', foreground: '9333ea' },
+    { token: 'function', foreground: '2563eb' },
+    { token: 'method', foreground: '2563eb' },
+    { token: 'entity.name.function', foreground: '2563eb' },
+    { token: 'string', foreground: '059669' },
+    { token: 'string.escape', foreground: '0284c7' },
+    { token: 'character', foreground: '059669' },
+    { token: 'number', foreground: 'd97706' },
+    { token: 'constant', foreground: 'd97706' },
+    { token: 'variable', foreground: 'be185d' },
+    { token: 'variable.parameter', foreground: '36222e' },
+    { token: 'identifier', foreground: '36222e' },
+    { token: 'tag', foreground: 'db2777' },
+    { token: 'tag.attribute', foreground: 'd97706' },
+    { token: 'delimiter', foreground: '6b495d' },
+    { token: 'delimiter.bracket', foreground: '6b495d' }
+  ]
+};
+
+const getThemeRules = (themeId) => {
+  return SYNTAX_RULES[themeId] || SYNTAX_RULES.black;
+};
+
+/**
+ * Dynamically defines/updates and sets the active Monaco theme according to theme tokens
+ */
+export const syncMonacoTheme = (monacoInstance, currentTheme) => {
+  const monacoObj = monacoInstance || activeMonacoInstance;
+  if (!monacoObj || !monacoObj.editor) return;
+
+  const currentThemes = buildThemesMap();
+  const themeData = currentTheme || currentThemes[getCurrentThemeId()] || currentThemes[DEFAULT_THEME_ID];
+  const themeName = themeData.monacoTheme || 'neuron-obsidian';
+  const isDark = themeData.isDark !== false;
+
+  monacoObj.editor.defineTheme(themeName, {
+    base: isDark ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: getThemeRules(themeData.id),
+    colors: getMonacoThemeColors(themeData)
+  });
+
+  monacoObj.editor.setTheme(themeName);
+};
+
 /**
  * Registers Monaco themes for all palettes
  */
@@ -296,259 +483,46 @@ export const registerMonacoThemes = (monaco) => {
   if (!monaco) return;
   activeMonacoInstance = monaco;
 
+  const currentThemes = buildThemesMap();
+
   // 1. Black / Obsidian
   monaco.editor.defineTheme('neuron-obsidian', {
     base: 'vs-dark',
     inherit: true,
-    rules: [
-      { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'c678dd', fontStyle: 'bold' },
-      { token: 'keyword.directive', foreground: 'e06c75', fontStyle: 'bold' },
-      { token: 'keyword.directive.include', foreground: 'e06c75', fontStyle: 'bold' },
-      { token: 'type', foreground: 'e5c07b' },
-      { token: 'type.identifier', foreground: 'e5c07b' },
-      { token: 'type.primitive', foreground: '56b6c2' },
-      { token: 'class', foreground: 'e5c07b', fontStyle: 'bold' },
-      { token: 'struct', foreground: 'e5c07b', fontStyle: 'bold' },
-      { token: 'interface', foreground: 'e5c07b' },
-      { token: 'function', foreground: '61afef' },
-      { token: 'method', foreground: '61afef' },
-      { token: 'entity.name.function', foreground: '61afef' },
-      { token: 'string', foreground: '98c379' },
-      { token: 'string.escape', foreground: '56b6c2' },
-      { token: 'character', foreground: '98c379' },
-      { token: 'number', foreground: 'd19a66' },
-      { token: 'constant', foreground: 'd19a66' },
-      { token: 'variable', foreground: 'e06c75' },
-      { token: 'variable.parameter', foreground: 'abb2bf' },
-      { token: 'identifier', foreground: 'abb2bf' },
-      { token: 'tag', foreground: 'e06c75' },
-      { token: 'tag.attribute', foreground: 'd19a66' },
-      { token: 'delimiter', foreground: 'abb2bf' },
-      { token: 'delimiter.bracket', foreground: 'abb2bf' }
-    ],
-    colors: {
-      'editor.background': '#121314',
-      'editor.foreground': '#e2e8f0',
-      'editor.lineHighlightBackground': '#181a1b',
-      'editor.lineHighlightBorder': '#00000000',
-      'editorLineNumber.foreground': '#4b5563',
-      'editorLineNumber.activeForeground': '#60a5fa',
-      'editorGutter.background': '#121314',
-      'editorIndentGuide.background': '#1e2227',
-      'editorIndentGuide.activeBackground': '#3b82f680',
-      'editorCursor.foreground': '#60a5fa',
-      'editor.selectionBackground': '#264f7880',
-      'editor.inactiveSelectionBackground': '#3a3d4140',
-      'scrollbarSlider.background': '#26262660',
-      'scrollbarSlider.hoverBackground': '#3b82f660',
-      'scrollbarSlider.activeBackground': '#3b82f6a0',
-      'minimap.background': '#121314'
-    }
+    rules: SYNTAX_RULES.black,
+    colors: getMonacoThemeColors(currentThemes.black || DEFAULT_THEMES.black)
   });
 
   // 2. White / Alabaster
   monaco.editor.defineTheme('neuron-white', {
     base: 'vs',
     inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
-      { token: 'keyword', foreground: '7c3aed', fontStyle: 'bold' },
-      { token: 'keyword.directive', foreground: 'dc2626', fontStyle: 'bold' },
-      { token: 'keyword.directive.include', foreground: 'dc2626', fontStyle: 'bold' },
-      { token: 'type', foreground: 'b45309' },
-      { token: 'type.identifier', foreground: 'b45309' },
-      { token: 'type.primitive', foreground: '0891b2' },
-      { token: 'class', foreground: 'b45309', fontStyle: 'bold' },
-      { token: 'struct', foreground: 'b45309', fontStyle: 'bold' },
-      { token: 'interface', foreground: 'b45309' },
-      { token: 'function', foreground: '2563eb' },
-      { token: 'method', foreground: '2563eb' },
-      { token: 'entity.name.function', foreground: '2563eb' },
-      { token: 'string', foreground: '15803d' },
-      { token: 'string.escape', foreground: '0891b2' },
-      { token: 'character', foreground: '15803d' },
-      { token: 'number', foreground: 'd97706' },
-      { token: 'constant', foreground: 'd97706' },
-      { token: 'variable', foreground: 'dc2626' },
-      { token: 'variable.parameter', foreground: '374151' },
-      { token: 'identifier', foreground: '1f2937' },
-      { token: 'tag', foreground: 'dc2626' },
-      { token: 'tag.attribute', foreground: 'd97706' },
-      { token: 'delimiter', foreground: '4b5563' },
-      { token: 'delimiter.bracket', foreground: '4b5563' }
-    ],
-    colors: {
-      'editor.background': '#ffffff',
-      'editor.foreground': '#1f2937',
-      'editor.lineHighlightBackground': '#f3f4f6',
-      'editor.lineHighlightBorder': '#00000000',
-      'editorLineNumber.foreground': '#9ca3af',
-      'editorLineNumber.activeForeground': '#2563eb',
-      'editorGutter.background': '#ffffff',
-      'editorIndentGuide.background': '#e5e7eb',
-      'editorIndentGuide.activeBackground': '#2563eb80',
-      'editorCursor.foreground': '#2563eb',
-      'editor.selectionBackground': '#bfdbfe80',
-      'editor.inactiveSelectionBackground': '#e5e7eb80',
-      'scrollbarSlider.background': '#cbd5e160',
-      'scrollbarSlider.hoverBackground': '#2563eb60',
-      'scrollbarSlider.activeBackground': '#2563eba0',
-      'minimap.background': '#ffffff'
-    }
+    rules: SYNTAX_RULES.white,
+    colors: getMonacoThemeColors(currentThemes.white || DEFAULT_THEMES.white)
   });
 
   // 3. Pink / Sakura Rose
   monaco.editor.defineTheme('neuron-pink', {
     base: 'vs-dark',
     inherit: true,
-    rules: [
-      { token: 'comment', foreground: '9d6a89', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'f472b6', fontStyle: 'bold' },
-      { token: 'keyword.directive', foreground: 'fb7185', fontStyle: 'bold' },
-      { token: 'keyword.directive.include', foreground: 'fb7185', fontStyle: 'bold' },
-      { token: 'type', foreground: 'fcd34d' },
-      { token: 'type.identifier', foreground: 'fcd34d' },
-      { token: 'type.primitive', foreground: '38bdf8' },
-      { token: 'class', foreground: 'fcd34d', fontStyle: 'bold' },
-      { token: 'struct', foreground: 'fcd34d', fontStyle: 'bold' },
-      { token: 'interface', foreground: 'fcd34d' },
-      { token: 'function', foreground: 'ec4899' },
-      { token: 'method', foreground: 'ec4899' },
-      { token: 'entity.name.function', foreground: 'ec4899' },
-      { token: 'string', foreground: 'a7f3d0' },
-      { token: 'string.escape', foreground: '38bdf8' },
-      { token: 'character', foreground: 'a7f3d0' },
-      { token: 'number', foreground: 'fb923c' },
-      { token: 'constant', foreground: 'fb923c' },
-      { token: 'variable', foreground: 'fda4af' },
-      { token: 'variable.parameter', foreground: 'fce7f3' },
-      { token: 'identifier', foreground: 'fce7f3' },
-      { token: 'tag', foreground: 'fb7185' },
-      { token: 'tag.attribute', foreground: 'fb923c' },
-      { token: 'delimiter', foreground: 'f472b6' },
-      { token: 'delimiter.bracket', foreground: 'f472b6' }
-    ],
-    colors: {
-      'editor.background': '#180c14',
-      'editor.foreground': '#fce7f3',
-      'editor.lineHighlightBackground': '#24131f',
-      'editor.lineHighlightBorder': '#00000000',
-      'editorLineNumber.foreground': '#7c3f68',
-      'editorLineNumber.activeForeground': '#ec4899',
-      'editorGutter.background': '#180c14',
-      'editorIndentGuide.background': '#33192c',
-      'editorIndentGuide.activeBackground': '#ec489980',
-      'editorCursor.foreground': '#ec4899',
-      'editor.selectionBackground': '#ec489940',
-      'editor.inactiveSelectionBackground': '#ec489920',
-      'scrollbarSlider.background': '#3c1e3360',
-      'scrollbarSlider.hoverBackground': '#ec489960',
-      'scrollbarSlider.activeBackground': '#ec4899a0',
-      'minimap.background': '#180c14'
-    }
+    rules: SYNTAX_RULES.pink,
+    colors: getMonacoThemeColors(currentThemes.pink || DEFAULT_THEMES.pink)
   });
 
   // 4. Galaxy Dark Blue
   monaco.editor.defineTheme('neuron-galaxy', {
     base: 'vs-dark',
     inherit: true,
-    rules: [
-      { token: 'comment', foreground: '506689', fontStyle: 'italic' },
-      { token: 'keyword', foreground: '38bdf8', fontStyle: 'bold' },
-      { token: 'keyword.directive', foreground: '818cf8', fontStyle: 'bold' },
-      { token: 'keyword.directive.include', foreground: '818cf8', fontStyle: 'bold' },
-      { token: 'type', foreground: 'a5b4fc' },
-      { token: 'type.identifier', foreground: 'a5b4fc' },
-      { token: 'type.primitive', foreground: '38bdf8' },
-      { token: 'class', foreground: 'c7d2fe', fontStyle: 'bold' },
-      { token: 'struct', foreground: 'c7d2fe', fontStyle: 'bold' },
-      { token: 'interface', foreground: 'c7d2fe' },
-      { token: 'function', foreground: '60a5fa' },
-      { token: 'method', foreground: '60a5fa' },
-      { token: 'entity.name.function', foreground: '60a5fa' },
-      { token: 'string', foreground: '34d399' },
-      { token: 'string.escape', foreground: '38bdf8' },
-      { token: 'character', foreground: '34d399' },
-      { token: 'number', foreground: 'fbbf24' },
-      { token: 'constant', foreground: 'fbbf24' },
-      { token: 'variable', foreground: '93c5fd' },
-      { token: 'variable.parameter', foreground: 'cbd5e1' },
-      { token: 'identifier', foreground: 'cbd5e1' },
-      { token: 'tag', foreground: '818cf8' },
-      { token: 'tag.attribute', foreground: 'fbbf24' },
-      { token: 'delimiter', foreground: '8ba2c4' },
-      { token: 'delimiter.bracket', foreground: '8ba2c4' }
-    ],
-    colors: {
-      'editor.background': THEMES.galaxy?.background || '#080b12',
-      'editor.foreground': THEMES.galaxy?.textPrimary || '#cbd5e1',
-      'editor.lineHighlightBackground': '#101624',
-      'editor.lineHighlightBorder': '#00000000',
-      'editorLineNumber.foreground': '#334155',
-      'editorLineNumber.activeForeground': '#38bdf8',
-      'editorGutter.background': THEMES.galaxy?.background || '#080b12',
-      'editorIndentGuide.background': '#162035',
-      'editorIndentGuide.activeBackground': '#38bdf880',
-      'editorCursor.foreground': '#38bdf8',
-      'editor.selectionBackground': '#1e3a8a70',
-      'editor.inactiveSelectionBackground': '#1e3a8a30',
-      'scrollbarSlider.background': '#1c284260',
-      'scrollbarSlider.hoverBackground': '#38bdf860',
-      'scrollbarSlider.activeBackground': '#38bdf8a0',
-      'minimap.background': THEMES.galaxy?.background || '#080b12'
-    }
+    rules: SYNTAX_RULES.galaxy,
+    colors: getMonacoThemeColors(currentThemes.galaxy || DEFAULT_THEMES.galaxy)
   });
 
   // 5. Sakura Mist (Pink & White Mix)
   monaco.editor.defineTheme('neuron-rosewater', {
     base: 'vs',
     inherit: true,
-    rules: [
-      { token: 'comment', foreground: '967285', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'db2777', fontStyle: 'bold' },
-      { token: 'keyword.directive', foreground: 'e11d48', fontStyle: 'bold' },
-      { token: 'keyword.directive.include', foreground: 'e11d48', fontStyle: 'bold' },
-      { token: 'type', foreground: '9333ea' },
-      { token: 'type.identifier', foreground: '9333ea' },
-      { token: 'type.primitive', foreground: '0284c7' },
-      { token: 'class', foreground: '9333ea', fontStyle: 'bold' },
-      { token: 'struct', foreground: '9333ea', fontStyle: 'bold' },
-      { token: 'interface', foreground: '9333ea' },
-      { token: 'function', foreground: '2563eb' },
-      { token: 'method', foreground: '2563eb' },
-      { token: 'entity.name.function', foreground: '2563eb' },
-      { token: 'string', foreground: '059669' },
-      { token: 'string.escape', foreground: '0284c7' },
-      { token: 'character', foreground: '059669' },
-      { token: 'number', foreground: 'd97706' },
-      { token: 'constant', foreground: 'd97706' },
-      { token: 'variable', foreground: 'be185d' },
-      { token: 'variable.parameter', foreground: '36222e' },
-      { token: 'identifier', foreground: '36222e' },
-      { token: 'tag', foreground: 'db2777' },
-      { token: 'tag.attribute', foreground: 'd97706' },
-      { token: 'delimiter', foreground: '6b495d' },
-      { token: 'delimiter.bracket', foreground: '6b495d' }
-    ],
-    colors: {
-      'editor.background': THEMES.rosewater?.background || '#ffffff',
-      'editor.foreground': THEMES.rosewater?.textPrimary || '#36222e',
-      'editor.lineHighlightBackground': '#fff1f4',
-      'editor.lineHighlightBorder': '#00000000',
-      'editorLineNumber.foreground': '#d4a5b8',
-      'editorLineNumber.activeForeground': '#db2777',
-      'editorGutter.background': THEMES.rosewater?.background || '#ffffff',
-      'editorIndentGuide.background': '#fce7ec',
-      'editorIndentGuide.activeBackground': '#db277760',
-      'editorCursor.foreground': '#db2777',
-      'editor.selectionBackground': '#fbcfe880',
-      'editor.inactiveSelectionBackground': '#fce7ec80',
-      'scrollbarSlider.background': '#f4d3dc60',
-      'scrollbarSlider.hoverBackground': '#db277760',
-      'scrollbarSlider.activeBackground': '#db2777a0',
-      'minimap.background': THEMES.rosewater?.background || '#ffffff'
-    }
+    rules: SYNTAX_RULES.rosewater,
+    colors: getMonacoThemeColors(currentThemes.rosewater || DEFAULT_THEMES.rosewater)
   });
 };
 
@@ -604,10 +578,10 @@ export const applyTheme = (themeId) => {
     // ignore
   }
 
-  // Switch active monaco theme if initialized
-  if (activeMonacoInstance && activeMonacoInstance.editor) {
+  // Synchronize Monaco theme with updated accent, cursor, and active line number
+  if (activeMonacoInstance) {
     try {
-      activeMonacoInstance.editor.setTheme(target.monacoTheme);
+      syncMonacoTheme(activeMonacoInstance, target);
     } catch {
       // ignore
     }

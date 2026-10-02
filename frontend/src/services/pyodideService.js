@@ -35,7 +35,7 @@ export const loadPyodideEngine = async (onStdout, onStderr) => {
         
         // ASSIGN TO WINDOW so handleRunCode can execute it!
         window.pyodide = pyodide;
-        console.log("✅ Pyodide is locked and loaded!");
+        console.log(" Pyodide is locked and loaded!");
         resolve(pyodide);
       };
     } catch (err) {

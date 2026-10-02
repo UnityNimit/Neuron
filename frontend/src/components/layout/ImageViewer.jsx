@@ -146,7 +146,7 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
       className="w-full h-full flex flex-col relative flex-1 overflow-hidden min-h-0 min-w-0 select-none"
       style={{ backgroundColor: 'var(--theme-background, #121314)' }}
     >
-      {/* 🚀 TOP BREADCRUMB & TOOLBAR BAR (Matches CodeEditor.jsx exactly) */}
+      {/*  TOP BREADCRUMB & TOOLBAR BAR (Matches CodeEditor.jsx exactly) */}
       <div 
         className="h-6 shrink-0 border-b px-3 flex items-center justify-between text-[11px] font-mono select-none z-20"
         style={{
@@ -227,7 +227,7 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
         </div>
       </div>
 
-      {/* 🚀 RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
+      {/*  RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
       {isSyncing && (
         <div 
           className="h-[1.5px] w-full overflow-hidden shrink-0 z-20"
@@ -237,7 +237,7 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
         </div>
       )}
 
-      {/* 🚀 INTERACTIVE CANVAS (Subtle Dark Obsidian Checkerboard for Transparency) */}
+      {/*  INTERACTIVE CANVAS (Subtle Dark Obsidian Checkerboard for Transparency) */}
       <div 
         ref={containerRef}
         onWheel={handleWheel}

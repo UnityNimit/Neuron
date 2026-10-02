@@ -1,7 +1,308 @@
 // frontend/src/components/ai/AiChatView.jsx
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { 
+  ArrowUp, 
+  Check, 
+  ChevronDown, 
+  ChevronRight, 
+  FileText, 
+  FileCode, 
+  FilePlus, 
+  Terminal, 
+  Search, 
+  CheckCircle2, 
+  RotateCcw 
+} from 'lucide-react';
 import { marked } from 'marked';
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return '1s';
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function summarizeSteps(steps = []) {
+  const filesExplored = new Set();
+  const commandsRun = [];
+  const filesModified = new Map();
+  const items = [];
+
+  const pushOrUpdateItem = (newItem) => {
+    const existingIdx = items.findIndex(it => {
+      if (newItem.type === 'command' && it.type === 'command' && newItem.command && it.command) {
+        return it.command === newItem.command;
+      }
+      if ((newItem.type === 'edit' || newItem.type === 'create' || newItem.type === 'read') &&
+          (it.type === 'edit' || it.type === 'create' || it.type === 'read' || it.type === 'general') &&
+          newItem.file && (it.file === newItem.file || it.label.toLowerCase().includes(newItem.file.toLowerCase()))) {
+        return true;
+      }
+      if (newItem.type === 'general' && it.type === 'general') {
+        const c1 = newItem.label.toLowerCase();
+        const c2 = it.label.toLowerCase();
+        if (c1.startsWith('engaging autonomous agent') && c2.startsWith('engaging autonomous agent')) return true;
+        if (c1.includes('workspace') && c2.includes('workspace')) return true;
+        if (c1 === c2) return true;
+      }
+      return false;
+    });
+
+    if (existingIdx !== -1) {
+      items[existingIdx] = { ...items[existingIdx], ...newItem };
+    } else {
+      items.push(newItem);
+    }
+  };
+
+  for (const s of steps) {
+    if (!s) continue;
+    const stepText = typeof s === 'string' ? s : (s.step || '');
+    if (!stepText) continue;
+    const sObj = typeof s === 'object' ? s : {};
+    const lower = stepText.toLowerCase();
+    const tool = sObj.tool;
+    const status = sObj.status || 'done';
+    const added = sObj.added ?? 0;
+    const removed = sObj.removed ?? 0;
+
+    if (tool === 'tool_run_command' || lower.startsWith('running:') || lower.startsWith('ran ')) {
+      const cmd = sObj.command || stepText.replace(/^(running:|ran\s*)/i, '').replace(/\.{3}$/, '').trim();
+      if (cmd && !commandsRun.includes(cmd)) {
+        commandsRun.push(cmd);
+      }
+      pushOrUpdateItem({
+        type: 'command',
+        label: status === 'running' ? `Running ${cmd}...` : `Ran ${cmd}`,
+        status,
+        command: cmd
+      });
+    } else if (tool === 'tool_replace_file_content' || lower.startsWith('modifying ') || lower.startsWith('edited ')) {
+      const fName = sObj.file || stepText.replace(/^(modifying|edited)\s+/i, '').split(' ')[0].replace(/\.{3}$/, '').trim();
+      if (fName) {
+        const prev = filesModified.get(fName) || { added: 0, removed: 0, op: 'edit' };
+        filesModified.set(fName, {
+          added: added > 0 ? added : prev.added,
+          removed: removed > 0 ? removed : prev.removed,
+          op: 'edit'
+        });
+      }
+      pushOrUpdateItem({
+        type: 'edit',
+        label: status === 'running' ? `Modifying ${fName}...` : `Edited ${fName}`,
+        file: fName,
+        added,
+        removed,
+        status
+      });
+    } else if (tool === 'tool_write_to_file' || lower.startsWith('creating ') || lower.startsWith('wrote ')) {
+      const fName = sObj.file || stepText.replace(/^(creating|wrote)\s+/i, '').split(' ')[0].replace(/\.{3}$/, '').trim();
+      if (fName) {
+        const prev = filesModified.get(fName) || { added: 0, removed: 0, op: 'create' };
+        filesModified.set(fName, {
+          added: added > 0 ? added : prev.added,
+          removed: removed > 0 ? removed : prev.removed,
+          op: 'create'
+        });
+      }
+      pushOrUpdateItem({
+        type: 'create',
+        label: status === 'running' ? `Creating ${fName}...` : `Created ${fName}`,
+        file: fName,
+        added,
+        removed,
+        status
+      });
+    } else if (tool === 'tool_view_file' || tool === 'tool_get_file_outline' || lower.startsWith('reading ') || lower.startsWith('inspected ') || lower.startsWith('outline of ')) {
+      const fName = sObj.file || stepText.replace(/^(reading|inspected|outline of)\s+/i, '').split(' ')[0].replace(/\.{3}$/, '').trim();
+      if (fName) filesExplored.add(fName);
+      pushOrUpdateItem({
+        type: 'read',
+        label: status === 'running' ? `Reading ${fName}...` : `Read ${fName}`,
+        file: fName,
+        status
+      });
+    } else if (tool === 'tool_grep_search' || lower.startsWith('searching')) {
+      pushOrUpdateItem({
+        type: 'search',
+        label: stepText.replace(/\.{3}$/, '').trim(),
+        status
+      });
+    } else {
+      pushOrUpdateItem({
+        type: 'general',
+        label: stepText.replace(/\.{3}$/, '').trim(),
+        status
+      });
+    }
+  }
+
+  return {
+    exploredCount: filesExplored.size,
+    commandsCount: commandsRun.length,
+    commandsRun,
+    filesModified: Array.from(filesModified.entries()).map(([file, stats]) => ({ file, ...stats })),
+    items
+  };
+}
+
+function getApprovalPromptText(pendingApproval) {
+  if (!pendingApproval) return '';
+  const { tool, args = {}, description = '' } = pendingApproval;
+  if (tool === 'tool_replace_file_content' || tool === 'tool_write_to_file') {
+    const f = args.file_path || args.path || description.replace(/^(creating|modifying)\s+/i, '').trim();
+    return `Wants to edit ${f || 'file'}`;
+  }
+  if (tool === 'tool_run_command') {
+    const cmd = args.command || args.cmd || description.replace(/^running:\s*/i, '').trim();
+    return `Wants to execute ${cmd || 'command'}`;
+  }
+  return `Wants to ${description || tool || 'perform action'}`;
+}
+
+function WorkedSummaryDrawer({
+  steps = [],
+  durationSeconds = null,
+  isLive = false,
+  defaultExpanded = false
+}) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  useEffect(() => {
+    if (isLive) {
+      setIsExpanded(true);
+    }
+  }, [isLive, steps?.length]);
+
+  const summary = useMemo(() => summarizeSteps(steps), [steps]);
+
+  if (!steps || steps.length === 0) return null;
+
+  const durationLabel = isLive 
+    ? (durationSeconds ? `Working... (${durationSeconds}s)` : 'Working...') 
+    : `Worked for ${formatDuration(durationSeconds)}`;
+
+  return (
+    <div 
+      className="my-2 rounded-xl border overflow-hidden transition-all duration-150 select-text"
+      style={{
+        backgroundColor: 'var(--theme-surface, #151617)',
+        borderColor: 'var(--theme-border, #242628)'
+      }}
+    >
+      <div 
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-[var(--theme-surface-hover,#1b1c1e)] transition-colors select-none group"
+      >
+        <div className="flex items-center gap-2 overflow-hidden mr-2 flex-wrap">
+          {isLive ? (
+            <span className="w-2 h-2 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-pulse shrink-0" />
+          ) : (
+            <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+          )}
+
+          <span className="text-[11px] font-mono font-semibold" style={{ color: 'var(--theme-text-bright, #ffffff)' }}>
+            {durationLabel}
+          </span>
+
+          <div className="flex items-center gap-1.5 text-[10px] font-mono flex-wrap">
+            {summary.exploredCount > 0 && (
+              <span 
+                className="px-1.5 py-0.5 rounded border"
+                style={{
+                  backgroundColor: 'var(--theme-background, #121314)',
+                  borderColor: 'var(--theme-border, #242628)',
+                  color: 'var(--theme-text-secondary, #94a3b8)'
+                }}
+              >
+                Explored {summary.exploredCount} {summary.exploredCount === 1 ? 'file' : 'files'}
+              </span>
+            )}
+
+            {summary.commandsCount > 0 && (
+              <span 
+                className="px-1.5 py-0.5 rounded border"
+                style={{
+                  backgroundColor: 'var(--theme-background, #121314)',
+                  borderColor: 'var(--theme-border, #242628)',
+                  color: 'var(--theme-text-secondary, #94a3b8)'
+                }}
+              >
+                Ran {summary.commandsCount} {summary.commandsCount === 1 ? 'command' : 'commands'}
+              </span>
+            )}
+
+            {summary.filesModified.map((f, idx) => (
+              <span 
+                key={idx}
+                className="px-1.5 py-0.5 rounded border flex items-center gap-1"
+                style={{
+                  backgroundColor: 'var(--theme-background, #121314)',
+                  borderColor: 'var(--theme-border, #242628)',
+                  color: 'var(--theme-text-primary, #cbd5e1)'
+                }}
+              >
+                <span>{f.file}</span>
+                {f.added > 0 && (
+                  <span className="text-emerald-400 font-semibold">+{f.added}</span>
+                )}
+                {f.removed > 0 && (
+                  <span className="text-rose-400 font-semibold">-{f.removed}</span>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-bright)] transition-colors shrink-0">
+          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div 
+          className="px-3 py-2 border-t flex flex-col gap-1.5 text-[11px] font-mono leading-relaxed max-h-64 overflow-y-auto"
+          style={{
+            borderColor: 'var(--theme-border, #242628)',
+            backgroundColor: 'var(--theme-background, #121314)'
+          }}
+        >
+          {summary.items.map((item, idx) => {
+            const isItemRunning = item.status === 'running';
+            return (
+              <div key={idx} className="flex items-center justify-between gap-2 py-0.5">
+                <div className="flex items-center gap-2 overflow-hidden min-w-0">
+                  {item.type === 'read' && <FileText size={12} className="text-sky-400 shrink-0" />}
+                  {item.type === 'edit' && <FileCode size={12} className="text-emerald-400 shrink-0" />}
+                  {item.type === 'create' && <FilePlus size={12} className="text-emerald-400 shrink-0" />}
+                  {item.type === 'command' && <Terminal size={12} className="text-purple-400 shrink-0" />}
+                  {item.type === 'search' && <Search size={12} className="text-amber-400 shrink-0" />}
+                  {item.type === 'general' && <RotateCcw size={12} className="text-slate-400 shrink-0" />}
+
+                  <span className={`truncate ${isItemRunning ? 'text-[var(--theme-text-bright)] font-medium' : 'text-[var(--theme-text-secondary,#94a3b8)]'}`}>
+                    {item.label}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                  {isItemRunning ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent)] animate-ping" />
+                  ) : (
+                    <>
+                      {item.added > 0 && <span className="text-emerald-400 font-semibold">+{item.added}</span>}
+                      {item.removed > 0 && <span className="text-rose-400 font-semibold">-{item.removed}</span>}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Configure marked options
 marked.setOptions({
@@ -52,7 +353,7 @@ function MarkdownView({ content }) {
       const decoded = decodeURIComponent(raw);
       navigator.clipboard.writeText(decoded);
       const prevText = btn.innerText;
-      btn.innerText = '✓ Copied';
+      btn.innerText = 'Copied';
       btn.style.color = '#4ade80';
       setTimeout(() => {
         btn.innerText = prevText;
@@ -94,10 +395,35 @@ export default function AiChatView({
   onRejectAction
 }) {
   const [inputValue, setInputValue] = useState("");
+  const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
   const [expandedThoughts, setExpandedThoughts] = useState({});
   const [refactorStatuses, setRefactorStatuses] = useState({}); // { [msgId]: 'applied' | 'rejected' }
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+
+  useEffect(() => {
+    let interval = null;
+    if (isStreaming) {
+      setLiveElapsedSeconds(1);
+      interval = setInterval(() => {
+        setLiveElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      setLiveElapsedSeconds(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isStreaming]);
+
+  const activeRunningCommand = useMemo(() => {
+    if (!isStreaming || !Array.isArray(streamingSteps)) return null;
+    const runningStep = [...streamingSteps].reverse().find(
+      s => s.status === 'running' && s.step && s.step.toLowerCase().startsWith('running:')
+    );
+    if (!runningStep) return null;
+    return runningStep.step.replace(/\.{3}$/, '');
+  }, [isStreaming, streamingSteps]);
 
   const messages = conversation?.messages || [];
 
@@ -122,6 +448,10 @@ export default function AiChatView({
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (pendingApproval) {
+        onApproveAction?.(pendingApproval.actionId);
+        return;
+      }
       handleSend();
     }
   };
@@ -214,18 +544,13 @@ export default function AiChatView({
                       }
                 }
               >
-                {/* 1. Agentic Action Steps Badges */}
+                {/* 1. Agentic Action Steps Drawer */}
                 {msg.steps && msg.steps.length > 0 && (
-                  <div className="flex flex-col gap-1 border-b pb-2 mb-0.5" style={{ borderColor: 'var(--theme-border, #242628)' }}>
-                    {msg.steps.map((stepItem, sIdx) => (
-                      <div key={sIdx} className="flex items-center gap-2 text-[11px] font-mono">
-                        <span className="text-emerald-400 font-bold text-[10px] shrink-0">✓</span>
-                        <span className="text-[var(--theme-text-secondary,#94a3b8)] opacity-90">
-                          {stepItem.step}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <WorkedSummaryDrawer
+                    steps={msg.steps}
+                    durationSeconds={msg.durationSeconds}
+                    defaultExpanded={false}
+                  />
                 )}
 
                 {/* 2. Collapsible Thinking Process Accordion */}
@@ -300,10 +625,10 @@ export default function AiChatView({
                         </span>
                       </div>
                       {refactorStatus === 'applied' && (
-                        <span className="text-[10px] font-mono text-emerald-400 font-medium">✓ Applied</span>
+                        <span className="text-[10px] font-mono text-emerald-400 font-medium">Applied</span>
                       )}
                       {refactorStatus === 'rejected' && (
-                        <span className="text-[10px] font-mono text-red-400 font-medium">✕ Rejected</span>
+                        <span className="text-[10px] font-mono text-red-400 font-medium">Rejected</span>
                       )}
                     </div>
 
@@ -362,13 +687,10 @@ export default function AiChatView({
                 color: 'var(--theme-text-primary, #cbd5e1)'
               }}
             >
-              {/* Live Action Steps */}
+              {/* Live Action Steps Drawer */}
               {streamingSteps && streamingSteps.length > 0 && (
-                <div className="flex flex-col gap-1 border-b pb-2 mb-1" style={{ borderColor: 'var(--theme-border, #242628)' }}>
-                  <div className="flex items-center justify-between pb-1">
-                    <span className="text-[10px] uppercase font-semibold text-[var(--theme-text-muted)] tracking-wider">
-                      Agent Execution Steps
-                    </span>
+                <div className="w-full">
+                  <div className="flex items-center justify-end pb-1">
                     {isStreaming && (
                       <button
                         type="button"
@@ -381,21 +703,12 @@ export default function AiChatView({
                       </button>
                     )}
                   </div>
-                  {streamingSteps.map((stepItem, sIdx) => {
-                    const isRunning = stepItem.status === 'running';
-                    return (
-                      <div key={sIdx} className="flex items-center gap-2 text-[11px] font-mono">
-                        {isRunning ? (
-                          <span className="w-2 h-2 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-ping shrink-0" />
-                        ) : (
-                          <span className="text-emerald-400 font-bold text-[10px] shrink-0">✓</span>
-                        )}
-                        <span className={isRunning ? 'text-[var(--theme-text-bright,#ffffff)] font-medium' : 'text-[var(--theme-text-secondary,#94a3b8)] opacity-90'}>
-                          {stepItem.step}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  <WorkedSummaryDrawer
+                    steps={streamingSteps}
+                    durationSeconds={liveElapsedSeconds}
+                    isLive={true}
+                    defaultExpanded={true}
+                  />
                 </div>
               )}
 
@@ -516,7 +829,8 @@ export default function AiChatView({
                   color: '#ffffff'
                 }}
               >
-                ✓ Approve & Run
+                <Check size={13} strokeWidth={2.5} />
+                <span>Allow</span>
               </button>
             </div>
           </div>
@@ -534,6 +848,54 @@ export default function AiChatView({
           background: 'linear-gradient(to top, var(--theme-background, #121314) 55%, transparent 100%)'
         }}
       >
+        {pendingApproval ? (
+          <div 
+            className="pointer-events-auto mb-2 px-3 py-1.5 rounded-lg border flex items-center justify-between text-[11px] font-mono shadow-md backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150"
+            style={{
+              backgroundColor: 'var(--theme-surface, #18191b)',
+              borderColor: 'var(--theme-accent, #3b82f6)'
+            }}
+          >
+            <div className="flex items-center gap-2 overflow-hidden mr-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-[var(--theme-accent,#3b82f6)] animate-pulse shrink-0" />
+              <span className="text-[var(--theme-text-bright,#ffffff)] truncate font-medium">
+                {getApprovalPromptText(pendingApproval)}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onRejectAction?.(pendingApproval.actionId)}
+              className="px-2.5 py-0.5 rounded text-[10px] font-mono font-medium transition-all border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 shrink-0 cursor-pointer shadow-sm active:scale-95"
+              title="Reject action"
+            >
+              Reject
+            </button>
+          </div>
+        ) : activeRunningCommand ? (
+          <div 
+            className="pointer-events-auto mb-2 px-3 py-1.5 rounded-lg border flex items-center justify-between text-[11px] font-mono shadow-md backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-150"
+            style={{
+              backgroundColor: 'var(--theme-surface, #18191b)',
+              borderColor: 'var(--theme-border, #242628)'
+            }}
+          >
+            <div className="flex items-center gap-2 overflow-hidden mr-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span className="text-[var(--theme-text-secondary,#94a3b8)] shrink-0 font-medium">Running:</span>
+              <span className="text-[var(--theme-text-bright,#ffffff)] truncate">
+                {activeRunningCommand.replace(/^Running:\s*/i, '')}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onStopGeneration?.()}
+              className="px-2.5 py-0.5 rounded text-[10px] font-mono font-medium transition-all bg-rose-600/90 hover:bg-rose-600 text-white shrink-0 cursor-pointer shadow-sm hover:brightness-110 active:scale-95"
+              title="Terminate running command"
+            >
+              Terminate
+            </button>
+          </div>
+        ) : null}
         <div 
           className="pointer-events-auto rounded-xl border px-3 py-2 flex items-center gap-2 focus-within:border-[var(--theme-accent)] transition-colors"
           style={{
@@ -545,6 +907,7 @@ export default function AiChatView({
             ref={textareaRef}
             rows={1}
             value={inputValue}
+            placeholder={pendingApproval ? "Press Enter or click Allow to approve..." : ""}
             onChange={(e) => {
               setInputValue(e.target.value);
               e.target.style.height = 'auto';
@@ -558,7 +921,20 @@ export default function AiChatView({
             }}
           />
 
-          {isStreaming ? (
+          {pendingApproval ? (
+            <button
+              type="button"
+              onClick={() => onApproveAction?.(pendingApproval.actionId)}
+              className="px-3 h-7 rounded-lg transition-all shrink-0 flex items-center gap-1.5 hover:brightness-110 cursor-pointer shadow-sm text-[11px] font-mono font-semibold text-white animate-in fade-in duration-150 active:scale-95"
+              style={{
+                backgroundColor: 'var(--theme-accent, #3b82f6)'
+              }}
+              title="Allow and run action (Enter)"
+            >
+              <Check size={13} strokeWidth={2.5} />
+              <span>Allow</span>
+            </button>
+          ) : isStreaming ? (
             <button
               type="button"
               onClick={() => onStopGeneration?.()}

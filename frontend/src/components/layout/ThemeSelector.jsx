@@ -44,15 +44,15 @@ export default function ThemeSelector() {
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(prev => !prev)}
-        className={`p-2 rounded-xl transition-colors cursor-pointer ${
+        className={`neuron-activity-btn ${
           isOpen 
-            ? 'text-[var(--theme-text-bright)] bg-[var(--theme-surface-hover)]' 
-            : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]'
+            ? 'neuron-activity-btn-active' 
+            : 'neuron-activity-btn-inactive'
         }`}
         title="Color Themes"
         aria-label="Color Themes"
       >
-        <Palette size={20} strokeWidth={1.6} />
+        <Palette size={19} strokeWidth={isOpen ? 2.2 : 1.65} className="neuron-activity-icon" />
       </button>
 
       {/* Floating Minimal Horizontal Bar with Color Circles */}

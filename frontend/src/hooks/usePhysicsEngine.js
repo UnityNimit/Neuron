@@ -5,7 +5,7 @@ import { ENGINE_CONFIG } from '../config/engineConfig';
 
 const { PHYSICS } = ENGINE_CONFIG;
 
-// 🪐 PERPETUAL COSMIC CONSTANTS
+//  PERPETUAL COSMIC CONSTANTS
 const RESTING_ALPHA_TARGET = 0.018;  // Keeps the universe floating continuously
 const DRAGGING_ALPHA_TARGET = 0.25;  // High responsiveness during dragging
 const MIN_ALPHA_THRESHOLD = 0.001;
@@ -15,12 +15,12 @@ const sanitizeCoordinate = (val, fallback = 0) => {
   return typeof val === 'number' && isFinite(val) && !isNaN(val) ? val : fallback;
 };
 
-export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, centerView, physicsEnabled = true) {
+export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, centerView, physicsEnabled = true, animationSpeed = 1.0) {
   const simulationRef = useRef(null);
   const draggedNodeRef = useRef(null);
   const spawnTimerRef = useRef(null);
 
-  // 🚀 MASTER RAM CACHE (Direct Zero-Copy Access for WebGL Canvas)
+  //  MASTER RAM CACHE (Direct Zero-Copy Access for WebGL Canvas)
   const simDataRef = useRef({
     nodes: [],
     edges: [],
@@ -29,7 +29,7 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
     isSpawningComplete: false
   });
 
-  // 🛡️ TOPOLOGY FINGERPRINTS: Detects link reconnections even if total counts remain identical
+  //  TOPOLOGY FINGERPRINTS: Detects link reconnections even if total counts remain identical
   const nodeTopologyKey = useMemo(() => {
     return (nodes || []).map(n => n.id).join('|');
   }, [nodes]);
@@ -198,16 +198,28 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
 
     const linkForce = d3.forceLink(getActiveEdges()).id(d => d.id)
       .distance(link => {
-        const tgtType = link.target?.nodeType || link.target?.data?.nodeType;
+        const src = typeof link.source === 'object' ? link.source : null;
+        const tgt = typeof link.target === 'object' ? link.target : null;
+        const srcType = src?.nodeType || src?.data?.nodeType;
+        const tgtType = tgt?.nodeType || tgt?.data?.nodeType;
+
+        const srcBaseR = srcType === 'folder' ? 44 : srcType === 'file' ? 26 : 14;
+        const tgtBaseR = tgtType === 'folder' ? 44 : tgtType === 'file' ? 26 : 14;
+        const srcExtraR = Math.max(0, (src?.worldRadius || srcBaseR) - srcBaseR);
+        const tgtExtraR = Math.max(0, (tgt?.worldRadius || tgtBaseR) - tgtBaseR);
+        const repulse = src?.repulseStrength ?? 1.5;
+        const extraSpacing = (srcExtraR + tgtExtraR) * 1.2 * repulse;
+
         if (link.type === 'hierarchy') {
-          return tgtType === 'function' 
+          const baseDist = tgtType === 'function' 
             ? (PHYSICS.SPRING_DISTANCE?.moonOrbit || 45)
             : (PHYSICS.SPRING_DISTANCE?.planetOrbit || 95);
+          return baseDist + extraSpacing;
         }
         if (link.type === 'network_bridge') {
-          return (PHYSICS.SPRING_DISTANCE?.neuralCall || 180) * 1.2;
+          return (PHYSICS.SPRING_DISTANCE?.neuralCall || 180) * 1.2 + extraSpacing;
         }
-        return (PHYSICS.SPRING_DISTANCE?.neuralCall || 160);
+        return (PHYSICS.SPRING_DISTANCE?.neuralCall || 160) + extraSpacing;
       })
       .strength(link => {
         if (link.type === 'hierarchy') return 0.95;
@@ -215,42 +227,70 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
         return 0.25;
       });
 
+    const chargeForce = d3.forceManyBody()
+      .strength(d => {
+        const m = d.mergeProgress || 0;
+        if (m > 0.75) return 0;
+        const base = d.nodeType === 'folder' 
+          ? (PHYSICS.REPULSION?.folder || -2600) 
+          : d.nodeType === 'file' 
+            ? (PHYSICS.REPULSION?.file || -900) 
+            : (PHYSICS.REPULSION?.function || -240);
+        const mass = Math.max(0, d.absorbedMass || 0);
+        const repulse = d.repulseStrength ?? 1.5;
+        const mergedBoost = mass > 0.05 ? (1 + Math.min(4.0, Math.pow(mass, 0.52) * 0.45 * repulse)) : 1.0;
+        return base * mergedBoost * (1 - m * 0.9);
+      })
+      .distanceMax(PHYSICS.MAX_REPULSION_DISTANCE || 2600);
+
+    const collideForce = d3.forceCollide()
+      .radius(d => {
+        const m = d.mergeProgress || 0;
+        if (m > 0.65) return 0;
+        const base = d.nodeType === 'folder' 
+          ? (PHYSICS.COLLISION_RADIUS?.folder || 48) 
+          : d.nodeType === 'file' 
+            ? (PHYSICS.COLLISION_RADIUS?.file || 26) 
+            : (PHYSICS.COLLISION_RADIUS?.function || 15);
+        const extraR = Math.max(0, (d.worldRadius || base) - base);
+        const repulse = d.repulseStrength ?? 1.5;
+        return (base + 10 + extraR * (1.15 * repulse)) * (1 - m * 0.85);
+      })
+      .iterations(2);
+
     const simulation = d3.forceSimulation(activeNodesPool)
       .force("link", linkForce)
-      .force("charge", d3.forceManyBody()
-        .strength(d => {
-          return d.nodeType === 'folder' 
-            ? (PHYSICS.REPULSION?.folder || -2600) 
-            : d.nodeType === 'file' 
-              ? (PHYSICS.REPULSION?.file || -900) 
-              : (PHYSICS.REPULSION?.function || -240);
-        })
-        .distanceMax(PHYSICS.MAX_REPULSION_DISTANCE || 2200)
-      )
+      .force("charge", chargeForce)
       .force("x", d3.forceX(0).strength(0.008))
       .force("y", d3.forceY(0).strength(0.008))
-      .force("collide", d3.forceCollide()
-        .radius(d => {
-          const base = d.nodeType === 'folder' 
-            ? (PHYSICS.COLLISION_RADIUS?.folder || 48) 
-            : d.nodeType === 'file' 
-              ? (PHYSICS.COLLISION_RADIUS?.file || 26) 
-              : (PHYSICS.COLLISION_RADIUS?.function || 15);
-          return base + 10;
-        })
-        .iterations(2)
-      )
+      .force("collide", collideForce)
       .alphaDecay(0.012)
-      .velocityDecay(0.52);
+      .velocityDecay(0.54);
 
-    // Active Sanity Clamp on every D3 Simulation Tick
+    let tickCounter = 0;
+    let lastMassSignature = 0;
+
+    // Active Sanity Clamp & Smooth Merged-Size Physics Sync on D3 Simulation Tick
     simulation.on("tick", () => {
+      tickCounter++;
+      let currentMassSig = 0;
+
       activeNodesPool.forEach(node => {
         if (isNaN(node.x) || !isFinite(node.x)) node.x = (Math.random() - 0.5) * 50;
         if (isNaN(node.y) || !isFinite(node.y)) node.y = (Math.random() - 0.5) * 50;
         if (isNaN(node.vx) || !isFinite(node.vx)) node.vx = 0;
         if (isNaN(node.vy) || !isFinite(node.vy)) node.vy = 0;
+        currentMassSig += (node.absorbedMass || 0) * 5 + (node.repulseStrength || 1.5) * 10;
       });
+
+      if (tickCounter % 8 === 0 && Math.abs(currentMassSig - lastMassSignature) > 4.0) {
+        lastMassSignature = currentMassSig;
+        collideForce.initialize(activeNodesPool);
+        chargeForce.initialize(activeNodesPool);
+        if (simulation.alpha() < 0.045) {
+          simulation.alpha(0.045);
+        }
+      }
     });
 
     simulation.alphaTarget(RESTING_ALPHA_TARGET).restart();
@@ -289,7 +329,8 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
 
     // 8. HIGH-SPEED SEQUENTIAL EMITTER
     const totalToSpawn = spawnQueue.length;
-    const delayPerNodeMs = Math.max(15, Math.min(120, Math.round(8000 / Math.max(1, totalToSpawn))));
+    const safeAnimSpeed = Math.max(0.1, Number(animationSpeed || 1.0));
+    const delayPerNodeMs = Math.max(8, Math.min(120, Math.round(8000 / (Math.max(1, totalToSpawn) * safeAnimSpeed))));
 
     const emitNextNode = () => {
       if (document.hidden || centerView !== 'spatial') {
@@ -411,6 +452,13 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
       simulationRef.current.alpha(0.25).restart();
     }
   }, [physicsEnabled]);
+
+  // Dynamically adjust velocity decay when animationSpeed changes
+  useEffect(() => {
+    if (!simulationRef.current) return;
+    const speed = Math.max(0.1, Number(animationSpeed || 1.0));
+    simulationRef.current.velocityDecay(Math.max(0.25, Math.min(0.75, 0.54 / Math.sqrt(speed))));
+  }, [animationSpeed]);
 
   return { simDataRef, onDragStart, onDragMove, onDragEnd };
 }

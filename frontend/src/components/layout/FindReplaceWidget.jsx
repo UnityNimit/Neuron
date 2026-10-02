@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as monaco from 'monaco-editor';
 
 /**
- * 🔍 MINIMALIST THEMED FIND & REPLACE WIDGET FOR MONACO
+ *  MINIMALIST THEMED FIND & REPLACE WIDGET FOR MONACO
  * - Replaces standard Monaco find widget with custom themed UI.
  * - Absolutely NO logos or icon clutter: pure typographic minimalism.
  * - Smoothly animated entrance and exit.
@@ -358,7 +358,7 @@ export default function FindReplaceWidget({ editor }) {
               style={{ color: 'var(--theme-text-muted, #64748b)' }}
               title="Close (Escape)"
             >
-              ✕
+              
             </button>
           </div>
         </div>

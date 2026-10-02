@@ -133,7 +133,7 @@ async def lifespan(app: FastAPI):
 # -------------------------------------------------------------------------
 app = FastAPI(
     title="Neuron Spatial IDE Backend",
-    version="1.0.0",
+    version="1.1.0",
     description="Full-Stack Spatial Code Intelligence, AST Mutation, and Graph ML Engine",
     lifespan=lifespan
 )
@@ -157,7 +157,7 @@ async def root():
     return {
         "status": "online",
         "system": "Neuron Spatial IDE Engine",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "workspace": AppState.TARGET_DIR,
         "active_file": AppState.ACTIVE_FILE
     }
@@ -177,14 +177,16 @@ async def api_discover_key(request: Request):
     """
     Runs a live request against AI providers to automatically detect which provider
     an API key belongs to, discover all available models for that key, and pick the best model.
+    Supports optional custom base URL for OpenAI-compatible endpoints or local servers.
     """
     try:
         from services.ai_service import discover_key_and_models
         data = await request.json()
         api_key = (data.get("api_key") or "").strip()
+        base_url = (data.get("base_url") or "").strip() or None
         if not api_key:
             return JSONResponse({"valid": False, "error": "Empty API key"}, status_code=400)
-        result = await discover_key_and_models(api_key, force_refresh=True)
+        result = await discover_key_and_models(api_key, force_refresh=True, custom_base_url=base_url)
         return result
     except Exception as e:
         return JSONResponse({"valid": False, "error": str(e)}, status_code=500)

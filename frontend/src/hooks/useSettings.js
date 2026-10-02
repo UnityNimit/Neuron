@@ -20,6 +20,22 @@ const defaultSettings = {
   showNodeLabels: true,
   spatialParticles: true,
   physicsSimulation: true,
+  spatialAnimationSpeed: 1.0,
+  spatialNodeScale: 1.0,
+  spatialLineScale: 1.0,
+  spatialTextScale: 1.0,
+  spatialSelectedLineWidth: 3.8,
+  spatialBridgeLineWidth: 2.5,
+  spatialPurpleLineWidth: 1.6,
+  spatialFolderLabelZoom: 0.10,
+  spatialFileLabelZoom: 0.25,
+  spatialFuncLabelZoom: 0.55,
+  spatialMergeRepulsion: 1.5,
+  spatialTransitionSpeed: 0.28,
+  spatialLod1Zoom: 0.35,
+  spatialLod2Zoom: 0.22,
+  spatialLod3Zoom: 0.12,
+  spatialLod4Zoom: 0.05,
 
   // AI & Multi-Key Provider Settings (Zero hardcoded models)
   apiKeys: [],                        // Array of { id, alias, key, detectedProvider?, detectedModel?, modelCount? }

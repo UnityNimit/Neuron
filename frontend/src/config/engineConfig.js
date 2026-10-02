@@ -1,7 +1,7 @@
 // src/config/engineConfig.js
 
 export const ENGINE_CONFIG = {
-  // 🪐 THE WEBGPU PHYSICS ENGINE LAWS
+  //  THE WEBGPU PHYSICS ENGINE LAWS
   PHYSICS: {
     GRAVITY_PULL: 0.025,         // Gentle centering (prevents black-hole crushing)
     REPULSION: {
@@ -25,13 +25,13 @@ export const ENGINE_CONFIG = {
     VELOCITY_DECAY: 0.45         // Fluid momentum with clean friction
   },
 
-  // 📷 THE LEVEL-OF-DETAIL (LOD) CAMERA BREAKPOINTS
+  //  THE LEVEL-OF-DETAIL (LOD) CAMERA BREAKPOINTS
   LOD: {
     Z_LEVELS: { L1: 0.03, L2: 0.8, L3: 4.5 },
     LABELS: { folder: 0.15, file: 0.4, function: 0.7 }
   },
 
-  // 🎨 THE VISUAL THEME ENGINE
+  //  THE VISUAL THEME ENGINE
   THEME: {
     nodes: {
       folder: 'bg-[#e4ef61]',    

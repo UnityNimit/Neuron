@@ -3,6 +3,7 @@ import asyncio
 from datetime import datetime
 import json
 import os
+import re
 import subprocess
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -52,6 +53,65 @@ _RECENT_SAVE_TIMESTAMPS: list = []
 ACTIVE_AI_TASKS: Dict[str, asyncio.Task] = {}
 ACTIVE_AI_CANCEL_CTX: Dict[str, Dict[str, Any]] = {}
 ACTIVE_AI_APPROVALS: Dict[str, asyncio.Future] = {}
+
+
+def find_matching_step_index(existing_steps: List[Dict[str, Any]], new_step: Dict[str, Any]) -> int:
+    """Finds the index of an in-progress or related step to update in-place instead of creating duplicates."""
+    if not existing_steps:
+        return -1
+    new_text = (new_step.get("step") or "").strip()
+    new_tool = new_step.get("tool")
+    new_file = new_step.get("file")
+    new_cmd = new_step.get("command")
+    clean_new = re.sub(r'\.{3,}$', '', new_text).strip().lower()
+
+    # 1. Match by tool and target resource (file or command)
+    if new_tool:
+        for idx in reversed(range(len(existing_steps))):
+            s = existing_steps[idx]
+            if s.get("tool") == new_tool:
+                s_file = s.get("file")
+                s_cmd = s.get("command")
+                if new_file and s_file and new_file == s_file:
+                    return idx
+                if new_cmd and s_cmd and new_cmd == s_cmd:
+                    return idx
+                if not new_file and not new_cmd and not s_file and not s_cmd:
+                    return idx
+
+    # 2. Engaging autonomous agent
+    if clean_new.startswith("engaging autonomous agent"):
+        for idx in reversed(range(len(existing_steps))):
+            s_text = (existing_steps[idx].get("step") or "").strip().lower()
+            if s_text.startswith("engaging autonomous agent"):
+                return idx
+
+    # 3. Workspace context analysis
+    if "analyz" in clean_new and "workspace" in clean_new:
+        for idx in reversed(range(len(existing_steps))):
+            s_text = (existing_steps[idx].get("step") or "").strip().lower()
+            if "analyz" in s_text and "workspace" in s_text:
+                return idx
+
+    # 4. API key discovery
+    if ("auto-detecting api key" in clean_new) or ("detected " in clean_new and "available" in clean_new):
+        for idx in reversed(range(len(existing_steps))):
+            s_text = (existing_steps[idx].get("step") or "").strip().lower()
+            if ("auto-detecting api key" in s_text) or ("detected " in s_text and "available" in s_text):
+                return idx
+
+    # 5. Normalized text comparison or awaiting approval prefix
+    for idx in reversed(range(len(existing_steps))):
+        s_text = (existing_steps[idx].get("step") or "").strip()
+        clean_s = re.sub(r'\.{3,}$', '', s_text).strip().lower()
+        if clean_s == clean_new:
+            return idx
+        if clean_s.startswith("awaiting approval for ") and clean_s.replace("awaiting approval for ", "") == clean_new:
+            return idx
+        if clean_new.startswith("awaiting approval for ") and clean_new.replace("awaiting approval for ", "") == clean_s:
+            return idx
+
+    return -1
 
 
 async def safe_send_json(websocket: WebSocket, payload: dict) -> bool:
@@ -206,13 +266,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 else:
                     chosen_dir = await asyncio.to_thread(pick_folder_sync)
                 if chosen_dir and os.path.exists(chosen_dir):
-                    # 🚀 Cleanly terminate all running background terminal processes before project switch
+                    # Cleanly terminate all running background terminal processes before project switch
                     kill_all_terminal_processes()
                     AppState.TARGET_DIR = os.path.abspath(chosen_dir)
                     AppState.ACTIVE_FILE = ""
                     reset_workspace_mutation_tracker()
                     restart_workspace_watcher(AppState.TARGET_DIR)
-                    # 🚀 Instantly notify frontend to display the minimalist loading screen
+                    # Instantly notify frontend to display the minimalist loading screen
                     await broadcast_to_all({
                         "event": "WORKSPACE_LOADING",
                         "target_dir": AppState.TARGET_DIR
@@ -227,13 +287,13 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "OPEN_FOLDER":
                 folder_path = message.get("path") or message.get("target_dir", "")
                 if folder_path and os.path.exists(folder_path):
-                    # 🚀 Cleanly terminate all running background terminal processes before project switch
+                    # Cleanly terminate all running background terminal processes before project switch
                     kill_all_terminal_processes()
                     AppState.TARGET_DIR = os.path.abspath(folder_path)
                     AppState.ACTIVE_FILE = ""
                     reset_workspace_mutation_tracker()
                     restart_workspace_watcher(AppState.TARGET_DIR)
-                    # 🚀 Instantly notify frontend to display the minimalist loading screen
+                    # Instantly notify frontend to display the minimalist loading screen
                     await broadcast_to_all({
                         "event": "WORKSPACE_LOADING",
                         "target_dir": AppState.TARGET_DIR
@@ -297,7 +357,7 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "REVEAL_IN_EXPLORER":
                 reveal_in_explorer(message.get("path", AppState.TARGET_DIR))
 
-            # 🚀 DIRECT WHOLE-FILE ATOMIC SAVE (VS Code Standard)
+            # DIRECT WHOLE-FILE ATOMIC SAVE (VS Code Standard)
             elif evt == "SAVE_FILE":
                 target_file = message.get("filename", AppState.ACTIVE_FILE)
                 new_content = message.get("content", "")
@@ -802,6 +862,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     conversation_id = message.get("conversation_id", f"conv_{int(time.time() * 1000)}")
                     model = message.get("model", "auto")
                     api_key = message.get("api_key")
+                    base_url = message.get("base_url")
                     key_id = message.get("key_id", "")
                     approval_mode = message.get("approval_mode", "auto")
                     context_code = message.get("context_code")
@@ -872,11 +933,13 @@ async def websocket_endpoint(websocket: WebSocket):
                             ACTIVE_AI_APPROVALS.pop(c_id, None)
 
                     try:
+                        chat_start_time = time.time()
                         async for chunk in stream_ai_chat(
                             prompt=prompt,
                             conversation_id=conversation_id,
                             model=model,
                             api_key=api_key,
+                            base_url=base_url,
                             context_code=context_code,
                             file_path=file_path,
                             target_dir=AppState.TARGET_DIR,
@@ -897,12 +960,28 @@ async def websocket_endpoint(websocket: WebSocket):
                             elif chunk_type == "step":
                                 step_name = chunk.get("step", "")
                                 status = chunk.get("status", "running")
-                                collected_steps.append({"step": step_name, "status": status})
+                                step_obj = {
+                                    "step": step_name,
+                                    "status": status,
+                                    "tool": chunk.get("tool"),
+                                    "file": chunk.get("file"),
+                                    "command": chunk.get("command"),
+                                    "added": chunk.get("added"),
+                                    "removed": chunk.get("removed")
+                                }
+                                m_idx = find_matching_step_index(collected_steps, step_obj)
+                                if m_idx != -1:
+                                    collected_steps[m_idx] = {**collected_steps[m_idx], **step_obj}
+                                    step_idx_to_send = m_idx
+                                else:
+                                    collected_steps.append(step_obj)
+                                    step_idx_to_send = len(collected_steps) - 1
+
                                 await safe_send_to_active(websocket, {
                                     "event": "AI_CHAT_STEP",
                                     "conversation_id": conversation_id,
-                                    "step": step_name,
-                                    "status": status
+                                    "step_index": step_idx_to_send,
+                                    **step_obj
                                 })
                             elif chunk_type == "thought":
                                 th = chunk.get("content", "")
@@ -923,22 +1002,27 @@ async def websocket_endpoint(websocket: WebSocket):
                             elif chunk_type == "done":
                                 final_refactor = chunk.get("refactor")
                                 done_content = chunk.get("content") or "".join(accumulated_content)
+                                duration_seconds = max(1, round(time.time() - chat_start_time))
                                 await safe_send_to_active(websocket, {
                                     "event": "AI_CHAT_DONE",
                                     "conversation_id": conversation_id,
                                     "content": done_content,
-                                    "refactor": final_refactor
+                                    "refactor": final_refactor,
+                                    "duration_seconds": duration_seconds,
+                                    "steps": collected_steps
                                 })
 
                         # 2. Save assistant response to disk immediately
                         full_assistant_text = "".join(accumulated_content).strip()
                         if full_assistant_text:
+                            duration_seconds = max(1, round(time.time() - chat_start_time))
                             assistant_msg = {
                                 "id": f"msg_{int(time.time() * 1000)}",
                                 "role": "assistant",
                                 "content": full_assistant_text,
                                 "thoughts": "".join(accumulated_thoughts).strip() or None,
                                 "steps": collected_steps,
+                                "duration_seconds": duration_seconds,
                                 "refactor": final_refactor,
                                 "timestamp": datetime.utcnow().isoformat() + "Z"
                             }
@@ -983,11 +1067,22 @@ async def websocket_endpoint(websocket: WebSocket):
             elif evt == "AI_STOP_GENERATION":
                 conv_id = message.get("conversation_id", "")
                 if conv_id in ACTIVE_AI_CANCEL_CTX:
-                    ACTIVE_AI_CANCEL_CTX[conv_id]["is_cancelled"] = True
-                    running_proc = ACTIVE_AI_CANCEL_CTX[conv_id].get("proc")
+                    ctx = ACTIVE_AI_CANCEL_CTX[conv_id]
+                    ctx["is_cancelled"] = True
+                    procs_to_kill = []
+                    running_proc = ctx.get("proc")
                     if running_proc:
+                        procs_to_kill.append(running_proc)
+                    for d in ctx.get("daemons", []):
+                        if d and d not in procs_to_kill:
+                            procs_to_kill.append(d)
+
+                    for p in procs_to_kill:
                         try:
-                            running_proc.kill()
+                            if os.name == 'nt':
+                                subprocess.run(f"taskkill /F /T /PID {p.pid}", shell=True, capture_output=True)
+                            else:
+                                p.kill()
                         except Exception:
                             pass
                 fut = ACTIVE_AI_APPROVALS.get(conv_id)

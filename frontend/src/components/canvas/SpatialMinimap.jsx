@@ -77,8 +77,11 @@ export default function SpatialMinimap({ nodes = [], simDataRef }) {
 
         for (let i = 0; i < rawNodes.length; i++) {
           const n = rawNodes[i];
-          const nx = typeof n.x === 'number' && !isNaN(n.x) ? n.x : 0;
-          const ny = typeof n.y === 'number' && !isNaN(n.y) ? n.y : 0;
+          const mergeProg = typeof n.mergeProgress === 'number' ? n.mergeProgress : 0;
+          if (mergeProg > 0.92) continue;
+
+          const nx = typeof n.rx === 'number' && !isNaN(n.rx) ? n.rx : (typeof n.x === 'number' && !isNaN(n.x) ? n.x : 0);
+          const ny = typeof n.ry === 'number' && !isNaN(n.ry) ? n.ry : (typeof n.y === 'number' && !isNaN(n.y) ? n.y : 0);
 
           const cx = offsetX + (nx - minX) * scale;
           const cy = offsetY + (ny - minY) * scale;
@@ -95,6 +98,11 @@ export default function SpatialMinimap({ nodes = [], simDataRef }) {
           } else if (nodeType === 'file') {
             color = '#3b82f6';
             r = 1.0;
+          }
+
+          const mass = typeof n.absorbedMass === 'number' && n.absorbedMass > 0 ? n.absorbedMass : 0;
+          if (mass > 0) {
+            r *= 1 + Math.min(1.15, Math.pow(mass, 0.4) * 0.14);
           }
 
           if (risk === 'high') {

@@ -1,5 +1,60 @@
-// frontend/src/hooks/useAiStudio.js
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+
+function findMatchingStepIndex(existingSteps, newStep) {
+  if (!existingSteps || existingSteps.length === 0) return -1;
+  const newText = (newStep.step || '').trim();
+  const newTool = newStep.tool;
+  const newFile = newStep.file;
+  const newCmd = newStep.command;
+  const cleanNew = newText.replace(/\.{3,}$/, '').trim().toLowerCase();
+
+  // 1. Tool + file or Tool + command match
+  if (newTool) {
+    for (let i = existingSteps.length - 1; i >= 0; i--) {
+      const s = existingSteps[i];
+      if (s.tool === newTool) {
+        if (newFile && s.file && newFile === s.file) return i;
+        if (newCmd && s.command && newCmd === s.command) return i;
+        if (!newFile && !newCmd && !s.file && !s.command) return i;
+      }
+    }
+  }
+
+  // 2. Engaging autonomous agent
+  if (cleanNew.startsWith('engaging autonomous agent')) {
+    for (let i = existingSteps.length - 1; i >= 0; i--) {
+      const sText = (existingSteps[i].step || '').trim().toLowerCase();
+      if (sText.startsWith('engaging autonomous agent')) return i;
+    }
+  }
+
+  // 3. Workspace analysis
+  if (cleanNew.includes('analyz') && cleanNew.includes('workspace')) {
+    for (let i = existingSteps.length - 1; i >= 0; i--) {
+      const sText = (existingSteps[i].step || '').trim().toLowerCase();
+      if (sText.includes('analyz') && sText.includes('workspace')) return i;
+    }
+  }
+
+  // 4. API key discovery
+  if (cleanNew.includes('auto-detecting api key') || (cleanNew.includes('detected ') && cleanNew.includes('available'))) {
+    for (let i = existingSteps.length - 1; i >= 0; i--) {
+      const sText = (existingSteps[i].step || '').trim().toLowerCase();
+      if (sText.includes('auto-detecting api key') || (sText.includes('detected ') && sText.includes('available'))) return i;
+    }
+  }
+
+  // 5. Normalized text comparison or awaiting approval prefix
+  for (let i = existingSteps.length - 1; i >= 0; i--) {
+    const sText = (existingSteps[i].step || '').trim();
+    const cleanS = sText.replace(/\.{3,}$/, '').trim().toLowerCase();
+    if (cleanS === cleanNew) return i;
+    if (cleanS.startsWith('awaiting approval for ') && cleanS.replace('awaiting approval for ', '') === cleanNew) return i;
+    if (cleanNew.startsWith('awaiting approval for ') && cleanNew.replace('awaiting approval for ', '') === cleanS) return i;
+  }
+
+  return -1;
+}
 
 export function useAiStudio({
   wsRef,
@@ -26,6 +81,7 @@ export function useAiStudio({
   const streamingThoughtRef = useRef("");
   const streamingDeltaRef = useRef("");
   const streamingStepsRef = useRef([]);
+  const streamStartTimeRef = useRef(null);
   const activeConversationIdRef = useRef(activeConversationId);
 
   useEffect(() => {
@@ -109,13 +165,24 @@ export function useAiStudio({
         }
         else if (evt === 'AI_CHAT_STEP') {
           if (isCurrentConv) {
-            const stepItem = { step: data.step, status: data.status };
+            const stepItem = {
+              step: data.step,
+              status: data.status,
+              tool: data.tool,
+              file: data.file,
+              command: data.command,
+              added: data.added,
+              removed: data.removed
+            };
             setStreamingSteps(prev => {
-              const existingIdx = prev.findIndex(s => s.step === data.step);
+              const matchIdx = (typeof data.step_index === 'number' && data.step_index >= 0 && data.step_index < prev.length)
+                ? data.step_index
+                : findMatchingStepIndex(prev, stepItem);
+
               let updated;
-              if (existingIdx !== -1) {
+              if (matchIdx !== -1) {
                 updated = [...prev];
-                updated[existingIdx] = stepItem;
+                updated[matchIdx] = { ...updated[matchIdx], ...stepItem };
               } else {
                 updated = [...prev, stepItem];
               }
@@ -152,7 +219,8 @@ export function useAiStudio({
           const fullContent = data.content || streamingDeltaRef.current;
           const refactor = data.refactor || null;
           const thoughts = streamingThoughtRef.current;
-          const steps = streamingStepsRef.current;
+          const steps = (data.steps && data.steps.length > 0) ? data.steps : streamingStepsRef.current;
+          const durationSeconds = data.duration_seconds || Math.max(1, Math.round((Date.now() - (streamStartTimeRef.current || Date.now())) / 1000));
 
           setConversations(prev => {
             return prev.map(c => {
@@ -163,6 +231,7 @@ export function useAiStudio({
                   content: fullContent,
                   thoughts: thoughts || null,
                   steps: steps || [],
+                  durationSeconds: durationSeconds,
                   refactor: refactor,
                   timestamp: new Date().toISOString()
                 };
@@ -213,7 +282,7 @@ export function useAiStudio({
                 const assistantMsg = {
                   id: `msg_${Date.now()}`,
                   role: 'assistant',
-                  content: `### AI Alert\n\n${errorMsg}\n\n*Please verify your API key in **Settings > AI**.*`,
+                  content: `### Alert\n\n${errorMsg}\n\n*Please check your configuration in **Settings > Agent**.*`,
                   timestamp: new Date().toISOString()
                 };
                 const updatedMessages = [...(c.messages || []), assistantMsg];
@@ -326,12 +395,14 @@ export function useAiStudio({
     streamingThoughtRef.current = "";
     streamingDeltaRef.current = "";
     streamingStepsRef.current = [];
+    streamStartTimeRef.current = Date.now();
 
     if (wsRef?.current?.readyState === WebSocket.OPEN) {
       let effectiveApiKey = "";
       let effectiveModel = "auto";
       let effectiveKeyId = activeModelId;
 
+      let effectiveBaseUrl = "";
       if (activeModelId === 'local-ollama' || (typeof activeModelId === 'string' && activeModelId.startsWith('local'))) {
         effectiveApiKey = "";
         effectiveModel = "local";
@@ -340,11 +411,13 @@ export function useAiStudio({
         const foundKey = (settings?.apiKeys || []).find(k => k.id === activeModelId || k.alias === activeModelId);
         if (foundKey) {
           effectiveApiKey = foundKey.key || "";
+          effectiveBaseUrl = foundKey.baseUrl || "";
           effectiveModel = "auto";
           effectiveKeyId = foundKey.id;
         } else if ((settings?.apiKeys || []).length > 0) {
           const firstKey = settings.apiKeys[0];
           effectiveApiKey = firstKey.key || "";
+          effectiveBaseUrl = firstKey.baseUrl || "";
           effectiveModel = "auto";
           effectiveKeyId = firstKey.id;
         } else {
@@ -361,6 +434,7 @@ export function useAiStudio({
         model: effectiveModel,
         key_id: effectiveKeyId,
         api_key: effectiveApiKey,
+        base_url: effectiveBaseUrl || undefined,
         approval_mode: settings?.requireRefactorApproval ? 'manual' : 'auto',
         context_code: fileContent || "",
         file_path: activeFile || ""

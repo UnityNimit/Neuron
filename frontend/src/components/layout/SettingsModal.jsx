@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Plus, Trash2, Eye, EyeOff, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
 import { useTheme } from '../../config/themeConfig';
+import NeuronLogo from '../common/NeuronLogo';
 
 function MinimalToggle({ checked, onChange }) {
   return (
@@ -9,7 +10,7 @@ function MinimalToggle({ checked, onChange }) {
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-out focus:outline-none"
+      className="relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-150 ease-out focus:outline-none"
       style={{
         backgroundColor: checked 
           ? 'var(--theme-accent, #3b82f6)' 
@@ -17,8 +18,8 @@ function MinimalToggle({ checked, onChange }) {
       }}
     >
       <span
-        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${
-          checked ? 'translate-x-4' : 'translate-x-0'
+        className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition-transform duration-150 ease-out ${
+          checked ? 'translate-x-3.5' : 'translate-x-0'
         }`}
       />
     </button>
@@ -31,7 +32,7 @@ function MinimalSelect({ value, options, onChange }) {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="text-[11px] font-mono rounded-lg px-2.5 py-1 border outline-none cursor-pointer transition-colors"
+        className="text-[11px] font-mono rounded-lg px-2.5 py-1 border outline-none cursor-pointer transition-colors focus:border-[var(--theme-accent)]"
         style={{
           backgroundColor: 'var(--theme-surface, #161719)',
           borderColor: 'var(--theme-border, #242628)',
@@ -48,21 +49,131 @@ function MinimalSelect({ value, options, onChange }) {
   );
 }
 
-function MinimalNumberInput({ value, min = 10, max = 28, onChange }) {
+function ThemedNumberInput({ value, min = 0, max = 100, step = 1, onChange, className = "w-20" }) {
+  const safeVal = typeof value === 'number' && !isNaN(value) ? value : min;
+  const [textValue, setTextValue] = useState(String(safeVal));
+
+  useEffect(() => {
+    setTextValue(String(safeVal));
+  }, [safeVal]);
+
+  const stepStr = step.toString();
+  const precision = stepStr.includes('.') ? stepStr.split('.')[1].length : 0;
+
+  const handleStep = (direction) => {
+    let nextVal = direction === 'up' ? safeVal + step : safeVal - step;
+    nextVal = Math.max(min, Math.min(max, nextVal));
+    nextVal = Number(nextVal.toFixed(precision));
+    setTextValue(String(nextVal));
+    onChange(nextVal);
+  };
+
+  const handleInputChange = (e) => {
+    const raw = e.target.value;
+    setTextValue(raw);
+    const parsed = parseFloat(raw);
+    if (!isNaN(parsed)) {
+      onChange(parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    const parsed = parseFloat(textValue);
+    if (isNaN(parsed)) {
+      setTextValue(String(safeVal));
+    } else {
+      const clamped = Math.max(min, Math.min(max, parsed));
+      const rounded = Number(clamped.toFixed(precision));
+      setTextValue(String(rounded));
+      onChange(rounded);
+    }
+  };
+
   return (
-    <input
-      type="number"
-      min={min}
-      max={max}
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="w-16 text-[11px] font-mono rounded-lg px-2 py-1 border outline-none transition-colors text-center shrink-0"
+    <div 
+      className={`inline-flex items-center rounded-lg border transition-colors shrink-0 ${className} overflow-hidden focus-within:border-[var(--theme-accent)]`}
       style={{
         backgroundColor: 'var(--theme-surface, #161719)',
         borderColor: 'var(--theme-border, #242628)',
-        color: 'var(--theme-text-primary, #e2e8f0)'
       }}
+    >
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={textValue}
+        onChange={handleInputChange}
+        onBlur={handleBlur}
+        className="w-full bg-transparent text-[11px] font-mono px-2 py-1 outline-none text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none select-text"
+        style={{
+          color: 'var(--theme-text-primary, #e2e8f0)'
+        }}
+      />
+      <div 
+        className="flex flex-col border-l self-stretch justify-center shrink-0"
+        style={{ borderColor: 'var(--theme-border, #242628)' }}
+      >
+        <button
+          type="button"
+          onClick={() => handleStep('up')}
+          aria-label="Increase value"
+          className="px-1.5 py-0.5 hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-accent)] transition-colors flex items-center justify-center cursor-pointer select-none"
+        >
+          <ChevronUp size={10} strokeWidth={2.5} />
+        </button>
+        <button
+          type="button"
+          onClick={() => handleStep('down')}
+          aria-label="Decrease value"
+          className="px-1.5 py-0.5 hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-accent)] transition-colors flex items-center justify-center cursor-pointer select-none border-t"
+          style={{ borderColor: 'var(--theme-border, #242628)' }}
+        >
+          <ChevronDown size={10} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MinimalNumberInput({ value, min = 10, max = 28, step = 1, onChange }) {
+  return (
+    <ThemedNumberInput
+      value={value}
+      min={min}
+      max={max}
+      step={step}
+      onChange={onChange}
+      className="w-20"
     />
+  );
+}
+
+function MinimalSliderNumberInput({ value, min = 0.01, max = 3.0, step = 0.01, onChange }) {
+  const safeVal = typeof value === 'number' && !isNaN(value) ? value : min;
+  return (
+    <div className="flex items-center gap-2.5 shrink-0">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={safeVal}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-24 h-1.5 rounded-lg appearance-none cursor-pointer accent-[var(--theme-accent,#3b82f6)]"
+        style={{
+          backgroundColor: 'var(--theme-border, #242628)'
+        }}
+      />
+      <ThemedNumberInput
+        min={min}
+        max={max}
+        step={step}
+        value={safeVal}
+        onChange={onChange}
+        className="w-20"
+      />
+    </div>
   );
 }
 
@@ -160,7 +271,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
     apiKeysRef.current = settings?.apiKeys || [];
   }, [settings?.apiKeys]);
 
-  const detectKeyAndModels = async (id, rawKey) => {
+  const detectKeyAndModels = async (id, rawKey, customBaseUrl = null) => {
     const cleanKey = (rawKey || '').trim();
     if (!cleanKey || cleanKey.length < 8) return;
 
@@ -169,7 +280,10 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
       const resp = await fetch('http://127.0.0.1:8000/api/ai/discover-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: cleanKey })
+        body: JSON.stringify({ 
+          api_key: cleanKey,
+          base_url: (customBaseUrl || '').trim() || undefined
+        })
       });
       const data = await resp.json();
       const latestKeys = apiKeysRef.current || [];
@@ -212,6 +326,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
       id: `key_${Date.now()}`,
       alias: `Key ${apiKeys.length + 1}`,
       key: '',
+      baseUrl: '',
       detectedProvider: null,
       detectedModel: null,
       modelCount: 0,
@@ -225,32 +340,34 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
   };
 
   const handleUpdateApiKey = (id, field, value) => {
+    let keyForDetect = null;
+    let urlForDetect = null;
+
     const updated = apiKeys.map(k => {
       if (k.id === id) {
-        if (field === 'key') {
-          return {
-            ...k,
-            key: value,
-            detectedProvider: null,
-            detectedModel: null,
-            modelCount: 0,
-            status: value.trim().length >= 8 ? 'detecting' : 'idle',
-            errorMessage: null
-          };
+        const updatedKey = { ...k, [field]: value };
+        if (field === 'key' || field === 'baseUrl') {
+          updatedKey.detectedProvider = null;
+          updatedKey.detectedModel = null;
+          updatedKey.modelCount = 0;
+          updatedKey.status = (updatedKey.key || '').trim().length >= 8 ? 'detecting' : 'idle';
+          updatedKey.errorMessage = null;
         }
-        return { ...k, [field]: value };
+        keyForDetect = updatedKey.key;
+        urlForDetect = updatedKey.baseUrl;
+        return updatedKey;
       }
       return k;
     });
     updateSetting('apiKeys', updated);
 
-    if (field === 'key') {
+    if (field === 'key' || field === 'baseUrl') {
       if (detectTimersRef.current[id]) {
         clearTimeout(detectTimersRef.current[id]);
       }
-      if (value && value.trim().length >= 8) {
+      if (keyForDetect && keyForDetect.trim().length >= 8) {
         detectTimersRef.current[id] = setTimeout(() => {
-          detectKeyAndModels(id, value);
+          detectKeyAndModels(id, keyForDetect, urlForDetect);
         }, 550);
       }
     }
@@ -280,12 +397,12 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
     });
   };
 
-  // Auto-detect any saved keys that haven't been probed yet when AI settings tab opens
+  // Auto-detect any saved keys that haven't been probed yet when Agent settings tab opens
   useEffect(() => {
     if (isOpen && activeTab === 'ai') {
       apiKeys.forEach(k => {
         if (k.key && k.key.trim().length >= 8 && !k.detectedModel && !detectingIds[k.id] && k.status !== 'error') {
-          detectKeyAndModels(k.id, k.key);
+          detectKeyAndModels(k.id, k.key, k.baseUrl);
         }
       });
     }
@@ -388,6 +505,61 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
     setTimeout(() => setSaveStatus(null), 2500);
   };
 
+  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const modalRef = useRef(null);
+  const dragStartRef = useRef({ startX: 0, startY: 0, initX: 0, initY: 0 });
+
+  const handleDragStart = useCallback((e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('button, input, select, textarea, [role="button"]')) return;
+
+    e.preventDefault();
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initX: dragPosition.x,
+      initY: dragPosition.y
+    };
+    setIsDragging(true);
+
+    let latestX = dragPosition.x;
+    let latestY = dragPosition.y;
+
+    const handlePointerMove = (moveEvt) => {
+      const dx = moveEvt.clientX - dragStartRef.current.startX;
+      const dy = moveEvt.clientY - dragStartRef.current.startY;
+
+      const modalEl = modalRef.current;
+      const modalW = modalEl ? modalEl.offsetWidth : 760;
+      const modalH = modalEl ? modalEl.offsetHeight : 520;
+
+      const maxOffsetX = Math.max(20, (window.innerWidth - modalW) / 2 + (modalW * 0.45));
+      const minOffsetX = -maxOffsetX;
+      const maxOffsetY = Math.max(20, (window.innerHeight - modalH) / 2 + (modalH * 0.45));
+      const minOffsetY = -Math.max(20, (window.innerHeight - modalH) / 2 - 10);
+
+      latestX = Math.max(minOffsetX, Math.min(maxOffsetX, dragStartRef.current.initX + dx));
+      latestY = Math.max(minOffsetY, Math.min(maxOffsetY, dragStartRef.current.initY + dy));
+
+      if (modalEl) {
+        modalEl.style.transform = `translate3d(${latestX}px, ${latestY}px, 0)`;
+      }
+    };
+
+    const handlePointerUp = () => {
+      setIsDragging(false);
+      setDragPosition({ x: latestX, y: latestY });
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  }, [dragPosition]);
+
   // Close on Escape
   useEffect(() => {
     if (!isOpen) return;
@@ -402,7 +574,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
   const categories = [
     { id: 'general', label: 'General', desc: 'Workspace preferences, auto-saving, and system safety' },
-    { id: 'ai', label: 'AI', desc: 'API keys, aliases, and local models' },
+    { id: 'ai', label: 'Agent', desc: 'API keys, model discovery, and agent configuration' },
     { id: 'editor', label: 'Editor', desc: 'Code editing, typography, formatting, and layout' },
     { id: 'spatial', label: 'Spatial Map', desc: '3D celestial canvas, radar minimap, and physics simulation' },
     { id: 'appearance', label: 'Appearance', desc: 'Visual theme, color palettes, and custom theme token overrides' },
@@ -412,19 +584,19 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
   const currentCategory = categories.find(c => c.id === activeTab) || categories[0];
 
   return (
-    /* 🛡️ ZERO BACKGROUND DIM / BLUR: The backdrop is 100% transparent and clear */
+    /* Transparent pass-through container so the Settings window can be dragged anywhere over the editor */
     <div 
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 font-sans select-none pointer-events-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 font-sans select-none pointer-events-none"
     >
-      {/* Settings Window Frame */}
+      {/* Draggable Settings Window Frame */}
       <div 
-        className="w-[760px] h-[520px] max-w-[95vw] max-h-[90vh] rounded-2xl border flex overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.6)] animate-in fade-in zoom-in-95 duration-150"
+        ref={modalRef}
+        className="w-[780px] h-[530px] max-w-[95vw] max-h-[90vh] rounded-xl border flex overflow-hidden shadow-2xl pointer-events-auto will-change-transform"
         style={{
           backgroundColor: 'var(--theme-secondary, #191a1b)',
           borderColor: 'var(--theme-border, #242628)',
+          transform: `translate3d(${dragPosition.x}px, ${dragPosition.y}px, 0)`,
+          cursor: isDragging ? 'grabbing' : 'default'
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -432,20 +604,22 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
         {/* LEFT BAR: Category Sidebar                                        */}
         {/* ----------------------------------------------------------------- */}
         <div 
-          className="w-52 shrink-0 border-r flex flex-col justify-between"
+          className="w-48 shrink-0 border-r flex flex-col justify-between"
           style={{
             backgroundColor: 'var(--theme-surface, #161719)',
             borderColor: 'var(--theme-border, #242628)',
           }}
         >
           <div className="flex flex-col">
-            {/* Sidebar Top Title */}
+            {/* Sidebar Top Title (Draggable Handle) */}
             <div 
-              className="h-11 px-4 border-b flex items-center shrink-0"
+              onPointerDown={handleDragStart}
+              className="h-10 px-3.5 border-b flex items-center justify-between shrink-0 cursor-grab active:cursor-grabbing select-none"
               style={{ borderColor: 'var(--theme-border, #242628)' }}
+              title="Drag to move Settings window"
             >
               <span 
-                className="font-semibold text-[13px] tracking-tight"
+                className="font-medium text-[12px] font-mono tracking-wide pointer-events-none"
                 style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
               >
                 Settings
@@ -453,7 +627,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
             </div>
 
             {/* Category Navigation Items */}
-            <div className="p-2 flex flex-col gap-1">
+            <div className="p-1.5 flex flex-col gap-0.5">
               {categories.map((cat) => {
                 const isActive = activeTab === cat.id;
                 return (
@@ -461,14 +635,14 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     key={cat.id}
                     type="button"
                     onClick={() => setActiveTab(cat.id)}
-                    className={`w-full flex items-center px-3 py-2 rounded-xl text-[12px] font-medium transition-all text-left cursor-pointer border ${
+                    className={`w-full flex items-center px-2.5 py-1.5 rounded-lg text-[11px] font-mono transition-colors text-left cursor-pointer border ${
                       isActive 
-                        ? 'font-semibold shadow-sm' 
-                        : 'opacity-70 hover:opacity-100 border-transparent'
+                        ? 'font-medium shadow-xs' 
+                        : 'border-transparent hover:bg-[var(--theme-surface-hover)]'
                     }`}
                     style={{
                       backgroundColor: isActive ? 'var(--theme-surface-hover, #222426)' : 'transparent',
-                      borderColor: isActive ? 'var(--theme-border-subtle, #2e3032)' : 'transparent',
+                      borderColor: isActive ? 'var(--theme-border, #242628)' : 'transparent',
                       color: isActive ? 'var(--theme-text-bright, #f8fafc)' : 'var(--theme-text-secondary, #94a3b8)',
                     }}
                   >
@@ -477,6 +651,21 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                 );
               })}
             </div>
+          </div>
+
+          {/* Sidebar Bottom Version Indicator */}
+          <div 
+            className="h-9 px-3.5 border-t flex items-center justify-between text-[10px] font-mono"
+            style={{
+              borderColor: 'var(--theme-border, #242628)',
+              color: 'var(--theme-text-muted, #64748b)'
+            }}
+          >
+            <div className="flex items-center gap-1.5">
+              <NeuronLogo size={13} color="var(--theme-accent, #3b82f6)" />
+              <span>Neuron</span>
+            </div>
+            <span style={{ color: 'var(--theme-accent, #3b82f6)' }}>v1.1.0</span>
           </div>
         </div>
 
@@ -487,20 +676,22 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
           className="flex-1 flex flex-col min-w-0"
           style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
         >
-          {/* Content Header */}
+          {/* Content Header (Draggable Handle) */}
           <div 
-            className="h-11 px-5 border-b flex items-center justify-between shrink-0"
+            onPointerDown={handleDragStart}
+            className="h-10 px-5 border-b flex items-center justify-between shrink-0 cursor-grab active:cursor-grabbing select-none"
             style={{ borderColor: 'var(--theme-border, #242628)' }}
+            title="Drag to move Settings window"
           >
-            <div className="flex items-center gap-2 overflow-hidden">
+            <div className="flex items-center gap-2 overflow-hidden pointer-events-none">
               <span 
-                className="text-[13px] font-semibold truncate"
+                className="text-[11.5px] font-mono font-medium truncate"
                 style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
               >
                 {currentCategory.label}
               </span>
               <span 
-                className="text-[11px] truncate hidden sm:inline"
+                className="text-[11px] font-mono truncate hidden sm:inline"
                 style={{ color: 'var(--theme-text-muted, #64748b)' }}
               >
                 · {currentCategory.desc}
@@ -510,25 +701,16 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
             <button 
               type="button"
               onClick={onClose}
-              className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors cursor-pointer"
-              style={{ color: 'var(--theme-text-muted, #64748b)' }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--theme-surface-hover, #222426)';
-                e.currentTarget.style.color = 'var(--theme-text-primary, #cbd5e1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = 'var(--theme-text-muted, #64748b)';
-              }}
+              className="w-6 h-6 flex items-center justify-center rounded-lg transition-colors cursor-pointer text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]"
               title="Close Settings (Esc)"
             >
-              <X size={15} strokeWidth={2} />
+              <X size={14} strokeWidth={2} />
             </button>
           </div>
 
           {/* Settings List Body */}
           <div 
-            className="flex-1 overflow-y-auto px-6 py-4 flex flex-col divide-y"
+            className="flex-1 overflow-y-auto px-5 py-2 flex flex-col divide-y divide-[var(--theme-border)] [&::-webkit-scrollbar]:w-1"
             style={{ borderColor: 'var(--theme-border, #242628)' }}
           >
 
@@ -539,18 +721,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
               <>
                 {/* Auto Save */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Auto Save
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Automatically save dirty files after typing and when switching focus.
@@ -564,18 +746,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* AI Blast Protection */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       AI Blast Protection
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Guards project against uncontrolled rapid multi-file AI mutation bursts.
@@ -589,18 +771,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Confirm on Delete */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Confirm on Delete
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Display a confirmation prompt before permanently deleting files from disk.
@@ -621,69 +803,70 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
               <div className="flex flex-col gap-6 py-2">
                 {/* 1. API Keys & Aliases Section */}
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                    <div className="flex flex-col gap-0.5">
+                  <div 
+                    className="flex items-center justify-between pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
                       <div className="flex items-center gap-2">
                         <span 
-                          className="text-[12px] font-medium"
+                          className="text-[11.5px] font-mono font-medium"
                           style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                         >
                           API Keys & Custom Aliases
                         </span>
                       </div>
                       <span 
-                        className="text-[11px] leading-relaxed"
+                        className="text-[11px] font-sans leading-relaxed"
                         style={{ color: 'var(--theme-text-muted, #64748b)' }}
                       >
-                        Add any AI API key with a custom alias. Neuron automatically queries the key and selects the best available model.
+                        Supports Google Gemini (AIza, AQ), Grok / xAI, Groq, OpenRouter, Cerebras, DeepSeek, Mistral, and custom OpenAI-compatible endpoints. Neuron discovers and selects the best model dynamically.
                       </span>
                     </div>
 
                     <button
                       type="button"
                       onClick={handleAddApiKey}
-                      className="w-7 h-7 rounded flex items-center justify-center transition-colors cursor-pointer border hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)] shrink-0"
+                      className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors cursor-pointer border hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)] text-[var(--theme-text-muted)] shrink-0"
                       style={{
                         backgroundColor: 'var(--theme-surface, #161719)',
                         borderColor: 'var(--theme-border, #242628)',
-                        color: 'var(--theme-text-primary, #cbd5e1)'
                       }}
                       title="Add API Key"
                     >
-                      <Plus size={14} />
+                      <Plus size={13} />
                     </button>
                   </div>
 
                   {/* List of Configured Keys */}
                   {apiKeys.length === 0 ? (
                     <div 
-                      className="p-5 rounded-xl border border-dashed flex flex-col items-center justify-center text-center gap-2"
+                      className="p-4 rounded-lg border border-dashed flex flex-col items-center justify-center text-center gap-1.5"
                       style={{
                         backgroundColor: 'var(--theme-surface, #161719)',
                         borderColor: 'var(--theme-border, #242628)',
                         color: 'var(--theme-text-muted, #64748b)'
                       }}
                     >
-                      <span className="text-[12px] font-mono font-medium">No API keys configured yet</span>
+                      <span className="text-[11.5px] font-mono font-medium">No API keys configured yet</span>
                       <p className="text-[11px] max-w-xs font-sans">
-                        Add an API key with a custom alias to automatically discover and use its best available model, or use Local AI below.
+                        Add an API key to automatically discover its best available model, or use local offline models below.
                       </p>
                       <button
                         type="button"
                         onClick={handleAddApiKey}
-                        className="mt-1 w-7 h-7 rounded flex items-center justify-center border hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
+                        className="mt-1 w-6 h-6 rounded-lg flex items-center justify-center border hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)] text-[var(--theme-text-muted)] transition-colors cursor-pointer"
                         style={{
                           backgroundColor: 'var(--theme-secondary, #191a1b)',
                           borderColor: 'var(--theme-border, #242628)',
-                          color: 'var(--theme-text-primary, #cbd5e1)'
                         }}
                         title="Add API Key"
                       >
-                        <Plus size={14} />
+                        <Plus size={13} />
                       </button>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-2.5">
+                    <div className="flex flex-col gap-2">
                       {apiKeys.map((k) => {
                         const isActive = activeApiKeyId === k.id;
                         const isRevealed = revealedKeyIds.has(k.id);
@@ -692,7 +875,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                         return (
                           <div 
                             key={k.id}
-                            className="p-3 rounded-xl border flex flex-col gap-2.5 transition-all"
+                            className="p-2.5 rounded-lg border flex flex-col gap-2 transition-all"
                             style={{
                               backgroundColor: 'var(--theme-surface, #161719)',
                               borderColor: isActive ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-border, #242628)',
@@ -704,7 +887,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                 <button
                                   type="button"
                                   onClick={() => handleSetActiveApiKey(k.id)}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer border shrink-0 ${
+                                  className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-colors cursor-pointer border shrink-0 ${
                                     isActive 
                                       ? 'font-semibold' 
                                       : 'hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)]'
@@ -730,7 +913,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                   value={k.alias || ""}
                                   onChange={(e) => handleUpdateApiKey(k.id, 'alias', e.target.value)}
                                   placeholder="Key Alias (e.g. Work Key)..."
-                                  className="text-[11px] font-mono font-medium px-2 py-1 rounded border outline-none focus:border-[var(--theme-accent)] transition-colors flex-1 max-w-[220px]"
+                                  className="text-[11px] font-mono font-medium px-2 py-1 rounded-lg border outline-none focus:border-[var(--theme-accent)] transition-colors flex-1 max-w-[220px]"
                                   style={{
                                     backgroundColor: 'var(--theme-background, #121314)',
                                     borderColor: 'var(--theme-border, #242628)',
@@ -743,7 +926,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                               <div className="flex items-center gap-2 shrink-0">
                                 {isDetecting ? (
                                   <span 
-                                    className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded border"
+                                    className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md border"
                                     style={{
                                       backgroundColor: 'var(--theme-background, #121314)',
                                       borderColor: 'var(--theme-border, #242628)',
@@ -756,7 +939,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                 ) : k.detectedModel ? (
                                   <div className="flex items-center gap-1">
                                     <span 
-                                      className="text-[10px] font-mono px-2 py-0.5 rounded border max-w-[220px] truncate"
+                                      className="text-[10px] font-mono px-2 py-0.5 rounded-md border max-w-[220px] truncate"
                                       style={{
                                         backgroundColor: 'var(--theme-background, #121314)',
                                         borderColor: 'var(--theme-border, #242628)',
@@ -769,7 +952,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                     <button
                                       type="button"
                                       onClick={() => detectKeyAndModels(k.id, k.key)}
-                                      className="p-1 rounded text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors cursor-pointer"
+                                      className="p-1 rounded-md text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors cursor-pointer"
                                       title="Re-scan available models for this key"
                                     >
                                       <RefreshCw size={11} />
@@ -778,7 +961,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                 ) : k.status === 'error' ? (
                                   <div className="flex items-center gap-1">
                                     <span 
-                                      className="text-[10px] font-mono px-2 py-0.5 rounded border max-w-[200px] truncate"
+                                      className="text-[10px] font-mono px-2 py-0.5 rounded-md border max-w-[200px] truncate"
                                       style={{
                                         backgroundColor: 'var(--theme-background, #121314)',
                                         borderColor: 'var(--theme-border, #242628)',
@@ -792,7 +975,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                       <button
                                         type="button"
                                         onClick={() => detectKeyAndModels(k.id, k.key)}
-                                        className="p-1 rounded text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors cursor-pointer"
+                                        className="p-1 rounded-md text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors cursor-pointer"
                                         title="Retry model detection"
                                       >
                                         <RefreshCw size={11} />
@@ -801,7 +984,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                   </div>
                                 ) : (
                                   <span 
-                                    className="text-[10px] font-mono px-2 py-0.5 rounded border"
+                                    className="text-[10px] font-mono px-2 py-0.5 rounded-md border"
                                     style={{
                                       backgroundColor: 'var(--theme-background, #121314)',
                                       borderColor: 'var(--theme-border, #242628)',
@@ -815,10 +998,10 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteApiKey(k.id)}
-                                  className="p-1 rounded text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] transition-colors cursor-pointer"
+                                  className="p-1 rounded-md text-[var(--theme-text-muted)] hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                                   title="Delete API Key"
                                 >
-                                  <Trash2 size={13} />
+                                  <Trash2 size={12} strokeWidth={1.75} />
                                 </button>
                               </div>
                             </div>
@@ -830,9 +1013,9 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                   type={isRevealed ? "text" : "password"}
                                   value={k.key || ""}
                                   onChange={(e) => handleUpdateApiKey(k.id, 'key', e.target.value)}
-                                  placeholder="Enter any AI API key..."
+                                  placeholder="API key (Google Gemini, Grok, Groq, OpenRouter, Cerebras, DeepSeek, OpenAI...)"
                                   spellCheck={false}
-                                  className="w-full text-[11px] font-mono rounded-lg pl-3 pr-8 py-1.5 border outline-none focus:border-[var(--theme-accent)] transition-colors"
+                                  className="w-full text-[11px] font-mono rounded-lg pl-2.5 pr-8 py-1 border outline-none focus:border-[var(--theme-accent)] transition-colors"
                                   style={{
                                     backgroundColor: 'var(--theme-background, #121314)',
                                     borderColor: 'var(--theme-border, #242628)',
@@ -849,6 +1032,22 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                                 </button>
                               </div>
                             </div>
+
+                            {/* Custom Base URL Line (Optional) */}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={k.baseUrl || ""}
+                                onChange={(e) => handleUpdateApiKey(k.id, 'baseUrl', e.target.value)}
+                                placeholder="Custom Base URL (optional, e.g. https://api.deepseek.com or http://localhost:1234/v1)"
+                                spellCheck={false}
+                                className="w-full text-[10.5px] font-mono rounded-lg px-2.5 py-1 border outline-none focus:border-[var(--theme-accent)] transition-colors text-[var(--theme-text-secondary)] placeholder:text-[var(--theme-text-muted)] placeholder:text-[10px]"
+                                style={{
+                                  backgroundColor: 'var(--theme-background, #121314)',
+                                  borderColor: 'var(--theme-border, #242628)'
+                                }}
+                              />
+                            </div>
                           </div>
                         );
                       })}
@@ -856,23 +1055,23 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                   )}
                 </div>
 
-                {/* 2. Local AI (Ollama) */}
+                {/* 2. Local Models (Ollama) */}
                 <div 
-                  className="pt-4 border-t flex flex-col gap-3"
+                  className="pt-3 border-t flex flex-col gap-2"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
+                  <div className="flex items-center justify-between pb-1 border-b" style={{ borderColor: 'var(--theme-border, #242628)' }}>
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-2">
                         <span 
-                          className="text-[12px] font-medium"
+                          className="text-[11.5px] font-mono font-medium"
                           style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                         >
-                          Local AI (Ollama)
+                          Local Models (Ollama)
                         </span>
                       </div>
                       <span 
-                        className="text-[11px] leading-relaxed"
+                        className="text-[11px] font-sans leading-relaxed"
                         style={{ color: 'var(--theme-text-muted, #64748b)' }}
                       >
                         Run inference 100% offline on your local hardware. Automatically discovers and selects the best installed local model.
@@ -882,7 +1081,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     <button
                       type="button"
                       onClick={() => handleSetActiveApiKey('local-ollama')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer border shrink-0 ${
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-colors cursor-pointer border shrink-0 ${
                         activeApiKeyId === 'local-ollama'
                           ? 'font-semibold'
                           : 'hover:border-[var(--theme-accent)] hover:text-[var(--theme-text-bright)]'
@@ -911,21 +1110,21 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* 3. Autonomous Execution Guard */}
                 <div 
-                  className="pt-4 border-t flex items-center justify-between gap-6"
+                  className="pt-3 border-t flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Require Tool Execution Approval
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
-                      When enabled, the AI pauses and asks for confirmation before executing terminal commands or modifying files.
+                      When enabled, the agent pauses and asks for confirmation before executing terminal commands or modifying files.
                     </span>
                   </div>
                   <MinimalToggle 
@@ -943,18 +1142,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
               <>
                 {/* Font Size */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Font Size
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Controls the font size in pixels for the Monaco code editor.
@@ -962,26 +1161,27 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                   </div>
                   <MinimalNumberInput 
                     value={settings?.fontSize || 13} 
-                    min={10} 
-                    max={28} 
+                    min={8} 
+                    max={64} 
+                    step={1}
                     onChange={(val) => updateSetting('fontSize', val)} 
                   />
                 </div>
 
                 {/* Tab Size */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Tab Size
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       The number of spaces a tab is equal to.
@@ -1000,18 +1200,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Word Wrap */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Word Wrap
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Controls how lines should wrap in the code editor.
@@ -1030,18 +1230,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Line Numbers */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Line Numbers
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Controls the display and format of line numbers in the gutter.
@@ -1060,18 +1260,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Code Minimap */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Code Minimap
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Shows an overview minimap alongside code in the editor scrollbar.
@@ -1085,18 +1285,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Format On Paste */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Format On Paste
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Automatically formats pasted code blocks according to syntax conventions.
@@ -1115,20 +1315,468 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
             {/* ============================================================= */}
             {activeTab === 'spatial' && (
               <>
-                {/* Spatial Minimap (Radar) */}
+                {/* Global Circle (Node) Size */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Global Circle Size
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Global scale multiplier for all folder, file, and function circles on the spatial map.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialNodeScale ?? 1.0} 
+                    min={0.05} 
+                    max={10.0} 
+                    step={0.05} 
+                    onChange={(val) => updateSetting('spatialNodeScale', val)} 
+                  />
+                </div>
+
+                {/* Global Connecting Line Size */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Global Connecting Line Size
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Global thickness multiplier for all hierarchy, call, and bridge connecting lines.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialLineScale ?? 1.0} 
+                    min={0.05} 
+                    max={10.0} 
+                    step={0.05} 
+                    onChange={(val) => updateSetting('spatialLineScale', val)} 
+                  />
+                </div>
+
+                {/* Global Text (Label) Size */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Global Text Size
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Global font size multiplier for all node text labels in the spatial map.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialTextScale ?? 1.0} 
+                    min={0.05} 
+                    max={8.0} 
+                    step={0.05} 
+                    onChange={(val) => updateSetting('spatialTextScale', val)} 
+                  />
+                </div>
+
+                {/* Animation Speed */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Animation Speed
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Global animation speed multiplier for node spawning, merge transitions, photons, and pulses.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialAnimationSpeed ?? 1.0} 
+                    min={0.05} 
+                    max={5.0} 
+                    step={0.05} 
+                    onChange={(val) => updateSetting('spatialAnimationSpeed', val)} 
+                  />
+                </div>
+
+                {/* Selected Connection Line Thickness */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Selected Blue Line Thickness
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Stroke thickness for actively selected, hovered, and ray-traced celestial connection lines.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialSelectedLineWidth ?? 3.8} 
+                    min={0.2} 
+                    max={20.0} 
+                    step={0.1} 
+                    onChange={(val) => updateSetting('spatialSelectedLineWidth', val)} 
+                  />
+                </div>
+
+                {/* Bridging Line Thickness */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Bridging Line Thickness
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Stroke thickness for cross-stack network bridge lines between frontend and backend architectures.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialBridgeLineWidth ?? 2.5} 
+                    min={0.2} 
+                    max={20.0} 
+                    step={0.1} 
+                    onChange={(val) => updateSetting('spatialBridgeLineWidth', val)} 
+                  />
+                </div>
+
+                {/* Purple Call Line Thickness */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Purple Call Line Thickness
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Stroke thickness for purple function call and cross-file invocation dependency lines.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialPurpleLineWidth ?? 1.6} 
+                    min={0.2} 
+                    max={20.0} 
+                    step={0.1} 
+                    onChange={(val) => updateSetting('spatialPurpleLineWidth', val)} 
+                  />
+                </div>
+
+                {/* Folder Names Visibility Distance */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Folder Names Visibility Distance
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Camera zoom distance threshold where directory and module folder names become visible.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialFolderLabelZoom ?? 0.10} 
+                    min={0.005} 
+                    max={3.0} 
+                    step={0.005} 
+                    onChange={(val) => updateSetting('spatialFolderLabelZoom', val)} 
+                  />
+                </div>
+
+                {/* File Names Visibility Distance */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      File Names Visibility Distance
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Camera zoom distance threshold where source code file names become visible.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialFileLabelZoom ?? 0.25} 
+                    min={0.01} 
+                    max={4.0} 
+                    step={0.01} 
+                    onChange={(val) => updateSetting('spatialFileLabelZoom', val)} 
+                  />
+                </div>
+
+                {/* Function Names Visibility Distance */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Function Names Visibility Distance
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Camera zoom distance threshold where individual function and symbol names become visible.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialFuncLabelZoom ?? 0.55} 
+                    min={0.01} 
+                    max={5.0} 
+                    step={0.01} 
+                    onChange={(val) => updateSetting('spatialFuncLabelZoom', val)} 
+                  />
+                </div>
+
+                {/* Merged Orb Repulsion & Spacing */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      Merged Orb Repulsion & Spacing
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Controls how strongly enlarged and merged orbs repulse each other to prevent overlapping.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialMergeRepulsion ?? 1.5} 
+                    min={0.05} 
+                    max={15.0} 
+                    step={0.05} 
+                    onChange={(val) => updateSetting('spatialMergeRepulsion', val)} 
+                  />
+                </div>
+
+                {/* LOD Transition Speed */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      LOD Merge / Divide Transition Speed
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Controls how fast circles snap through the procedural merge and division transition.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialTransitionSpeed ?? 0.28} 
+                    min={0.01} 
+                    max={2.0} 
+                    step={0.01} 
+                    onChange={(val) => updateSetting('spatialTransitionSpeed', val)} 
+                  />
+                </div>
+
+                {/* LOD 1: Functions -> Files */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      LOD Level 1 (Functions ↔ Files Zoom)
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Camera zoom threshold where function orbs merge into and divide from their parent file orbs.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialLod1Zoom ?? 0.35} 
+                    min={0.01} 
+                    max={3.0} 
+                    step={0.01} 
+                    onChange={(val) => updateSetting('spatialLod1Zoom', val)} 
+                  />
+                </div>
+
+                {/* LOD 2: Files -> Folders */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      LOD Level 2 (Files ↔ Folders Zoom)
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Camera zoom threshold where file orbs merge into and divide from their parent folder orbs.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialLod2Zoom ?? 0.22} 
+                    min={0.005} 
+                    max={2.0} 
+                    step={0.005} 
+                    onChange={(val) => updateSetting('spatialLod2Zoom', val)} 
+                  />
+                </div>
+
+                {/* LOD 3: Subfolders -> Parent Folders */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      LOD Level 3 (Subfolders ↔ Root Folders Zoom)
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Camera zoom threshold where nested subfolders merge up into their parent/root folder orbs.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialLod3Zoom ?? 0.12} 
+                    min={0.002} 
+                    max={1.5} 
+                    step={0.005} 
+                    onChange={(val) => updateSetting('spatialLod3Zoom', val)} 
+                  />
+                </div>
+
+                {/* LOD 4: Root Folders -> Core Hub */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
+                      style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                    >
+                      LOD Level 4 (Root Folders ↔ Core Hub Zoom)
+                    </span>
+                    <span 
+                      className="text-[11px] font-sans leading-relaxed"
+                      style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                    >
+                      Farthest camera zoom threshold where top-level folders coalesce into the primary workspace core.
+                    </span>
+                  </div>
+                  <MinimalSliderNumberInput 
+                    value={settings?.spatialLod4Zoom ?? 0.05} 
+                    min={0.001} 
+                    max={1.0} 
+                    step={0.002} 
+                    onChange={(val) => updateSetting('spatialLod4Zoom', val)} 
+                  />
+                </div>
+
+                {/* Spatial Minimap (Radar) */}
+                <div 
+                  className="py-3 flex items-center justify-between gap-6"
+                  style={{ borderColor: 'var(--theme-border, #242628)' }}
+                >
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
+                    <span 
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Spatial Minimap (Radar)
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Displays a high-performance radar minimap card in the corner of the canvas.
@@ -1142,18 +1790,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Show Node Labels */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Show Node Labels
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Renders file and function identifier labels above celestial nodes.
@@ -1167,18 +1815,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Laser Bridge Photons */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Laser Bridge Photons
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Renders high-speed traveling photon energy packets across dependency bridges.
@@ -1192,18 +1840,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
 
                 {/* Physics Simulation */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Physics Simulation
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Enables real-time WebGPU node repulsion, collision, and spring physics.
@@ -1224,18 +1872,18 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
               <>
                 {/* Theme Preset Dropdown */}
                 <div 
-                  className="py-3.5 flex items-center justify-between gap-6"
+                  className="py-3 flex items-center justify-between gap-6"
                   style={{ borderColor: 'var(--theme-border, #242628)' }}
                 >
-                  <div className="flex flex-col gap-0.5 max-w-[380px]">
+                  <div className="flex flex-col gap-0.5 max-w-[420px]">
                     <span 
-                      className="text-[12px] font-medium"
+                      className="text-[11.5px] font-mono font-medium"
                       style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                     >
                       Theme Preset
                     </span>
                     <span 
-                      className="text-[11px] leading-relaxed"
+                      className="text-[11px] font-sans leading-relaxed"
                       style={{ color: 'var(--theme-text-muted, #64748b)' }}
                     >
                       Select an active theme preset to view, live test, and tweak its color tokens.
@@ -1288,23 +1936,23 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                   <div className="flex items-center gap-3">
                     {saveStatus === 'saved' && (
                       <span className="text-[11px] font-mono text-emerald-400 animate-in fade-in duration-150">
-                        ✓ Theme saved
+                        Theme saved
                       </span>
                     )}
                     {saveStatus === 'restored' && (
                       <span className="text-[11px] font-mono text-cyan-400 animate-in fade-in duration-150">
-                        ✓ Theme restored
+                        Theme restored
                       </span>
                     )}
                     {saveStatus === 'restored_all' && (
                       <span className="text-[11px] font-mono text-cyan-400 animate-in fade-in duration-150">
-                        ✓ All defaults restored
+                        All defaults restored
                       </span>
                     )}
                     <button
                       type="button"
                       onClick={handleRestoreAll}
-                      className="px-2.5 py-1 rounded-lg text-[10px] font-mono transition-colors cursor-pointer border border-transparent hover:border-red-800/40 hover:bg-red-950/30 text-[var(--theme-text-muted)] hover:text-red-400"
+                      className="px-2.5 py-1.5 rounded-lg text-[10px] font-mono transition-colors cursor-pointer border border-transparent hover:border-red-800/40 hover:bg-red-950/30 text-[var(--theme-text-muted)] hover:text-red-400"
                       title="Reset all themes to original defaults"
                     >
                       Restore All Defaults
@@ -1321,15 +1969,15 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                       className="py-3 flex items-center justify-between gap-6"
                       style={{ borderColor: 'var(--theme-border, #242628)' }}
                     >
-                      <div className="flex flex-col gap-0.5 max-w-[380px]">
+                      <div className="flex flex-col gap-0.5 max-w-[420px]">
                         <span 
-                          className="text-[12px] font-medium"
+                          className="text-[11.5px] font-mono font-medium"
                           style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                         >
                           {token.label}
                         </span>
                         <span 
-                          className="text-[11px] leading-relaxed"
+                          className="text-[11px] font-sans leading-relaxed"
                           style={{ color: 'var(--theme-text-muted, #64748b)' }}
                         >
                           {token.desc}
@@ -1339,7 +1987,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                       <div className="flex items-center gap-2 shrink-0">
                         {/* Native color picker swatch */}
                         <div 
-                          className="relative w-7 h-7 rounded-lg overflow-hidden border cursor-pointer shrink-0 shadow-sm transition-transform hover:scale-105"
+                          className="relative w-6 h-6 rounded-lg overflow-hidden border cursor-pointer shrink-0 shadow-sm transition-transform hover:scale-105"
                           style={{ borderColor: 'var(--theme-border, #242628)' }}
                           title="Click to pick color"
                         >
@@ -1357,7 +2005,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                           maxLength={7}
                           value={hexVal}
                           onChange={(e) => handleTokenChange(token.key, e.target.value)}
-                          className="w-20 text-[11px] font-mono uppercase rounded-lg px-2 py-1 border outline-none text-center transition-colors"
+                          className="w-20 text-[11px] font-mono uppercase rounded-lg px-2 py-1 border outline-none text-center transition-colors focus:border-[var(--theme-accent)]"
                           style={{
                             backgroundColor: 'var(--theme-surface, #161719)',
                             borderColor: 'var(--theme-border, #242628)',
@@ -1389,8 +2037,11 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                         {grp.group}
                       </span>
                       <span 
-                        className="text-[10px] font-mono" 
-                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                        className="text-[9px] font-mono px-1.5 py-0.5 rounded leading-none" 
+                        style={{ 
+                          backgroundColor: 'var(--theme-surface-active, #222426)',
+                          color: 'var(--theme-text-muted, #64748b)' 
+                        }}
                       >
                         {grp.shortcuts.length} shortcuts
                       </span>
@@ -1403,15 +2054,15 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                           className="py-2.5 flex items-center justify-between gap-4"
                           style={{ borderColor: 'var(--theme-border, #242628)' }}
                         >
-                          <div className="flex flex-col gap-0.5 max-w-[380px]">
+                          <div className="flex flex-col gap-0.5 max-w-[420px]">
                             <span 
-                              className="text-[12px] font-medium" 
+                              className="text-[11.5px] font-mono font-medium" 
                               style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
                             >
                               {sc.label}
                             </span>
                             <span 
-                              className="text-[11px] leading-relaxed" 
+                              className="text-[11px] font-sans leading-relaxed" 
                               style={{ color: 'var(--theme-text-muted, #64748b)' }}
                             >
                               {sc.desc}
@@ -1422,7 +2073,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                             {sc.keys.map((k, i) => (
                               <kbd
                                 key={i}
-                                className="px-2 py-0.5 rounded-md border text-[11px] font-mono font-medium shadow-xs"
+                                className="px-2 py-0.5 rounded-md border text-[10.5px] font-mono font-medium shadow-xs"
                                 style={{
                                   backgroundColor: 'var(--theme-surface, #161719)',
                                   borderColor: 'var(--theme-border, #242628)',

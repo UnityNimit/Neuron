@@ -123,7 +123,9 @@ export default function Sidebar({
   }, [currentFile]);
 
   const rootFolderName = useMemo(() => {
-    return absTargetDir ? absTargetDir.split(/[/\\]/).pop().toUpperCase() : "WORKSPACE";
+    if (!absTargetDir) return "workspace";
+    const parts = absTargetDir.split(/[/\\]/).filter(Boolean);
+    return parts[parts.length - 1] || "workspace";
   }, [absTargetDir]);
 
   // SMART GIT FOLDER STATUS (Propagates 'M', 'A', 'D', 'U' indicators up to parent folders)
@@ -397,20 +399,21 @@ export default function Sidebar({
       {/* 2. ROOT WORKSPACE FOLDER TOGGLER                                  */}
       {/* ----------------------------------------------------------------- */}
       <div 
-        className="px-2.5 py-1 text-[11px] font-mono font-bold tracking-wider flex items-center gap-1 shrink-0 hover:bg-[var(--theme-surface-hover)] cursor-pointer transition-colors select-none" 
+        className="h-[24px] px-2 text-[11px] font-mono font-medium flex items-center gap-1.5 shrink-0 hover:bg-[var(--theme-surface-hover)] cursor-pointer transition-colors select-none" 
         style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
         onClick={() => setIsRootCollapsed(!isRootCollapsed)}
       >
         {isRootCollapsed ? (
-          <ChevronRight size={13} className="text-slate-500 shrink-0" />
+          <ChevronRight size={12} className="text-[var(--theme-text-muted)] shrink-0" />
         ) : (
-          <ChevronDown size={13} className="text-slate-500 shrink-0" />
+          <ChevronDown size={12} className="text-[var(--theme-text-muted)] shrink-0" />
         )}
-        <span className="truncate font-bold">{rootFolderName}</span>
+        <Folder size={13} style={{ color: 'var(--theme-folder-icon, #dcb67a)' }} className="shrink-0" />
+        <span className="truncate font-medium">{rootFolderName}</span>
       </div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* 3. MINIMALIST FILE TREE (Super Clean Unboxed Git Badges)          */}
+      {/* 3. MINIMALIST FILE TREE (Super Clean Compact Rows & Depth Lines)  */}
       {/* ----------------------------------------------------------------- */}
       {!isRootCollapsed && (
         <div className="flex-grow overflow-y-auto pb-4 outline-none [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-[#191a1b] [&::-webkit-scrollbar-thumb]:bg-[#2a2c2e] [&::-webkit-scrollbar-thumb:hover]:bg-[#3b82f6]">
@@ -419,20 +422,22 @@ export default function Sidebar({
             // === A. INLINE FILE CREATION ROW ===
             if (item.isInlineInput) {
               const depth = item.parentPath ? (item.parentPath.match(/\//g) || []).length + 1 : 0;
+              const indentLevel = depth + 1;
+              const padLeft = (indentLevel * 14) + 6;
               return (
                 <div 
                   key="inline-input" 
-                  style={{ paddingLeft: `${(depth * 14) + 8}px` }} 
-                  className="relative flex items-center gap-1.5 pr-2 py-1 bg-[#26282a]"
+                  style={{ paddingLeft: `${padLeft}px` }} 
+                  className="h-[22px] relative flex items-center gap-1.5 pr-2 bg-[var(--theme-surface-active)]"
                 >
-                  {Array.from({ length: depth }).map((_, i) => (
+                  {Array.from({ length: indentLevel }).map((_, i) => (
                     <div 
                       key={i} 
                       style={{ left: `${(i * 14) + 14}px` }} 
-                      className="absolute top-0 bottom-0 w-[1px] bg-[#2a2c2e]" 
+                      className="absolute top-0 bottom-0 w-[1px] bg-[var(--theme-border)]/60 pointer-events-none" 
                     />
                   ))}
-                  <div className="w-[14px]" />
+                  <div className="w-[13px] shrink-0" />
                   {item.type === 'folder' ? (
                     <Folder size={13} style={{ color: 'var(--theme-folder-icon, #dcb67a)' }} className="shrink-0" />
                   ) : (
@@ -447,7 +452,7 @@ export default function Sidebar({
                       if (e.key === 'Enter') commitInlineCreate(inputValue); 
                       if (e.key === 'Escape') setInlineCreate(null); 
                     }} 
-                    className="w-full text-[11px] font-mono border border-blue-500 outline-none px-1.5 py-0.5 rounded shadow-inner" 
+                    className="w-full h-[18px] text-[11px] font-mono border border-[var(--theme-accent)] outline-none px-1 py-0 rounded" 
                     style={{
                       backgroundColor: 'var(--theme-background, #121314)',
                       color: 'var(--theme-text-primary, #e2e8f0)'
@@ -460,13 +465,15 @@ export default function Sidebar({
             // === B. NORMAL TREE ROW (With Clean Unboxed Git Status) ===
             const isFolder = item.type === 'folder';
             const depth = (item.path.match(/\//g) || []).length;
+            const indentLevel = depth + 1;
+            const padLeft = (indentLevel * 14) + 6;
             const isSelected = selectedPath === item.path;
             const isActiveFile = currentFile === item.path && !isFolder;
             const isBeingRenamed = inlineRename?.item?.path === item.path;
             const isDirty = !isFolder && Boolean(dirtyFiles && dirtyFiles.has(item.path));
             const isIgnored = isPathIgnored(item.path);
 
-            // 🚀 CLEAN MINIMALIST GIT STATUS COMPUTATION (No Boxes, No Borders)
+            // Clean Minimalist Git Status Computation
             let gStatus = isFolder ? folderGitStatus[item.path] : (gitStatuses || {})[item.path];
             if (!isFolder && isDirty && (!gStatus || gStatus === 'I')) {
               gStatus = 'M';
@@ -476,25 +483,25 @@ export default function Sidebar({
             let badgeColor = '';
             
             if (isDirty) {
-              gitColor = 'text-amber-500 font-normal';
+              gitColor = 'text-amber-500 font-medium';
               badgeColor = 'text-amber-500';
             } else if (gStatus === 'U' || gStatus === 'A') { 
-              gitColor = 'text-emerald-500 font-normal'; 
-              badgeColor = 'text-emerald-500'; // Clean unboxed green
+              gitColor = 'text-emerald-500 font-medium'; 
+              badgeColor = 'text-emerald-500';
             } else if (gStatus === 'M') { 
-              gitColor = 'text-amber-500 font-normal'; 
-              badgeColor = 'text-amber-500';   // Clean unboxed orange-yellow
+              gitColor = 'text-amber-500 font-medium'; 
+              badgeColor = 'text-amber-500';
             } else if (gStatus === 'D') { 
-              gitColor = 'text-red-500 font-normal'; 
-              badgeColor = 'text-red-500';     // Clean unboxed red
+              gitColor = 'text-red-500 font-medium'; 
+              badgeColor = 'text-red-500';
             }
 
             if (isActiveFile && gitColor === 'text-[var(--theme-text-primary)]') {
-              gitColor = 'text-[var(--theme-text-bright)] font-semibold';
+              gitColor = 'text-[var(--theme-text-bright)] font-medium';
             }
 
             if (isIgnored && !isDirty && !isActiveFile) {
-              gitColor = 'text-[var(--theme-text-muted)] opacity-60 font-normal';
+              gitColor = 'text-[var(--theme-text-muted)] opacity-60 font-medium';
               badgeColor = '';
             }
 
@@ -533,36 +540,38 @@ export default function Sidebar({
                     }
                   }
                 }}
-                style={{ paddingLeft: `${(depth * 14) + 8}px` }}
-                className={`relative flex items-center justify-between pr-2 py-1 cursor-pointer text-[11px] font-mono font-normal group transition-colors select-none ${
+                style={{ paddingLeft: `${padLeft}px` }}
+                className={`h-[22px] relative flex items-center justify-between pr-2 cursor-pointer text-[11px] font-mono font-medium group transition-colors select-none leading-none ${
                   dragOverPath === item.path 
                     ? 'bg-blue-600/30 border border-blue-500/50' 
                     : isSelected 
-                      ? 'bg-[var(--theme-surface-active)] text-[var(--theme-text-bright)] font-medium' 
+                      ? 'bg-[var(--theme-surface-active)] text-[var(--theme-text-bright)]' 
                       : isActiveFile
-                        ? 'bg-[var(--theme-surface-hover)] text-[var(--theme-text-bright)] font-medium'
+                        ? 'bg-[var(--theme-surface-hover)] text-[var(--theme-text-bright)]'
                         : isIgnored
-                          ? 'text-[var(--theme-text-muted)] opacity-60 hover:bg-[var(--theme-surface-hover)] hover:opacity-100 border border-transparent'
-                          : 'text-[var(--theme-text-primary)] hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] border border-transparent'
+                          ? 'text-[var(--theme-text-muted)] opacity-60 hover:bg-[var(--theme-surface-hover)] hover:opacity-100'
+                          : 'text-[var(--theme-text-primary)] hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)]'
                 }`}
               >
                 {/* Visual Indentation Guide Lines */}
-                {Array.from({ length: depth }).map((_, i) => (
+                {Array.from({ length: indentLevel }).map((_, i) => (
                   <div 
                     key={i} 
                     style={{ left: `${(i * 14) + 14}px` }} 
-                    className="absolute top-0 bottom-0 w-[1px] bg-[var(--theme-border)] group-hover:bg-[var(--theme-border-hover)]" 
+                    className="absolute top-0 bottom-0 w-[1px] bg-[var(--theme-border)]/50 group-hover:bg-[var(--theme-border-hover)] pointer-events-none" 
                   />
                 ))}
 
-                <div className="flex items-center gap-1.5 overflow-hidden z-10 flex-1 mr-1">
+                <div className="flex items-center gap-1.5 overflow-hidden z-10 flex-1 mr-1 leading-none">
                   {isFolder ? (
                     <>
-                      {collapsedFolders[item.path] ? (
-                        <ChevronRight size={13} className="text-[var(--theme-text-muted)] shrink-0" />
-                      ) : (
-                        <ChevronDown size={13} className="text-[var(--theme-text-muted)] shrink-0" />
-                      )}
+                      <div className="w-[13px] h-[13px] flex items-center justify-center shrink-0">
+                        {collapsedFolders[item.path] ? (
+                          <ChevronRight size={12} className="text-[var(--theme-text-muted)] shrink-0" />
+                        ) : (
+                          <ChevronDown size={12} className="text-[var(--theme-text-muted)] shrink-0" />
+                        )}
+                      </div>
                       <Folder size={13} style={{ color: isIgnored ? 'var(--theme-text-muted)' : 'var(--theme-folder-icon, #dcb67a)' }} className={`shrink-0 ${isIgnored ? 'opacity-40' : ''}`} />
                     </>
                   ) : (
@@ -589,30 +598,30 @@ export default function Sidebar({
                         if (e.key === 'Enter') commitInlineRename(renameValue);
                         if (e.key === 'Escape') setInlineRename(null);
                       }}
-                      className="w-full text-[11px] font-mono border border-blue-500 outline-none px-1 rounded shadow-inner"
+                      className="w-full h-[18px] text-[11px] font-mono border border-[var(--theme-accent)] outline-none px-1 py-0 rounded"
                       style={{
                         backgroundColor: 'var(--theme-background, #121314)',
                         color: 'var(--theme-text-primary, #e2e8f0)'
                       }}
                     />
                   ) : (
-                    <span className={`truncate text-[11px] font-mono font-normal ${gitColor}`}>
+                    <span className={`truncate text-[11px] font-mono font-medium leading-none ${gitColor}`}>
                       {item.path.split('/').pop()}
                     </span>
                   )}
                 </div>
 
-                {/* 🚀 CLEAN UNBOXED GIT BADGES & DIRTY DOT INDICATOR */}
+                {/* Clean Unboxed Git Badges & Dirty Dot Indicator */}
                 {!isBeingRenamed && (
-                  <div className="flex items-center gap-1.5 shrink-0 z-10 bg-inherit pl-1">
+                  <div className="flex items-center gap-1.5 shrink-0 z-10 bg-inherit pl-1 leading-none">
                     {isDirty && (
                       <span 
-                        className="w-2 h-2 rounded-full bg-amber-400 shrink-0 transition-opacity" 
+                        className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 transition-opacity" 
                         title="Unsaved changes"
                       />
                     )}
                     {gStatus && gStatus !== 'I' && (
-                      <span className={`text-[10px] font-mono font-bold ${badgeColor} transition-opacity pr-0.5`}>
+                      <span className={`text-[10px] font-mono font-semibold leading-none ${badgeColor} transition-opacity pr-0.5`}>
                         {gStatus}
                       </span>
                     )}
@@ -624,7 +633,7 @@ export default function Sidebar({
                       className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity p-0.5 rounded" 
                       title="Delete"
                     >
-                      <X size={12} />
+                      <X size={11} />
                     </button>
                   </div>
                 )}

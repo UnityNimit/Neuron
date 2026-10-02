@@ -443,7 +443,7 @@ export default function SourceControlPanel({
           )}
         </div>
 
-        {/* --- 🚀 GIT COMMIT GRAPH SECTION (Exact VS Code Layout) --- */}
+        {/* ---  GIT COMMIT GRAPH SECTION (Exact VS Code Layout) --- */}
         <div className="flex flex-col">
           <div 
             onClick={() => setIsGraphOpen(prev => !prev)}

@@ -76,7 +76,8 @@ def build_sidecar():
         except Exception:
             pass
 
-    # Wipe destination binaries folder
+    # Wipe destination binaries folder (including any legacy _internal directory)
+    shutil.rmtree(os.path.join(tauri_binaries_dir, "_internal"), ignore_errors=True)
     for f in [final_output_path, direct_binary_path]:
         if os.path.exists(f):
             try:

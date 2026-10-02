@@ -95,8 +95,7 @@ export function useWorkspace(session) {
   
   // --- TERMINAL MULTI-SESSION STATES ---
   const [terminalLogs, setTerminalLogs] = useState([
-    { text: "Neuron Neural Engine initialized.", isError: false },
-    { text: "Ready for spatial inspection & code execution.", isError: false }
+    { text: "Output ready.", isError: false }
   ]);
   const [terminalSessions, setTerminalSessions] = useState([
     { id: "term_1", name: "PowerShell 1", shellType: "powershell", cwd: "", isRunning: false, history: [] }
@@ -206,7 +205,7 @@ export function useWorkspace(session) {
           if (isUnmounted) return;
           setIsWsConnected(true);
           reconnectAttemptsRef.current = 0;
-          console.log("🟢 Connected to Python AI Backend:", wsUrl);
+          console.log(" Connected to Python AI Backend:", wsUrl);
           if (!hasNotifiedConnectedRef.current) {
             hasNotifiedConnectedRef.current = true;
             addNotificationRef.current?.('success', 'Neural Engine Connected', 'Spatial Engine & AST Sidecar online (127.0.0.1:8000)', 'engine');
@@ -274,7 +273,7 @@ export function useWorkspace(session) {
                 }
               }
 
-              // 🚀 PURGE DELETED FILES WITHOUT RESURRECTING CLOSED TABS
+              //  PURGE DELETED FILES WITHOUT RESURRECTING CLOSED TABS
               setOpenFiles(prev => {
                 if (isDirSwitch) {
                   return newActive ? [newActive] : [];
@@ -318,7 +317,7 @@ export function useWorkspace(session) {
                 setBlastRadius(null);
               }
               
-              // 🚀 CLEANLY RESET TERMINALS ON WORKSPACE SWITCH
+              //  CLEANLY RESET TERMINALS ON WORKSPACE SWITCH
               if (isDirSwitch) {
                 // Terminate any running processes known from previous workspace
                 terminalSessions.forEach(s => {
@@ -350,7 +349,7 @@ export function useWorkspace(session) {
               
               const rawNodes = payload.graph?.nodes || [];
               
-              // 🛡️ THE ABSOLUTE ANTI-CRASH GUARANTEE 🛡️
+              //  THE ABSOLUTE ANTI-CRASH GUARANTEE 
               const sanitizedNodes = rawNodes.map((node, idx) => {
                 const fallbackX = (Math.cos(idx) * (40 + idx * 6));
                 const fallbackY = (Math.sin(idx) * (40 + idx * 6));
@@ -375,7 +374,7 @@ export function useWorkspace(session) {
               setIsGraphLoaded(true); 
               setIsFileSyncing(false); 
 
-              // 🚀 Smoothly exit folder loading screen (350ms min display prevents visual jitter)
+              //  Smoothly exit folder loading screen (350ms min display prevents visual jitter)
               const elapsed = Date.now() - (folderLoadingStartTimeRef.current || 0);
               const minDisplayTime = 350;
               if (folderLoadingStartTimeRef.current && elapsed < minDisplayTime) {
@@ -704,12 +703,12 @@ export function useWorkspace(session) {
 
     connectWebSocket();
 
-    // ⚡ System Sleep / Wake Detector
+    //  System Sleep / Wake Detector
     sleepWatcherTimer = setInterval(() => {
       const now = Date.now();
       // If gap > 5000ms on a 2000ms interval, PC was asleep / suspended
       if (now - lastTick > 5000) {
-        console.log("⚡ PC wake detected after sleep/hibernation. Refreshing socket & terminal sync...");
+        console.log(" PC wake detected after sleep/hibernation. Refreshing socket & terminal sync...");
         if (!ws || ws.readyState !== WebSocket.OPEN) {
           connectWebSocket();
         } else {
@@ -817,7 +816,7 @@ export function useWorkspace(session) {
     setBlastRadius(null);
   }, []);
 
-  // 🚀 Terminal Actions with Active Folder CWD
+  //  Terminal Actions with Active Folder CWD
   const createTerminalSession = useCallback((shellType = 'powershell') => {
     const nextNum = terminalSessions.filter(s => s.shellType === shellType).length + 1;
     const nameMap = { powershell: 'PowerShell', cmd: 'CMD', bash: 'Bash', zsh: 'Zsh' };
@@ -875,7 +874,7 @@ export function useWorkspace(session) {
         session_id: sessionId 
       }));
     }
-    // 🚀 Optimistically unlock terminal state immediately
+    //  Optimistically unlock terminal state immediately
     if (terminalStreamTimerRef.current) {
       clearTimeout(terminalStreamTimerRef.current);
       terminalStreamTimerRef.current = null;
