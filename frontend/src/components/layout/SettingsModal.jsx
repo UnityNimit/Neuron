@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Plus, Trash2, Eye, EyeOff, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, Eye, EyeOff, RefreshCw, ChevronUp, ChevronDown, Undo2 } from 'lucide-react';
 import { useTheme } from '../../config/themeConfig';
 import NeuronLogo from '../common/NeuronLogo';
 
@@ -243,6 +243,44 @@ const SHORTCUT_GROUPS = [
     ]
   }
 ];
+
+const GENERAL_DEFAULT_SETTINGS = {
+  autoSave: true,
+  blastProtection: false,
+  confirmDelete: true,
+};
+
+const EDITOR_DEFAULT_SETTINGS = {
+  fontSize: 13,
+  tabSize: 2,
+  wordWrap: 'off',
+  lineNumbers: 'on',
+  minimap: false,
+  formatOnPaste: true,
+};
+
+const SPATIAL_DEFAULT_SETTINGS = {
+  spatialFolderLabelZoom: 0.10,
+  spatialFileLabelZoom: 0.25,
+  spatialFuncLabelZoom: 0.55,
+  spatialMergeRepulsion: 1.5,
+  spatialTransitionSpeed: 0.28,
+  spatialLod1Zoom: 0.35,
+  spatialLod2Zoom: 0.22,
+  spatialLod3Zoom: 0.12,
+  spatialLod4Zoom: 0.05,
+  spatialMinimap: true,
+  showNodeLabels: true,
+  spatialParticles: true,
+  physicsSimulation: true,
+  spatialAnimationSpeed: 1.0,
+  spatialNodeScale: 1.0,
+  spatialLineScale: 1.0,
+  spatialTextScale: 1.0,
+  spatialSelectedLineWidth: 3.8,
+  spatialBridgeLineWidth: 2.5,
+  spatialPurpleLineWidth: 1.6,
+};
 
 export default function SettingsModal({ isOpen, onClose, settings, updateSetting, initialTab = 'general' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -505,6 +543,24 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
     setTimeout(() => setSaveStatus(null), 2500);
   };
 
+  const handleResetCurrentTabDefaults = () => {
+    if (activeTab === 'general') {
+      Object.entries(GENERAL_DEFAULT_SETTINGS).forEach(([key, val]) => {
+        updateSetting(key, val);
+      });
+    } else if (activeTab === 'editor') {
+      Object.entries(EDITOR_DEFAULT_SETTINGS).forEach(([key, val]) => {
+        updateSetting(key, val);
+      });
+    } else if (activeTab === 'spatial') {
+      Object.entries(SPATIAL_DEFAULT_SETTINGS).forEach(([key, val]) => {
+        updateSetting(key, val);
+      });
+    } else if (activeTab === 'appearance') {
+      handleRestoreTheme();
+    }
+  };
+
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const modalRef = useRef(null);
@@ -698,14 +754,26 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
               </span>
             </div>
 
-            <button 
-              type="button"
-              onClick={onClose}
-              className="w-6 h-6 flex items-center justify-center rounded-lg transition-colors cursor-pointer text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]"
-              title="Close Settings (Esc)"
-            >
-              <X size={14} strokeWidth={2} />
-            </button>
+            <div className="flex items-center gap-1">
+              {['general', 'editor', 'spatial', 'appearance'].includes(activeTab) && (
+                <button 
+                  type="button"
+                  onClick={handleResetCurrentTabDefaults}
+                  className="w-6 h-6 flex items-center justify-center rounded-lg transition-colors cursor-pointer text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]"
+                  title="Reset to default"
+                >
+                  <Undo2 size={14} strokeWidth={2} />
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={onClose}
+                className="w-6 h-6 flex items-center justify-center rounded-lg transition-colors cursor-pointer text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)]"
+                title="Close Settings (Esc)"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
           </div>
 
           {/* Settings List Body */}

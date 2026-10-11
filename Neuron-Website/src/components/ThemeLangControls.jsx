@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Monitor, Sun, Moon, Globe, ChevronDown, Check } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 
 const LANGUAGES = [
   { code: 'en', label: 'English' },
@@ -11,8 +13,8 @@ const LANGUAGES = [
 ];
 
 export default function ThemeLangControls({ className = '' }) {
-  const [theme, setTheme] = useState('system');
-  const [lang, setLang] = useState('English');
+  const { theme, setTheme } = useTheme();
+  const { language, setLanguage } = useLanguage();
   const [isLangOpen, setIsLangOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -99,7 +101,7 @@ export default function ThemeLangControls({ className = '' }) {
           aria-expanded={isLangOpen}
         >
           <Globe size={14} className="text-[#60A5FA]" />
-          <span>{lang}</span>
+          <span>{language}</span>
           <ChevronDown
             size={12}
             className={`text-slate-400 transition-transform duration-200 ${
@@ -115,13 +117,13 @@ export default function ThemeLangControls({ className = '' }) {
               Select Language
             </div>
             {LANGUAGES.map((l) => {
-              const isSelected = lang === l.label;
+              const isSelected = language === l.label;
               return (
                 <button
                   key={l.code}
                   type="button"
                   onClick={() => {
-                    setLang(l.label);
+                    setLanguage(l.label);
                     setIsLangOpen(false);
                   }}
                   className={`w-full px-3 py-1.5 text-xs text-left flex items-center justify-between transition-colors cursor-pointer ${
