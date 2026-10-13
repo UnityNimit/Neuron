@@ -53,6 +53,8 @@
     "shortDescription": "Full-Stack Spatial Code Intelligence IDE",
     "windows": {
       "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
         "installerHooks": "hooks.nsh"
       }
     }

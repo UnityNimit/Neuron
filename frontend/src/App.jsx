@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Panel, Group, Separator } from 'react-resizable-panels';
-import { FileCode2, Network, Loader2, X, Play, AlertOctagon } from 'lucide-react';
+import { FileCode2, Network, Loader2, X, Play, AlertOctagon, Terminal } from 'lucide-react';
 
 // Authentication & Core Services
 import { 
@@ -93,6 +93,7 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const currentCodeBufferRef = useRef({});
   const autoSaveTimerRef = useRef(null);
+  const handleRunCodeRef = useRef(null);
 
   // --- AI & REFACTORING TRANSACTION REFS ---
   const hoverTimerRef = useRef(null);
@@ -533,10 +534,17 @@ export default function App() {
         setIsCommandPaletteOpen(true); 
         return;
       }
-      //  Save Active File (Ctrl+S / Cmd+S)
+      // Save Active File (Ctrl+S / Cmd+S)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { 
         e.preventDefault(); 
         handleSaveFile(); 
+      }
+      // Run Active File in Output (F5)
+      if (e.key === 'F5') {
+        e.preventDefault();
+        if (handleRunCodeRef.current) {
+          handleRunCodeRef.current();
+        }
       }
       // AI Impact Analysis (Alt+I)
       if (e.altKey && e.key.toLowerCase() === 'i' && hoveredNodeId) {
@@ -686,98 +694,166 @@ export default function App() {
     }, 250);
   }, [setCenterView]);
 
-  // UNIVERSAL POLYGLOT CODE RUNNER (Interactive Terminal & Compiler Engine)
-  const handleRunCode = useCallback(async () => {
-    if (!workspace.currentFile || isImageFile || isUnsupportedFile) return;
+// Universal Polyglot Runner command mapping for interactive terminal sessions
+function getTerminalRunCommand(filePath, shellType = 'powershell') {
+  if (!filePath) return '';
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const cleanPath = filePath.replace(/\\/g, '/');
+  const isPs = shellType === 'powershell';
+  const isCmd = shellType === 'cmd';
+
+  switch (ext) {
+    case 'py':
+    case 'pyw':
+      return `python -u "${cleanPath}"`;
+    case 'js':
+    case 'mjs':
+    case 'cjs':
+      return `node "${cleanPath}"`;
+    case 'ts':
+    case 'mts':
+    case 'cts':
+      return `npx tsx "${cleanPath}"`;
+    case 'cpp':
+    case 'cc':
+    case 'cxx':
+    case 'c++':
+      if (isPs) return `g++ -O2 "${cleanPath}" -o "a.exe"; if ($?) { & ".\\a.exe" }`;
+      if (isCmd) return `g++ -O2 "${cleanPath}" -o a.exe && a.exe`;
+      return `g++ -O2 "${cleanPath}" -o a.out && ./a.out`;
+    case 'c':
+      if (isPs) return `gcc -O2 "${cleanPath}" -o "a.exe"; if ($?) { & ".\\a.exe" }`;
+      if (isCmd) return `gcc -O2 "${cleanPath}" -o a.exe && a.exe`;
+      return `gcc -O2 "${cleanPath}" -o a.out && ./a.out`;
+    case 'rs':
+      if (isPs) return `rustc -O "${cleanPath}" -o "a.exe"; if ($?) { & ".\\a.exe" }`;
+      if (isCmd) return `rustc -O "${cleanPath}" -o a.exe && a.exe`;
+      return `rustc -O "${cleanPath}" -o a.out && ./a.out`;
+    case 'go':
+      return `go run "${cleanPath}"`;
+    case 'java':
+      return `java "${cleanPath}"`;
+    case 'cs':
+      return `dotnet run`;
+    case 'php':
+      return `php "${cleanPath}"`;
+    case 'rb':
+      return `ruby "${cleanPath}"`;
+    case 'lua':
+      return `lua "${cleanPath}"`;
+    case 'pl':
+      return `perl "${cleanPath}"`;
+    case 'sh':
+      return `bash "${cleanPath}"`;
+    case 'ps1':
+      return `powershell -ExecutionPolicy Bypass -File "${cleanPath}"`;
+    case 'bat':
+    case 'cmd':
+      return isPs ? `& "${cleanPath}"` : `"${cleanPath}"`;
+    case 'exe':
+      return isPs ? `& ".\\${cleanPath}"` : `"${cleanPath}"`;
+    default:
+      return isPs ? `& "${cleanPath}"` : `"${cleanPath}"`;
+  }
+}
+
+  // UNIVERSAL POLYGLOT CODE RUNNER (Subfolder & Multi-Language Engine with Stdin)
+  const handleRunCode = useCallback(async (targetFileOverride) => {
+    const fileToRun = (typeof targetFileOverride === 'string' && targetFileOverride)
+      ? targetFileOverride
+      : workspace.currentFile;
+
+    if (!fileToRun || isImageFile || isUnsupportedFile) return;
 
     // If active file is dirty, save it before executing so latest changes run
-    if (workspace.currentFile && dirtyFiles.has(workspace.currentFile)) {
-      handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
+    if (dirtyFiles.has(fileToRun)) {
+      handleSaveFile(fileToRun, currentCodeBufferRef.current[fileToRun]);
     }
 
+    // Always reveal the bottom execution panel
     setLayout(prev => ({ ...prev, terminal: true }));
 
-    const activeExt = workspace.currentFile?.split('.').pop()?.toLowerCase();
-    const cleanPath = workspace.currentFile.replace(/\\/g, '/');
+    // Switch to the dedicated Output tab for clean compilation and execution streaming
+    workspace.setActiveSessionId('output');
 
-    // Build the execution command for interactive execution
-    let runCmd = '';
-    if (activeExt === 'py') {
-      runCmd = `python -u "${cleanPath}"`;
-    } else if (activeExt === 'js' || activeExt === 'mjs') {
-      runCmd = `node "${cleanPath}"`;
-    } else if (activeExt === 'ts') {
-      runCmd = `npx ts-node "${cleanPath}"`;
-    } else if (activeExt === 'sh' || activeExt === 'bash') {
-      runCmd = `bash "${cleanPath}"`;
-    } else if (activeExt === 'ps1') {
-      runCmd = `powershell -ExecutionPolicy Bypass -File "${cleanPath}"`;
-    } else {
-      runCmd = `python -u "${cleanPath}"`;
-    }
+    const activeExt = fileToRun.split('.').pop()?.toLowerCase();
+    const isCompiled = ['cpp', 'cc', 'cxx', 'c++', 'c', 'rs', 'go', 'java', 'cs', 'kt', 'swift', 'scala', 'hs'].includes(activeExt);
+    const actionText = isCompiled ? 'Compiling & Running' : 'Running';
 
-    // 1. Interactive Terminal Session (VS Code standard with real-time output and live keyboard controls)
+    // 1. Primary: Universal Backend Polyglot Runner with STDIN
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
-      const termSession = workspace.terminalSessions?.find(s => s.id !== 'output');
-      if (termSession && workspace.sendTerminalCommand) {
-        workspace.setActiveSessionId(termSession.id);
-        workspace.sendTerminalCommand(termSession.id, runCmd);
-        workspace.addNotification?.('info', 'Running in Terminal', `${workspace.currentFile}`, 'runtime');
-        return;
-      }
-
-      // If no interactive session exists yet, create one
-      if (workspace.createTerminalSession) {
-        workspace.createTerminalSession('powershell');
-        setTimeout(() => {
-          const sessions = workspace.terminalSessions || [];
-          const created = sessions.find(s => s.id !== 'output');
-          if (created && workspace.sendTerminalCommand) {
-            workspace.setActiveSessionId(created.id);
-            workspace.sendTerminalCommand(created.id, runCmd);
-          }
-        }, 120);
-        workspace.addNotification?.('info', 'Running in Terminal', `${workspace.currentFile}`, 'runtime');
-        return;
-      }
-
-      // Fallback: Primary Backend Polyglot Runner with STDIN
-      workspace.setActiveSessionId('output');
-      const isCompiled = ['cpp', 'cc', 'cxx', 'c', 'rs'].includes(activeExt);
-      const actionText = isCompiled ? 'Compiling & Running' : 'Running';
-
-      workspace.addNotification?.('info', actionText, `${workspace.currentFile}`, 'runtime');
+      workspace.addNotification?.('info', actionText, `${fileToRun}`, 'runtime');
       workspace.setTerminalLogs([
-        { text: `[${actionText}] ${workspace.currentFile}`, isSystem: true }
+        { text: `[${actionText}] ${fileToRun}`, isSystem: true }
       ]);
       workspace.wsRef.current.send(JSON.stringify({
         event: 'RUN_CODE',
-        filename: workspace.currentFile,
-        stdin: stdin
+        filename: fileToRun,
+        stdin: stdin || ""
       }));
       return;
     }
 
     // 2. Web browser fallback for Python via Pyodide WASM
     if (activeExt === 'py' && isCompilerReady && window.pyodide) {
-      workspace.addNotification?.('info', 'Running', `${workspace.currentFile} (Browser WASM)`, 'runtime');
-      workspace.setTerminalLogs([{ text: `[Running] ${workspace.currentFile} (Browser WASM)`, isSystem: true }]);
+      workspace.addNotification?.('info', 'Running', `${fileToRun} (Browser WASM)`, 'runtime');
+      workspace.setTerminalLogs([{ text: `[Running] ${fileToRun} (Browser WASM)`, isSystem: true }]);
       try {
         window.pyodide.setStdin({ 
           stdin: () => { 
-            const lines = stdin.split('\n'); 
+            const lines = (stdin || "").split('\n'); 
             return lines.length > 0 ? lines.shift() : ""; 
           }
         });
         await window.pyodide.runPythonAsync(activeCodeStr);
         workspace.setTerminalLogs(prev => [...prev, { text: `[Done] exited with code 0`, isSystem: true }]);
-        workspace.addNotification?.('success', 'Execution Succeeded', `${workspace.currentFile} exited with code 0`, 'runtime');
+        workspace.addNotification?.('success', 'Execution Succeeded', `${fileToRun} exited with code 0`, 'runtime');
       } catch (error) { 
         workspace.setTerminalLogs(prev => [...prev, { text: error.message, isError: true }]); 
         workspace.addNotification?.('error', 'Execution Error', error.message, 'runtime');
       }
     }
   }, [workspace, setLayout, isCompilerReady, stdin, activeCodeStr, dirtyFiles, handleSaveFile, isImageFile, isUnsupportedFile]);
+
+  handleRunCodeRef.current = handleRunCode;
+
+  // INTERACTIVE TERMINAL CODE RUNNER (Persistent Games, Servers, REPLs)
+  const handleRunInTerminal = useCallback((targetFileOverride) => {
+    const fileToRun = (typeof targetFileOverride === 'string' && targetFileOverride)
+      ? targetFileOverride
+      : workspace.currentFile;
+
+    if (!fileToRun || isImageFile || isUnsupportedFile) return;
+
+    // If active file is dirty, save it before executing
+    if (dirtyFiles.has(fileToRun)) {
+      handleSaveFile(fileToRun, currentCodeBufferRef.current[fileToRun]);
+    }
+
+    // Reveal the bottom execution panel
+    setLayout(prev => ({ ...prev, terminal: true }));
+
+    // Find an idle interactive terminal session, or create a new one
+    let targetSession = workspace.terminalSessions.find(s => s.id !== 'output' && !s.isRunning);
+    let sessionId;
+    let shellType;
+
+    if (targetSession) {
+      sessionId = targetSession.id;
+      shellType = targetSession.shellType || 'powershell';
+      workspace.setActiveSessionId(sessionId);
+    } else {
+      const created = workspace.createTerminalSession('powershell');
+      sessionId = created.id;
+      shellType = created.shellType;
+    }
+
+    const runCmd = getTerminalRunCommand(fileToRun, shellType);
+    if (runCmd && sessionId) {
+      workspace.sendTerminalCommand(sessionId, runCmd, shellType);
+      workspace.addNotification?.('info', 'Terminal Launch', `Running ${fileToRun} in ${shellType}`, 'runtime');
+    }
+  }, [workspace, setLayout, dirtyFiles, handleSaveFile, isImageFile, isUnsupportedFile]);
 
   const handleSwitchFile = useCallback((filename) => { 
     if (!filename) return;
@@ -904,6 +980,7 @@ export default function App() {
         setSearchQuery={setSearchQuery} 
         workspace={workspace} 
         onRunCode={handleRunCode} 
+        onRunInTerminal={handleRunInTerminal}
         onOpenSettings={() => handleOpenSettings('general')} 
         onWarpToNode={handleWarpToNode}
         onSwitchFile={handleSwitchFile}
@@ -1022,6 +1099,7 @@ export default function App() {
                     onCreateItem={handleCreateItem} 
                     onDeleteFile={handleDeleteFile} 
                     onRunFile={handleRunCode} 
+                    onRunFileInTerminal={handleRunInTerminal}
                     onRenameItem={(item) => { 
                       const oldPath = item.old_path || item.path;
                       const newPath = item.new_path || item.newPath;
@@ -1178,15 +1256,22 @@ export default function App() {
                     })}
                   </div>
 
-                  {/* RUN BUTTON (F5) */}
+                  {/* RUN BUTTONS (Output & Terminal) */}
                   {!isImageFile && !isUnsupportedFile && (
-                    <div className="ml-auto flex items-center pr-2.5 shrink-0 relative z-10">
+                    <div className="ml-auto flex items-center gap-1 pr-2.5 shrink-0 relative z-10">
                       <button 
-                        onClick={handleRunCode} 
+                        onClick={() => handleRunCode()} 
                         className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-all cursor-pointer"
-                        title="Run Active File (F5)"
+                        title="Run in Output (F5)"
                       >
                         <Play size={13} strokeWidth={1.8} />
+                      </button>
+                      <button 
+                        onClick={() => handleRunInTerminal()} 
+                        className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-all cursor-pointer"
+                        title="Run in Terminal"
+                      >
+                        <Terminal size={13} strokeWidth={1.8} />
                       </button>
                     </div>
                   )}
@@ -1363,11 +1448,11 @@ export default function App() {
                       onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))}
                     />
                   ) : !workspace.currentFile ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 font-mono text-xs select-none">
+                    <div className="w-full h-full flex flex-col items-center justify-center text-[var(--theme-text-muted)] font-mono text-xs select-none">
                       <p>No file open</p>
                       <button 
                         onClick={() => setCenterView('spatial')} 
-                        className="mt-3 px-3 py-1.5 rounded bg-[#1e2022] hover:bg-[#25282a] text-slate-300 hover:text-white transition-colors border border-white/5 cursor-pointer"
+                        className="mt-3 px-3 py-1.5 rounded bg-[var(--theme-surface)] hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-colors border border-[var(--theme-border)] cursor-pointer shadow-xs active:scale-95"
                       >
                         Switch to Spatial Map
                       </button>
@@ -1407,6 +1492,7 @@ export default function App() {
                       sessions={workspace.terminalSessions} 
                       activeSessionId={workspace.activeSessionId} 
                       absTargetDir={workspace.absTargetDir} 
+                      isOutputRunning={workspace.isOutputRunning}
                       onSelectSession={workspace.setActiveSessionId} 
                       onCreateSession={workspace.createTerminalSession} 
                       onCloseSession={workspace.closeTerminalSession} 

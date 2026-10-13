@@ -57,8 +57,8 @@ export default function UnsupportedFileViewer({
           const isLast = idx === breadcrumbSegments.length - 1;
           return (
             <React.Fragment key={idx}>
-              {idx > 0 && <span className="text-slate-600 font-mono text-[10px]">&gt;</span>}
-              <span className={isLast ? "text-slate-200" : "text-slate-400 hover:text-slate-300 transition-colors"}>
+              {idx > 0 && <span className="text-[var(--theme-text-muted)] font-mono text-[10px]">&gt;</span>}
+              <span className={isLast ? "text-[var(--theme-text-bright)] font-medium" : "text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors"}>
                 {segment}
               </span>
             </React.Fragment>
@@ -80,25 +80,25 @@ export default function UnsupportedFileViewer({
         >
           
           <div 
-            className="w-11 h-11 rounded-xl border flex items-center justify-center text-slate-400 mb-3 shadow-inner"
+            className="w-11 h-11 rounded-xl border flex items-center justify-center text-[var(--theme-text-muted)] mb-3 shadow-inner"
             style={{
               backgroundColor: 'var(--theme-surface-hover, #1d1f22)',
               borderColor: 'var(--theme-border-subtle, #282a2d)'
             }}
           >
-            <FileQuestion size={22} strokeWidth={1.75} className="text-slate-400" />
+            <FileQuestion size={22} strokeWidth={1.75} className="text-[var(--theme-text-muted)]" />
           </div>
 
           <h3 className="text-sm font-medium tracking-tight" style={{ color: 'var(--theme-text-bright, #f8fafc)' }}>
             File Not Supported
           </h3>
 
-          <p className="text-[12px] text-slate-400 mt-1 leading-relaxed font-sans">
+          <p className="text-[12px] text-[var(--theme-text-muted)] mt-1 leading-relaxed font-sans">
             This file type cannot be displayed in the editor.
           </p>
 
           <div 
-            className="mt-3 px-3 py-1 border rounded text-[11px] font-mono text-slate-400 max-w-xs truncate"
+            className="mt-3 px-3 py-1 border rounded text-[11px] font-mono text-[var(--theme-text-secondary)] max-w-xs truncate"
             style={{
               backgroundColor: 'var(--theme-background, #121314)',
               borderColor: 'var(--theme-border, #242628)'
@@ -106,13 +106,13 @@ export default function UnsupportedFileViewer({
           >
             <span>{baseName}</span>
             {fileMeta?.size_formatted && (
-              <span className="text-slate-500 ml-1.5">• {fileMeta.size_formatted}</span>
+              <span className="text-[var(--theme-text-muted)] ml-1.5">• {fileMeta.size_formatted}</span>
             )}
           </div>
 
           <button
             onClick={() => onRevealExplorer && onRevealExplorer(filename)}
-            className="mt-4 px-3.5 py-1.5 rounded-md border text-xs font-sans font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95"
+            className="mt-4 px-3.5 py-1.5 rounded-md border text-xs font-sans font-medium flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 hover:bg-[var(--theme-surface-active)]"
             style={{
               backgroundColor: 'var(--theme-surface-hover, #202224)',
               borderColor: 'var(--theme-border-subtle, #2e3235)',
@@ -120,7 +120,7 @@ export default function UnsupportedFileViewer({
             }}
             title="Reveal in Native File Manager"
           >
-            <Folder size={13} className="text-slate-400" />
+            <Folder size={13} className="text-[var(--theme-text-muted)]" />
             <span>Open in Explorer</span>
           </button>
         </div>

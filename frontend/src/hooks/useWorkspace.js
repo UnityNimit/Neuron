@@ -94,13 +94,12 @@ export function useWorkspace(session) {
   const [gitGraph, setGitGraph] = useState([]);
   
   // --- TERMINAL MULTI-SESSION STATES ---
-  const [terminalLogs, setTerminalLogs] = useState([
-    { text: "Output ready.", isError: false }
-  ]);
+  const [terminalLogs, setTerminalLogs] = useState([]);
   const [terminalSessions, setTerminalSessions] = useState([
     { id: "term_1", name: "PowerShell 1", shellType: "powershell", cwd: "", isRunning: false, history: [] }
   ]);
   const [activeSessionId, setActiveSessionId] = useState("output");
+  const [isOutputRunning, setIsOutputRunning] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -562,15 +561,18 @@ export function useWorkspace(session) {
                 rawLines.pop();
               }
               rawLines.forEach(text => {
-                if (text.startsWith('[Done]')) {
+                if (text.startsWith('[Done]') || text.startsWith('[Timeout]')) {
+                  setIsOutputRunning(false);
                   const isExitSuccess = text.includes('code 0');
-                  if (isExitSuccess) {
+                  if (text.startsWith('[Timeout]')) {
+                    addNotificationRef.current?.('warning', 'Execution Timeout', text, 'runtime');
+                  } else if (isExitSuccess) {
                     addNotificationRef.current?.('success', 'Execution Finished', text, 'runtime');
                   } else {
                     addNotificationRef.current?.('error', 'Execution Error', text, 'runtime');
                   }
-                } else if (text.startsWith('[Timeout]')) {
-                  addNotificationRef.current?.('warning', 'Execution Timeout', text, 'runtime');
+                } else if (text.startsWith('[Running]') || text.startsWith('[Compiling')) {
+                  setIsOutputRunning(true);
                 }
               });
 
@@ -585,14 +587,30 @@ export function useWorkspace(session) {
               setTerminalLogs(prev => [...prev.slice(-400), ...newLogs]);
             } 
             else if (data.event === 'TERMINAL_STREAM_START') {
-              setTerminalSessions(prev => prev.map(s => (
-                s.id === data.session_id ? { 
-                  ...s, 
-                  isRunning: true, 
-                  cwd: data.cwd, 
-                  history: [...s.history.slice(-100), { command: data.command, stdout: "", stderr: "", cwd: data.cwd }] 
-                } : s
-              )));
+              setTerminalSessions(prev => {
+                const exists = prev.some(s => s.id === data.session_id);
+                if (!exists) {
+                  return [
+                    ...prev,
+                    {
+                      id: data.session_id,
+                      name: `Terminal ${prev.length + 1}`,
+                      shellType: 'powershell',
+                      cwd: data.cwd,
+                      isRunning: true,
+                      history: [{ command: data.command, stdout: "", stderr: "", cwd: data.cwd }]
+                    }
+                  ];
+                }
+                return prev.map(s => (
+                  s.id === data.session_id ? { 
+                    ...s, 
+                    isRunning: true, 
+                    cwd: data.cwd, 
+                    history: [...s.history.slice(-100), { command: data.command, stdout: "", stderr: "", cwd: data.cwd }] 
+                  } : s
+                ));
+              });
             }
             else if (data.event === 'TERMINAL_CWD_UPDATE') {
               setTerminalSessions(prev => prev.map(s => (
@@ -816,24 +834,26 @@ export function useWorkspace(session) {
     setBlastRadius(null);
   }, []);
 
-  //  Terminal Actions with Active Folder CWD
+  // Terminal Actions with Active Folder CWD
   const createTerminalSession = useCallback((shellType = 'powershell') => {
     const nextNum = terminalSessions.filter(s => s.shellType === shellType).length + 1;
     const nameMap = { powershell: 'PowerShell', cmd: 'CMD', bash: 'Bash', zsh: 'Zsh' };
     const newId = `term_${Date.now()}`;
+    const newSession = { 
+      id: newId, 
+      name: `${nameMap[shellType] || 'Terminal'} ${nextNum}`, 
+      shellType, 
+      cwd: absTargetDir || lastTargetDirRef.current, 
+      isRunning: false, 
+      history: [] 
+    };
     
     setTerminalSessions(prev => [
       ...prev, 
-      { 
-        id: newId, 
-        name: `${nameMap[shellType] || 'Terminal'} ${nextNum}`, 
-        shellType, 
-        cwd: absTargetDir || lastTargetDirRef.current, 
-        isRunning: false, 
-        history: [] 
-      }
+      newSession
     ]);
     setActiveSessionId(newId);
+    return newSession;
   }, [terminalSessions, absTargetDir]);
 
   const closeTerminalSession = useCallback((sessionId) => {
@@ -844,15 +864,17 @@ export function useWorkspace(session) {
     if (activeSessionId === sessionId) setActiveSessionId('output');
   }, [activeSessionId]);
 
-  const sendTerminalCommand = useCallback((sessionId, command) => {
+  const sendTerminalCommand = useCallback((sessionId, command, explicitShellType, explicitCwd) => {
     const targetSession = terminalSessions.find(s => s.id === sessionId);
-    if (wsRef.current?.readyState === WebSocket.OPEN && targetSession) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const shellType = explicitShellType || targetSession?.shellType || 'powershell';
+      const cwd = explicitCwd || targetSession?.cwd || absTargetDir || lastTargetDirRef.current;
       wsRef.current.send(JSON.stringify({ 
         event: 'RUN_TERMINAL_COMMAND', 
         session_id: sessionId, 
-        shell_type: targetSession.shellType || 'powershell', 
+        shell_type: shellType, 
         command: command, 
-        cwd: targetSession.cwd || absTargetDir || lastTargetDirRef.current
+        cwd: cwd
       }));
     }
   }, [terminalSessions, absTargetDir]);
@@ -868,6 +890,9 @@ export function useWorkspace(session) {
   }, []);
 
   const killTerminalProcess = useCallback((sessionId) => {
+    if (sessionId === 'output') {
+      setIsOutputRunning(false);
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ 
         event: 'KILL_TERMINAL_PROCESS', 
@@ -980,6 +1005,7 @@ export function useWorkspace(session) {
     aiInsight, setAiInsight, 
     agentBatch, rollbackAgentBatch, approveAgentBatch, dismissAgentBatch,
     terminalLogs, setTerminalLogs,
+    isOutputRunning, setIsOutputRunning,
     terminalSessions, activeSessionId, setActiveSessionId,
     createTerminalSession, closeTerminalSession, 
     sendTerminalCommand, sendTerminalStdin, killTerminalProcess, clearTerminalSession,

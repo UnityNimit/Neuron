@@ -380,20 +380,18 @@ export default function CodeEditor({
             })}
           </div>
           {isSyncing && (
-            <span className="text-[10px] font-mono text-blue-400/80 animate-pulse pl-2 shrink-0">
-              Loading...
+            <span className="neuron-loading-text pl-2 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent)] animate-pulse" />
+              <span>Loading...</span>
             </span>
           )}
         </div>
       )}
 
-      {/* RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
+      {/* BEAUTIFULLY ANIMATED THEME ACCENT LOADING LINE */}
       {isSyncing && (
-        <div 
-          className="h-[1.5px] w-full overflow-hidden shrink-0 z-20"
-          style={{ backgroundColor: 'var(--theme-background, #121314)' }}
-        >
-          <div className="h-full bg-blue-500/80 animate-pulse w-full" />
+        <div className="neuron-loading-line-track">
+          <div className="neuron-loading-line-bar" />
         </div>
       )}
 

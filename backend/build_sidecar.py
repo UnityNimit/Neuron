@@ -65,7 +65,7 @@ def build_sidecar():
     print(f" [*] Destination:   {final_output_path}")
     print("=" * 65 + "\n")
 
-    # 🚀 STEP 1: PRE-BUILD PURGE (Wipe old spec/build caches so PyInstaller never reuses --onedir)
+    # STEP 1: PRE-BUILD PURGE (Wipe old spec/build caches so PyInstaller never reuses --onedir)
     print("[INFO] Purging old build caches, spec files, and destination binaries...")
     shutil.rmtree(os.path.join(backend_dir, "build"), ignore_errors=True)
     shutil.rmtree(os.path.join(backend_dir, "dist"), ignore_errors=True)
@@ -85,7 +85,7 @@ def build_sidecar():
             except Exception:
                 pass
 
-    # 🚀 STEP 2: COMPILE FRESH --onefile BINARY
+    # STEP 2: COMPILE FRESH --onefile BINARY
     pyinstaller_cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",

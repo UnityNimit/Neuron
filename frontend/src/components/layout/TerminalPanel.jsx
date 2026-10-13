@@ -15,6 +15,7 @@ export default function TerminalPanel({
   sessions = [], 
   activeSessionId = "output", 
   absTargetDir = "",
+  isOutputRunning = false,
   onSelectSession, 
   onCreateSession, 
   onCloseSession, 
@@ -27,7 +28,6 @@ export default function TerminalPanel({
   const [commandHistory, setCommandHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showShellDropdown, setShowShellDropdown] = useState(false);
-  const [directKeysMode, setDirectKeysMode] = useState(false);
   const prevIsRunningRef = useRef(false);
   
   const terminalEndRef = useRef(null);
@@ -109,55 +109,16 @@ export default function TerminalPanel({
     }
 
     // Intercept Ctrl+C to kill running process
-    if (e.ctrlKey && e.key.toLowerCase() === 'c' && activeSession?.isRunning) {
+    if (e.ctrlKey && e.key.toLowerCase() === 'c' && (activeSession?.isRunning || (activeSessionId === 'output' && isOutputRunning))) {
       e.preventDefault();
       if (onKillProcess) onKillProcess(activeSessionId);
       return;
     }
 
-    // Direct live keystrokes for interactive games and CLI navigation
-    if (activeSession?.isRunning) {
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        onSendStdin?.(activeSessionId, '\x1b[A');
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        onSendStdin?.(activeSessionId, '\x1b[B');
-        return;
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        onSendStdin?.(activeSessionId, '\x1b[C');
-        return;
-      }
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        onSendStdin?.(activeSessionId, '\x1b[D');
-        return;
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onSendStdin?.(activeSessionId, '\x1b');
-        return;
-      }
-
-      // Live game control keys (WASD, Q to quit, P to pause, R to restart)
-      const isGameControl = ['w', 'a', 's', 'd', 'q', 'p', 'r'].includes(e.key.toLowerCase());
-      if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
-        if (directKeysMode || (inputCommand === "" && isGameControl)) {
-          e.preventDefault();
-          onSendStdin?.(activeSessionId, e.key.toLowerCase());
-          return;
-        }
-      }
-    }
-    
     if (e.key === 'Enter') {
       e.preventDefault();
 
-      // If process is running, feed keystrokes into stdin
+      // If process is running, feed input into stdin
       if (activeSession?.isRunning) {
         if (onSendStdin) {
           onSendStdin(activeSessionId, inputCommand + '\n');
@@ -274,7 +235,7 @@ export default function TerminalPanel({
         <div className="flex items-center gap-1.5 shrink-0 pr-2 relative z-20">
           
           {/* Stop Process Button (Left of Plus, Icon Only in Red) */}
-          {activeSession?.isRunning && (
+          {(activeSession?.isRunning || (activeSessionId === 'output' && isOutputRunning)) && (
             <button 
               onClick={() => onKillProcess && onKillProcess(activeSessionId)} 
               className="p-1 text-red-500 hover:text-red-400 hover:bg-[var(--theme-surface-hover)] rounded transition-colors flex items-center justify-center cursor-pointer" 
@@ -384,6 +345,12 @@ export default function TerminalPanel({
                 dangerouslySetInnerHTML={{ __html: ansiConverter.toHtml(log.text || "") }} 
               />
             ))}
+            {isOutputRunning && (
+              <div className="flex items-center gap-2 mt-1.5 text-[var(--theme-accent)] font-medium select-none text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent)] animate-pulse" />
+                <span>Running...</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -413,40 +380,19 @@ export default function TerminalPanel({
               </div>
             ))}
 
-            {/* Live Prompt / Execution Indicator & Interactive Input */}
+            {/* Live Prompt / Interactive Stdin Input */}
             {activeSession.isRunning ? (
               <div className="flex items-center gap-2 mt-1 select-text">
-                <span className="text-[var(--theme-accent)] font-semibold select-text animate-pulse shrink-0">Running &gt;</span>
+                <span className="text-[var(--theme-accent)] font-semibold select-text animate-pulse shrink-0">&gt;</span>
                 <input 
                   ref={inputRef}
                   type="text" 
                   autoFocus 
                   value={inputCommand} 
-                  placeholder={directKeysMode ? "Direct Game Keys active (WASD / Arrows to steer, Q to quit)" : "Program running... Type input + Enter, use Arrow keys or WASD"}
                   onChange={(e) => setInputCommand(e.target.value)} 
                   onKeyDown={handleKeyDown} 
-                  className="flex-grow bg-transparent text-[var(--theme-text-bright)] font-mono text-xs outline-none border-none caret-[var(--theme-accent)] select-text placeholder:text-[var(--theme-text-muted)] placeholder:text-[11px] placeholder:italic" 
+                  className="flex-grow bg-transparent text-[var(--theme-text-bright)] font-mono text-xs outline-none border-none caret-[var(--theme-accent)] select-text" 
                 />
-                <button
-                  type="button"
-                  onClick={() => setDirectKeysMode(prev => !prev)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-all border cursor-pointer shrink-0 ${
-                    directKeysMode 
-                      ? 'bg-[var(--theme-accent)] text-white border-transparent' 
-                      : 'bg-[var(--theme-surface, #161719)] text-[var(--theme-text-muted)] border-[var(--theme-border, #242628)] hover:text-[var(--theme-text-bright)]'
-                  }`}
-                  title="Toggle Direct Keystrokes for interactive games (WASD & single-key controls)"
-                >
-                  {directKeysMode ? "WASD: Direct" : "WASD Mode"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onKillProcess?.(activeSessionId)}
-                  className="px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-all bg-rose-600/90 hover:bg-rose-600 text-white shrink-0 cursor-pointer shadow-sm hover:brightness-110 active:scale-95"
-                  title="Stop running process (Ctrl+C)"
-                >
-                  Stop
-                </button>
               </div>
             ) : (
               <div className="flex items-center gap-2 mt-0.5 select-text">

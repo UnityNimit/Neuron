@@ -13,6 +13,7 @@ export default function CommandPalette({
   setSearchQuery, 
   workspace, 
   onRunCode, 
+  onRunInTerminal,
   onOpenSettings, 
   onWarpToNode,
   onSwitchFile
@@ -123,7 +124,8 @@ export default function CommandPalette({
     // Category C: System Commands
     if (!isFileMode && !isSymbolMode) {
       const commands = [
-        { id: 'cmd_run', category: 'Command', type: 'command', label: 'Run Active Python Script', action: onRunCode, icon: <Play size={14} className="text-emerald-400 shrink-0" /> },
+        { id: 'cmd_run', category: 'Command', type: 'command', label: 'Run Active File (F5)', action: onRunCode, icon: <Play size={14} className="text-emerald-400 shrink-0" /> },
+        { id: 'cmd_run_terminal', category: 'Command', type: 'command', label: 'Run Active File in Terminal', action: onRunInTerminal, icon: <Terminal size={14} className="text-cyan-400 shrink-0" /> },
         { id: 'cmd_settings', category: 'Command', type: 'command', label: 'Open System Preferences', action: onOpenSettings, icon: <Settings size={14} className="text-slate-400 shrink-0" /> },
         { id: 'cmd_terminal_clear', category: 'Command', type: 'command', label: 'Clear Terminal Output Logs', action: () => workspace.setTerminalLogs && workspace.setTerminalLogs([]), icon: <Terminal size={14} className="text-yellow-400 shrink-0" /> },
         { id: 'cmd_refresh', category: 'Command', type: 'command', label: 'Re-sync Workspace & AST Graph', action: () => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile })), icon: <Layers size={14} className="text-purple-400 shrink-0" /> }
@@ -137,7 +139,7 @@ export default function CommandPalette({
     }
 
     return list;
-  }, [semanticResults, searchQuery, workspace.files, onRunCode, onOpenSettings, workspace]);
+  }, [semanticResults, searchQuery, workspace.files, onRunCode, onRunInTerminal, onOpenSettings, workspace]);
 
   // Reset keyboard highlight on query change
   useEffect(() => {

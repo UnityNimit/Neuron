@@ -36,7 +36,7 @@ from services.file_service import (
 )
 from services.terminal_service import (
     kill_all_terminal_processes, kill_terminal_process, run_code_polyglot_sync, run_python_script_sync, 
-    stream_terminal_command, write_terminal_stdin
+    stream_terminal_command, write_terminal_stdin, stream_code_polyglot
 )
 from services.git_service import (
     git_commit, git_push, git_stage, git_unstage, git_discard,
@@ -672,55 +672,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     continue
 
-                # Resolve file path with fallbacks
-                if os.path.isabs(target_file) and os.path.exists(target_file):
-                    file_to_run = os.path.abspath(target_file)
-                else:
-                    clean_path = target_file.replace("\\", "/").lstrip("/")
-                    candidates = [
-                        os.path.abspath(os.path.join(AppState.TARGET_DIR, clean_path)),
-                        os.path.abspath(os.path.join(AppState.TARGET_DIR, target_file)),
-                        os.path.abspath(target_file)
-                    ]
-                    file_to_run = candidates[0]
-                    for cand in candidates:
-                        if os.path.exists(cand):
-                            file_to_run = cand
-                            break
-
-                start_time = asyncio.get_event_loop().time()
-                try:
-                    res = await asyncio.to_thread(
-                        run_code_polyglot_sync, 
-                        file_to_run, 
-                        message.get("stdin", ""),
-                        30.0
-                    )
-                    elapsed = asyncio.get_event_loop().time() - start_time
-                    if res.stdout:
-                        stdout_payload = res.stdout
-                        if len(stdout_payload) > 250000:
-                            stdout_payload = stdout_payload[:250000] + "\n\n[Warning: Output buffer exceeded 250KB and was safely truncated]\n"
-                        await safe_send_to_active(websocket, {"event": "TERMINAL_OUTPUT", "payload": stdout_payload})
-                    if res.stderr:
-                        stderr_payload = res.stderr
-                        if len(stderr_payload) > 50000:
-                            stderr_payload = stderr_payload[:50000] + "\n\n[Warning: Error buffer exceeded 50KB and was safely truncated]\n"
-                        await safe_send_to_active(websocket, {"event": "TERMINAL_ERROR", "payload": stderr_payload})
-                    await safe_send_to_active(websocket, {
-                        "event": "TERMINAL_OUTPUT", 
-                        "payload": f"\n[Done] exited with code {res.returncode} in {elapsed:.2f}s\n"
-                    })
-                except subprocess.TimeoutExpired:
-                    await safe_send_to_active(websocket, {
-                        "event": "TERMINAL_ERROR", 
-                        "payload": "\n[Timeout] Execution exceeded 30s limit.\n"
-                    })
-                except Exception as run_err:
-                    await safe_send_to_active(websocket, {
-                        "event": "TERMINAL_ERROR", 
-                        "payload": f"\n[Execution Error] {run_err}\n"
-                    })
+                stdin_data = message.get("stdin", "")
+                await stream_code_polyglot(
+                    websocket, 
+                    target_file, 
+                    stdin_data=stdin_data, 
+                    timeout=30.0
+                )
 
             # -----------------------------------------------------------------
             # 9. GIT SOURCE CONTROL OPERATIONS

@@ -162,8 +162,8 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
             const isLast = idx === breadcrumbSegments.length - 1;
             return (
               <React.Fragment key={idx}>
-                {idx > 0 && <span className="text-slate-600 font-mono text-[10px]">&gt;</span>}
-                <span className={isLast ? "text-slate-200" : "text-slate-400 hover:text-slate-300 transition-colors"}>
+                {idx > 0 && <span className="text-[var(--theme-text-muted)] font-mono text-[10px]">&gt;</span>}
+                <span className={isLast ? "text-[var(--theme-text-bright)] font-medium" : "text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] transition-colors"}>
                   {segment}
                 </span>
               </React.Fragment>
@@ -212,14 +212,15 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
           </button>
 
           {isSyncing && (
-            <span className="text-[10px] font-mono text-blue-400/80 animate-pulse mr-2 shrink-0">
-              Loading...
+            <span className="neuron-loading-text mr-2 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent)] animate-pulse" />
+              <span>Loading...</span>
             </span>
           )}
 
           <button
             onClick={handleResetZoom}
-            className="px-1.5 py-0.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition-colors cursor-pointer text-[10px] font-mono font-medium"
+            className="px-1.5 py-0.5 rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-[10px] font-mono font-medium"
             title="Reset to 100%"
           >
             <RotateCcw size={12} />
@@ -227,13 +228,10 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
         </div>
       </div>
 
-      {/*  RAZOR-THIN (1.5PX) LOADING PROGRESS LINE */}
+      {/* BEAUTIFULLY ANIMATED THEME ACCENT LOADING LINE */}
       {isSyncing && (
-        <div 
-          className="h-[1.5px] w-full overflow-hidden shrink-0 z-20"
-          style={{ backgroundColor: 'var(--theme-background, #121314)' }}
-        >
-          <div className="h-full bg-blue-500/80 animate-pulse w-full" />
+        <div className="neuron-loading-line-track">
+          <div className="neuron-loading-line-bar" />
         </div>
       )}
 

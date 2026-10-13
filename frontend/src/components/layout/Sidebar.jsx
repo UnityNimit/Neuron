@@ -19,6 +19,7 @@ export default function Sidebar({
   onMoveItem, 
   onRevealExplorer, 
   onRunFile, 
+  onRunFileInTerminal,
   onRefresh 
 }) {
   const [contextMenu, setContextMenu] = useState(null);
@@ -654,6 +655,7 @@ export default function Sidebar({
           absPath={absTargetDir} 
           onClose={() => setContextMenu(null)} 
           onRun={(path) => onRunFile && onRunFile(path)} 
+          onRunInTerminal={(path) => onRunFileInTerminal && onRunFileInTerminal(path)}
           onOpenSide={(path) => onSwitchFile && onSwitchFile(path)} 
           onRename={(item) => handleInitiateRename(item)} 
           onDelete={(path) => onDeleteFile && onDeleteFile(path)} 

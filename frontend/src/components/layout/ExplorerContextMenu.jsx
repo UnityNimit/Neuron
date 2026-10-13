@@ -1,7 +1,7 @@
 // src/components/layout/ExplorerContextMenu.jsx
 import React, { useEffect, useRef, useMemo } from 'react';
 import { 
-  Play, Scissors, Copy, Clipboard, Trash2, Edit3, 
+  Play, Terminal, Scissors, Copy, Clipboard, Trash2, Edit3, 
   Link, FileCode, ExternalLink, Columns 
 } from 'lucide-react';
 
@@ -12,6 +12,7 @@ export default function ExplorerContextMenu({
   absPath, 
   onClose, 
   onRun, 
+  onRunInTerminal,
   onOpenSide, 
   onRename, 
   onDelete, 
@@ -74,6 +75,18 @@ export default function ExplorerContextMenu({
             <span>Run File</span>
           </span>
           <span className="text-[10px] text-[var(--theme-text-muted)]">F5</span>
+        </button>
+      )}
+
+      {!isFolder && onRunInTerminal && (
+        <button 
+          onClick={() => { onRunInTerminal(item.path); onClose(); }} 
+          className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-left group"
+        >
+          <span className="flex items-center gap-2">
+            <Terminal size={12} className="text-[var(--theme-accent)]" />
+            <span>Run in Terminal</span>
+          </span>
         </button>
       )}
 

@@ -25,25 +25,53 @@ export default function NewItemModal({ isOpen, onClose, onCreate, initialType = 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center font-sans">
-      <div className="bg-[#181818] w-[450px] border border-[#333] shadow-2xl rounded-xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div 
+        className="w-[450px] border shadow-2xl rounded-xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        style={{
+          backgroundColor: 'var(--theme-surface, #181818)',
+          borderColor: 'var(--theme-border, #333)',
+          color: 'var(--theme-text-primary, #cbd5e1)'
+        }}
+      >
         
-        <div className="bg-[#1e1e1e] p-4 border-b border-[#333] flex items-center justify-between">
-          <div className="flex items-center gap-2 text-slate-200 font-semibold text-sm">
-            {itemType === 'file' ? <FilePlus size={18} className="text-blue-400" /> : <FolderPlus size={18} className="text-blue-400" />}
+        <div 
+          className="p-4 border-b flex items-center justify-between"
+          style={{
+            backgroundColor: 'var(--theme-secondary, #1e1e1e)',
+            borderColor: 'var(--theme-border, #333)'
+          }}
+        >
+          <div className="flex items-center gap-2 font-semibold text-sm" style={{ color: 'var(--theme-text-bright, #fff)' }}>
+            {itemType === 'file' ? <FilePlus size={18} className="text-[var(--theme-accent)]" /> : <FolderPlus size={18} className="text-[var(--theme-accent)]" />}
             Create New {itemType === 'file' ? 'File' : 'Folder'}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors p-1 rounded-md hover:bg-slate-700/50">
+          <button 
+            onClick={onClose} 
+            className="text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors p-1 rounded-md hover:bg-[var(--theme-surface-hover)] cursor-pointer"
+          >
             <X size={18} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4 bg-[#141414]">
-          <div className="flex bg-[#252526] p-1 rounded-lg border border-[#333]">
+        <form 
+          onSubmit={handleSubmit} 
+          className="p-6 flex flex-col gap-4"
+          style={{ backgroundColor: 'var(--theme-background, #141414)' }}
+        >
+          <div 
+            className="flex p-1 rounded-lg border"
+            style={{
+              backgroundColor: 'var(--theme-surface, #252526)',
+              borderColor: 'var(--theme-border-subtle, #333)'
+            }}
+          >
             <button
               type="button"
               onClick={() => setItemType('file')}
-              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${
-                itemType === 'file' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                itemType === 'file' 
+                  ? 'bg-[var(--theme-accent)] text-white shadow-md' 
+                  : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)]'
               }`}
             >
               <FilePlus size={14} /> File
@@ -51,8 +79,10 @@ export default function NewItemModal({ isOpen, onClose, onCreate, initialType = 
             <button
               type="button"
               onClick={() => setItemType('folder')}
-              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 ${
-                itemType === 'folder' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                itemType === 'folder' 
+                  ? 'bg-[var(--theme-accent)] text-white shadow-md' 
+                  : 'text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)]'
               }`}
             >
               <FolderPlus size={14} /> Folder
@@ -60,7 +90,7 @@ export default function NewItemModal({ isOpen, onClose, onCreate, initialType = 
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-slate-400 text-xs font-medium">
+            <label className="text-[var(--theme-text-muted)] text-xs font-medium">
               {itemType === 'file' ? 'File Path (e.g. src/utils/helpers.py)' : 'Folder Name (e.g. src/controllers)'}
             </label>
             <input
@@ -69,15 +99,26 @@ export default function NewItemModal({ isOpen, onClose, onCreate, initialType = 
               value={itemName}
               onChange={(e) => setItemName(e.target.value)}
               placeholder={itemType === 'file' ? 'e.g. main.py' : 'e.g. utils'}
-              className="w-full bg-[#252526] border border-[#3c3c3c] focus:border-blue-500 text-slate-200 text-sm rounded-lg px-3 py-2 outline-none transition-colors font-mono"
+              className="w-full border focus:border-[var(--theme-accent)] text-[var(--theme-text-primary)] text-sm rounded-lg px-3 py-2 outline-none transition-colors font-mono"
+              style={{
+                backgroundColor: 'var(--theme-surface, #252526)',
+                borderColor: 'var(--theme-border, #3c3c3c)'
+              }}
             />
           </div>
 
           <div className="flex items-center justify-end gap-2 mt-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="px-4 py-2 text-xs font-medium text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
+            >
               Cancel
             </button>
-            <button type="submit" className="px-5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-lg">
+            <button 
+              type="submit" 
+              className="px-5 py-2 text-xs font-semibold bg-[var(--theme-accent)] hover:brightness-110 text-white rounded-lg transition-all shadow-lg cursor-pointer"
+            >
               Create {itemType === 'file' ? 'File' : 'Folder'}
             </button>
           </div>

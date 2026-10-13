@@ -70,7 +70,10 @@ export function useSettings() {
   useEffect(() => {
     const handleSync = (e) => {
       if (e.detail) {
-        setSettings(e.detail);
+        setSettings((prev) => {
+          if (JSON.stringify(prev) === JSON.stringify(e.detail)) return prev;
+          return e.detail;
+        });
       }
     };
     window.addEventListener('neuron-settings-sync', handleSync);
@@ -79,10 +82,19 @@ export function useSettings() {
 
   const updateSetting = (key, value) => {
     setSettings((prev) => {
-      const next = { ...prev, [key]: value };
+      const updates = typeof key === 'object' && key !== null ? key : { [key]: value };
+      const next = { ...prev, ...updates };
       try {
         localStorage.setItem('neuron-settings', JSON.stringify(next));
-        window.dispatchEvent(new CustomEvent('neuron-settings-sync', { detail: next }));
+        queueMicrotask(() => {
+          try {
+            const latestRaw = localStorage.getItem('neuron-settings');
+            if (latestRaw) {
+              const latest = JSON.parse(latestRaw);
+              window.dispatchEvent(new CustomEvent('neuron-settings-sync', { detail: latest }));
+            }
+          } catch {}
+        });
       } catch (e) {
         console.error("Failed to save settings:", e);
       }

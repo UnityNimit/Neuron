@@ -216,3 +216,65 @@ canvas {
 .neuron-activity-btn:hover .neuron-activity-icon {
   transform: scale(1.14);
 }
+
+/* 7. Dynamic Themed Loading Shimmer Line & Glowing Typography */
+@keyframes neuron-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(50%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.neuron-loading-line-track {
+  height: 2px;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--theme-border-subtle, rgba(255, 255, 255, 0.04));
+  z-index: 30;
+}
+
+.neuron-loading-line-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  background: linear-gradient(
+    90deg, 
+    transparent 0%, 
+    var(--theme-accent) 50%, 
+    transparent 100%
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--theme-accent) 80%, transparent);
+  border-radius: 9999px;
+  animation: neuron-progress-slide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes neuron-text-breathe {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.neuron-loading-text {
+  color: var(--theme-accent);
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  animation: neuron-text-breathe 1.2s ease-in-out infinite alternate;
+}

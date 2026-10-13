@@ -44,8 +44,9 @@ export default function SplashScreen({
         {/* Minimalist Kinetic Pulse Loader */}
         <div className="flex items-center gap-2 mt-8">
           <span 
-            className="w-1.5 h-1.5 rounded-full bg-[#cbd5e1] animate-pulse"
+            className="w-1.5 h-1.5 rounded-full animate-pulse"
             style={{ 
+              backgroundColor: theme?.accent || 'var(--theme-accent, #3b82f6)',
               animationDuration: '1s',
               animationDelay: '0ms',
               transform: 'translateZ(0)',
@@ -53,8 +54,9 @@ export default function SplashScreen({
             }} 
           />
           <span 
-            className="w-1.5 h-1.5 rounded-full bg-[#cbd5e1] animate-pulse"
+            className="w-1.5 h-1.5 rounded-full animate-pulse"
             style={{ 
+              backgroundColor: theme?.accent || 'var(--theme-accent, #3b82f6)',
               animationDuration: '1s',
               animationDelay: '180ms',
               transform: 'translateZ(0)',
@@ -62,8 +64,9 @@ export default function SplashScreen({
             }} 
           />
           <span 
-            className="w-1.5 h-1.5 rounded-full bg-[#cbd5e1] animate-pulse"
+            className="w-1.5 h-1.5 rounded-full animate-pulse"
             style={{ 
+              backgroundColor: theme?.accent || 'var(--theme-accent, #3b82f6)',
               animationDuration: '1s',
               animationDelay: '360ms',
               transform: 'translateZ(0)',
