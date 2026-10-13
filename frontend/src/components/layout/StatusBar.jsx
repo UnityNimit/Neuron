@@ -100,7 +100,7 @@ export default function StatusBar({
 
   // Smart File Type Resolver
   const getFileType = (filename) => {
-    if (!filename) return "Spatial Map";
+    if (!filename) return "Map";
     const ext = filename.split('.').pop().toLowerCase();
     const map = {
       'cpp': 'C++',
@@ -300,7 +300,7 @@ export default function StatusBar({
             )}
             <span className="opacity-40">·</span>
             <div className="text-[var(--theme-text-muted)] text-[10px]">
-              <span>Spatial Map</span>
+              <span>Map</span>
             </div>
           </>
         )}

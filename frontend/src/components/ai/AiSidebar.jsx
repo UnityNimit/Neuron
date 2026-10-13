@@ -35,7 +35,7 @@ export default function AiSidebar({
   if (isCollapsed) {
     return (
       <div 
-        className="w-10 h-full flex flex-col items-center py-3 border-r select-none shrink-0 transition-all duration-150"
+        className="w-10 h-full flex flex-col items-center py-3 select-none shrink-0 transition-all duration-150"
         style={{
           backgroundColor: 'var(--theme-surface, #161719)',
           borderColor: 'var(--theme-border, #242628)',

@@ -1,30 +1,68 @@
 // src/components/layout/CommandPalette.jsx
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { 
-  Search, FileCode2, Play, Settings, Sparkles, 
-  CornerDownLeft, Code2, AlertTriangle, ShieldCheck, 
-  ExternalLink, Layers, Terminal, ArrowRight, Zap 
-} from 'lucide-react';
+import { Search, X, CornerDownLeft } from 'lucide-react';
 
 export default function CommandPalette({ 
   isOpen, 
+  onOpen,
   onClose, 
-  searchQuery, 
+  searchQuery = "", 
   setSearchQuery, 
-  workspace, 
+  workspace = {}, 
   onRunCode, 
   onRunInTerminal,
   onOpenSettings, 
   onWarpToNode,
-  onSwitchFile
+  onSwitchFile,
+  repoName = ""
 }) {
   const [semanticResults, setSemanticResults] = useState([]);
   const [isSearchingVector, setIsSearchingVector] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   
+  const containerRef = useRef(null);
   const inputRef = useRef(null);
   const selectedItemRef = useRef(null);
   const requestSeqRef = useRef(0);
+
+  // Focus input whenever opened
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+      }, 50);
+    }
+  }, [isOpen]);
+
+  // Global click-outside and Escape dismiss listeners
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleOutsideClick = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        onClose();
+      }
+    };
+
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   // 1. LISTEN FOR VECTOR SEARCH RESULTS OVER WEBSOCKETS
   useEffect(() => {
@@ -54,12 +92,9 @@ export default function CommandPalette({
       return;
     }
 
-    const currentSeq = ++requestSeqRef.current;
-
     const timer = setTimeout(() => {
       if (workspace.wsRef?.current?.readyState === WebSocket.OPEN) {
         setIsSearchingVector(true);
-        // Strip prefix modifiers if present
         const queryPayload = cleanQuery.replace(/^[@#]/, '').trim();
         if (queryPayload) {
           workspace.wsRef.current.send(JSON.stringify({
@@ -74,10 +109,11 @@ export default function CommandPalette({
     return () => clearTimeout(timer);
   }, [searchQuery, workspace.wsRef]);
 
-  // 3. COMPILE UNIFIED SEARCH RESULTS (AI Vectors + AST Symbols + Files + Commands)
+  // 3. COMPILE UNIFIED SEARCH RESULTS
+  // Exact Spatial Map Legend Colors:
+  // Folder: #e4ef61, File: #3b82f6, Function: #8b5cf6, Medium Risk: #f59e0b, High Risk: #ef4444, Command: #9f00ad
   const unifiedResults = useMemo(() => {
     const rawQuery = searchQuery.trim();
-    if (!rawQuery) return [];
     
     const isCommandMode = rawQuery.startsWith('>');
     const isFileMode = rawQuery.startsWith('#');
@@ -86,12 +122,18 @@ export default function CommandPalette({
     const query = rawQuery.replace(/^[>#@]/, '').toLowerCase().trim();
     const list = [];
 
-    // Category A: Dense Vector Semantic Matches (AI Embeddings)
+    // Category A: Dense Vector Semantic Matches & AST Symbols (Purple / Red / Amber)
     if (!isCommandMode && !isFileMode) {
       semanticResults.forEach(item => {
+        const color = item.risk === 'high' 
+          ? '#ef4444' 
+          : item.risk === 'medium' 
+            ? '#f59e0b' 
+            : '#8b5cf6';
+
         list.push({
           id: item.id,
-          category: 'AI Vector Match',
+          category: 'Function',
           type: 'semantic_node',
           label: item.label,
           filePath: item.filePath,
@@ -100,35 +142,65 @@ export default function CommandPalette({
           code: item.code,
           risk: item.risk || 'low',
           aiSummary: item.aiSummary,
-          icon: <Sparkles size={14} className="text-cyan-400 shrink-0" />
+          color
         });
       });
     }
 
-    // Category B: Exact File System Matches
+    // Category B: Folders (Lime-Yellow #e4ef61)
     if (!isCommandMode && !isSymbolMode) {
+      const folderSet = new Set();
+      (workspace.items || []).forEach(it => {
+        if (it.type === 'folder' && it.path) folderSet.add(it.path);
+      });
       (workspace.files || []).forEach(f => {
-        if (!query || f.toLowerCase().includes(query)) {
+        const parts = f.replace(/\\/g, '/').split('/');
+        let cur = '';
+        for (let i = 0; i < parts.length - 1; i++) {
+          cur = cur ? `${cur}/${parts[i]}` : parts[i];
+          folderSet.add(cur);
+        }
+      });
+
+      folderSet.forEach(folderPath => {
+        const folderName = folderPath.split('/').pop() || folderPath;
+        if (!query || folderName.toLowerCase().includes(query) || folderPath.toLowerCase().includes(query)) {
           list.push({
-            id: f,
-            category: 'Workspace File',
-            type: 'file',
-            label: f.split('/').pop(),
-            filePath: f,
-            icon: <FileCode2 size={14} className="text-[var(--theme-accent)] shrink-0" />
+            id: `folder_${folderPath}`,
+            category: 'Folder',
+            type: 'folder',
+            label: folderName,
+            filePath: folderPath,
+            color: '#e4ef61'
           });
         }
       });
     }
 
-    // Category C: System Commands
+    // Category C: Workspace Files (Blue #3b82f6)
+    if (!isCommandMode && !isSymbolMode) {
+      (workspace.files || []).forEach(f => {
+        if (!query || f.toLowerCase().includes(query)) {
+          list.push({
+            id: `file_${f}`,
+            category: 'File',
+            type: 'file',
+            label: f.split('/').pop(),
+            filePath: f,
+            color: '#3b82f6'
+          });
+        }
+      });
+    }
+
+    // Category D: System Commands (Call Edge Magenta #9f00ad)
     if (!isFileMode && !isSymbolMode) {
       const commands = [
-        { id: 'cmd_run', category: 'Command', type: 'command', label: 'Run Active File (F5)', action: onRunCode, icon: <Play size={14} className="text-emerald-400 shrink-0" /> },
-        { id: 'cmd_run_terminal', category: 'Command', type: 'command', label: 'Run Active File in Terminal', action: onRunInTerminal, icon: <Terminal size={14} className="text-cyan-400 shrink-0" /> },
-        { id: 'cmd_settings', category: 'Command', type: 'command', label: 'Open System Preferences', action: onOpenSettings, icon: <Settings size={14} className="text-slate-400 shrink-0" /> },
-        { id: 'cmd_terminal_clear', category: 'Command', type: 'command', label: 'Clear Terminal Output Logs', action: () => workspace.setTerminalLogs && workspace.setTerminalLogs([]), icon: <Terminal size={14} className="text-yellow-400 shrink-0" /> },
-        { id: 'cmd_refresh', category: 'Command', type: 'command', label: 'Re-sync Workspace & AST Graph', action: () => workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile })), icon: <Layers size={14} className="text-purple-400 shrink-0" /> }
+        { id: 'cmd_run', category: 'Command', type: 'command', label: 'Run Active File (F5)', action: onRunCode, color: '#9f00ad' },
+        { id: 'cmd_run_terminal', category: 'Command', type: 'command', label: 'Run Active File in Terminal', action: onRunInTerminal, color: '#9f00ad' },
+        { id: 'cmd_settings', category: 'Command', type: 'command', label: 'Open System Preferences', action: onOpenSettings, color: '#9f00ad' },
+        { id: 'cmd_terminal_clear', category: 'Command', type: 'command', label: 'Clear Terminal Output Logs', action: () => workspace.setTerminalLogs && workspace.setTerminalLogs([]), color: '#9f00ad' },
+        { id: 'cmd_refresh', category: 'Command', type: 'command', label: 'Re-sync Workspace & AST Graph', action: () => workspace.wsRef?.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: workspace.currentFile })), color: '#9f00ad' }
       ];
 
       commands.forEach(c => {
@@ -139,9 +211,9 @@ export default function CommandPalette({
     }
 
     return list;
-  }, [semanticResults, searchQuery, workspace.files, onRunCode, onRunInTerminal, onOpenSettings, workspace]);
+  }, [semanticResults, searchQuery, workspace.files, workspace.items, onRunCode, onRunInTerminal, onOpenSettings, workspace]);
 
-  // Reset keyboard highlight on query change
+  // Reset highlight on query change
   useEffect(() => {
     setSelectedIndex(0);
   }, [searchQuery, semanticResults]);
@@ -153,45 +225,39 @@ export default function CommandPalette({
     }
   }, [selectedIndex]);
 
-  // 4. SELECTION & DUAL ACTION ROUTING
+  // 4. SELECTION ROUTER
   const handleSelect = useCallback((item, actionType = 'warp') => {
     if (!item) return;
     onClose();
 
     if (item.type === 'semantic_node') {
       if (actionType === 'warp') {
-        //  A. Warp 3D Camera on WebGPU Canvas
         if (onWarpToNode) onWarpToNode(item.id);
       } else {
-        //  B. Open Directly in Code Editor at Line
         if (onSwitchFile && item.filePath) {
           onSwitchFile(item.filePath);
-        } else {
-          if (item.filePath && item.filePath !== workspace.currentFile) {
-            workspace.setIsFileSyncing?.(true);
-            workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: item.filePath }));
-          }
-          if (workspace.setCenterView) workspace.setCenterView('editor');
         }
       }
     } else if (item.type === 'file') {
       if (onSwitchFile && item.filePath) {
         onSwitchFile(item.filePath);
-      } else {
-        if (item.filePath !== workspace.currentFile) {
-          workspace.setIsFileSyncing?.(true);
-          workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: item.filePath }));
-        }
-        if (workspace.setCenterView) workspace.setCenterView('editor');
+      }
+    } else if (item.type === 'folder') {
+      if (workspace.wsRef?.current?.readyState === WebSocket.OPEN) {
+        workspace.wsRef.current.send(JSON.stringify({
+          event: 'REVEAL_IN_EXPLORER',
+          path: item.filePath
+        }));
       }
     } else if (item.type === 'command') {
       if (item.action) item.action();
     }
   }, [onClose, onWarpToNode, workspace, onSwitchFile]);
 
-  // 5. KEYBOARD NAVIGATION HANDLER (Enter = Warp, Shift+Enter = Editor)
+  // 5. KEYBOARD NAVIGATION
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
+      e.preventDefault();
       onClose();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -208,221 +274,300 @@ export default function CommandPalette({
     }
   };
 
-  if (!isOpen) return null;
-
   const activeItem = unifiedResults[selectedIndex];
 
   return (
-    <div 
-      className="fixed inset-0 z-[200] flex items-start justify-center pt-20 font-sans select-none pointer-events-auto"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    <>
+      {/* Embedded Search Container in TopBar with smooth width animation */}
       <div 
-        className="w-[740px] border shadow-[0_20px_60px_rgba(0,0,0,0.6)] rounded-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-        style={{
-          backgroundColor: 'var(--theme-surface, #161719)',
-          borderColor: 'var(--theme-border, #242628)'
-        }}
-        onClick={(e) => e.stopPropagation()}
+        ref={containerRef}
+        className={`relative z-[240] pointer-events-auto flex flex-col items-center transition-[width] duration-300 ease-out ${
+          isOpen ? 'w-[540px]' : 'w-[300px]'
+        }`}
       >
-        
-        {/* Search Input Bar */}
+        {/* TopBar Search Input Bar */}
         <div 
-          className="flex items-center px-4 py-3.5 border-b"
-          style={{
-            backgroundColor: 'var(--theme-secondary, #191a1b)',
-            borderColor: 'var(--theme-border, #242628)'
+          onClick={() => {
+            if (!isOpen && onOpen) onOpen();
           }}
+          className={`h-[26px] w-full px-2.5 rounded-lg flex items-center gap-2 border select-none transition-colors duration-200 overflow-hidden ${
+            !isOpen ? 'cursor-pointer hover:border-[var(--theme-accent)] group' : ''
+          }`}
+          style={{
+            backgroundColor: isOpen ? 'var(--theme-background, #121314)' : 'var(--theme-surface, #161719)',
+            borderColor: isOpen ? 'var(--theme-accent, #3b82f6)' : 'var(--theme-border, #242628)',
+            color: 'var(--theme-text-muted, #94a3b8)'
+          }}
+          title={!isOpen ? "Search (Ctrl+K)" : ""}
         >
-          <Search size={17} className="text-[var(--theme-accent)] mr-3 shrink-0" />
-          <input 
-            ref={inputRef}
-            autoFocus
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Search symbols (@), files (#), commands (>), or type natural language..."
-            className="w-full bg-transparent text-[var(--theme-text-bright)] text-sm outline-none placeholder-[var(--theme-text-muted)] font-sans"
+          <Search 
+            size={12} 
+            className={`shrink-0 transition-colors duration-200 ${
+              isOpen 
+                ? 'text-[var(--theme-accent)]' 
+                : 'text-[var(--theme-text-muted)] group-hover:text-[var(--theme-accent)]'
+            }`} 
           />
-          {isSearchingVector && (
-            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-700/50 animate-pulse shrink-0 flex items-center gap-1">
-              <Zap size={10} /> Vectorizing...
-            </span>
+
+          {!isOpen ? (
+            <div className="flex-1 flex items-center justify-between min-w-0">
+              <span className="text-[11px] font-mono text-[var(--theme-text-muted)] group-hover:text-[var(--theme-text-bright)] transition-colors select-none">
+                Search
+              </span>
+              <kbd 
+                className="text-[9.5px] font-mono px-1 py-0.2 rounded border shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
+                style={{
+                  backgroundColor: 'var(--theme-secondary, #191a1b)',
+                  borderColor: 'var(--theme-border, #242628)'
+                }}
+              >
+                Ctrl K
+              </kbd>
+            </div>
+          ) : (
+            <>
+              <input 
+                ref={inputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Search"
+                className="w-full bg-transparent text-xs font-mono text-[var(--theme-text-bright)] outline-none placeholder-[var(--theme-text-muted)] tracking-wide"
+              />
+              {isSearchingVector && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+                  <span className="text-[10px] font-mono text-cyan-400">
+                    Vectorizing...
+                  </span>
+                </div>
+              )}
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="p-0.5 rounded text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer shrink-0"
+                title="Close (Esc)"
+              >
+                <X size={12} />
+              </button>
+
+              {/* Scanning Line during vector search */}
+              {isSearchingVector && (
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden rounded-b-lg">
+                  <div className="neuron-loading-line-bar" />
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {/* Unified Results + Code Peek Dual View */}
-        {searchQuery.trim() && (
+        {/* Anchored Results Dropdown Directly Beneath TopBar */}
+        {isOpen && (
           <div 
-            className="flex flex-row max-h-[390px] overflow-hidden divide-x"
-            style={{ borderColor: 'var(--theme-border, #222)' }}
+            className="absolute top-full left-0 right-0 mt-1.5 border shadow-2xl rounded-xl overflow-hidden z-[250] flex flex-col animate-in fade-in zoom-in-95 duration-150 ease-out"
+            style={{
+              backgroundColor: 'var(--theme-secondary, #191a1b)',
+              borderColor: 'var(--theme-border, #242628)'
+            }}
           >
-            
-            {/* Left Stream: Ranked Matches */}
-            <div className="flex-1 overflow-y-auto py-2 px-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10">
-              {unifiedResults.length === 0 && !isSearchingVector ? (
-                <div className="text-center text-[var(--theme-text-muted)] py-12 text-xs font-mono">
-                  No semantic AST symbols or workspace files matched your query.
-                </div>
-              ) : (
-                unifiedResults.map((item, idx) => {
-                  const isSelected = selectedIndex === idx;
-                  const matchScore = item.score;
-
-                  return (
-                    <div 
-                      key={item.id + idx}
-                      ref={isSelected ? selectedItemRef : null}
-                      onClick={() => handleSelect(item, 'warp')}
-                      onMouseEnter={() => setSelectedIndex(idx)}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer text-xs transition-all border ${
-                        isSelected 
-                          ? 'font-semibold shadow-sm' 
-                          : 'border-transparent hover:bg-[var(--theme-surface-hover)]'
-                      }`}
-                      style={{
-                        backgroundColor: isSelected ? 'var(--theme-surface-active)' : 'transparent',
-                        borderColor: isSelected ? 'var(--theme-accent)' : 'transparent',
-                      }}
-                    >
-                      {item.icon}
-                      
-                      <div className="flex flex-col overflow-hidden min-w-0">
-                        <span className={`font-mono truncate ${isSelected ? 'text-[var(--theme-text-bright)] font-semibold' : 'text-[var(--theme-text-primary)]'}`}>
-                          {item.label}
-                        </span>
-                        {item.filePath && (
-                          <span className="text-[10px] text-[var(--theme-text-muted)] font-mono truncate">
-                            {item.filePath} {item.line ? `· Ln ${item.line}` : ''}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="ml-auto flex items-center gap-2 shrink-0">
-                        {matchScore !== undefined && (
-                          <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
-                            matchScore >= 85 
-                              ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800/40' 
-                              : matchScore >= 60 
-                                ? 'text-cyan-400 bg-cyan-950/60 border-cyan-800/40' 
-                                : 'text-[var(--theme-text-muted)] bg-[var(--theme-surface)] border-[var(--theme-border)]'
-                          }`}>
-                            {matchScore}%
-                          </span>
-                        )}
-                        {isSelected && <CornerDownLeft size={12} className="text-[var(--theme-accent)]" />}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Right Drawer: Live AST Code Peek & AI Smell Summary */}
-            {activeItem && activeItem.type === 'semantic_node' && (
-              <div 
-                className="w-[310px] p-3 flex flex-col justify-between overflow-hidden border-l"
-                style={{
-                  backgroundColor: 'var(--theme-secondary, #0d0d0d)',
-                  borderColor: 'var(--theme-border, #222)'
-                }}
-              >
-                <div className="overflow-hidden flex flex-col gap-2">
-                  
-                  {/* Header Badge */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-mono uppercase font-bold text-cyan-400 tracking-wider flex items-center gap-1">
-                      <Code2 size={11} /> AST Code Peek
-                    </span>
-                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
-                      activeItem.risk === 'high' 
-                        ? 'text-red-400 bg-red-950/50 border-red-800/50' 
-                        : activeItem.risk === 'medium'
-                          ? 'text-yellow-400 bg-yellow-950/50 border-yellow-800/50'
-                          : 'text-emerald-400 bg-emerald-950/50 border-emerald-800/50'
-                    }`}>
-                      Risk: {activeItem.risk?.toUpperCase()}
-                    </span>
+            <div className="flex flex-row max-h-[380px] overflow-hidden divide-x" style={{ borderColor: 'var(--theme-border, #242628)' }}>
+              
+              {/* Left Stream: Ranked Matches */}
+              <div className="flex-1 overflow-y-auto py-1.5 px-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-white/10">
+                {unifiedResults.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-2.5 text-[var(--theme-text-muted)] font-mono text-xs">
+                    {isSearchingVector ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                        <span className="text-cyan-400 text-[11px] animate-pulse">Searching spatial vectors...</span>
+                      </>
+                    ) : (
+                      <span>No matching files, symbols, or commands.</span>
+                    )}
                   </div>
+                ) : (
+                  unifiedResults.map((item, idx) => {
+                    const isSelected = selectedIndex === idx;
+                    const matchScore = item.score;
 
-                  {/* AI Architectural Smell Diagnosis */}
-                  {activeItem.aiSummary && (
-                    <div 
-                      className="p-2 rounded-lg border text-[10px] font-mono leading-snug"
-                      style={{
-                        backgroundColor: 'var(--theme-surface, #171717)',
-                        borderColor: 'var(--theme-border, #2a2a2a)',
-                        color: 'var(--theme-text-primary, #cbd5e1)'
-                      }}
-                    >
-                      {activeItem.aiSummary}
-                    </div>
-                  )}
+                    return (
+                      <div 
+                        key={item.id + idx}
+                        ref={isSelected ? selectedItemRef : null}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleSelect(item, 'warp');
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelect(item, 'warp');
+                        }}
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg cursor-pointer text-xs font-mono transition-colors duration-75 select-none ${
+                          isSelected 
+                            ? 'bg-[var(--theme-surface-active)] text-[var(--theme-text-bright)]' 
+                            : 'hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-primary)]'
+                        }`}
+                      >
+                        {/* Solid Spatial Map Color Dot without any glow */}
+                        <span 
+                          className="w-2 h-2 rounded-full shrink-0" 
+                          style={{ 
+                            backgroundColor: item.color
+                          }} 
+                        />
+                        
+                        <div className="flex flex-col overflow-hidden min-w-0 flex-1">
+                          <span className={`truncate text-xs ${isSelected ? 'text-[var(--theme-text-bright)] font-semibold' : 'text-[var(--theme-text-primary)]'}`}>
+                            {item.label}
+                          </span>
+                          {item.filePath && (
+                            <span className="text-[10px] text-[var(--theme-text-muted)] truncate">
+                              {item.filePath} {item.line ? `· Ln ${item.line}` : ''}
+                            </span>
+                          )}
+                        </div>
 
-                  {/* Code Snippet Box */}
-                  {activeItem.code && (
-                    <pre 
-                      className="p-2.5 rounded-lg border font-mono text-[10px] overflow-x-auto max-h-[210px] leading-relaxed [&::-webkit-scrollbar]:hidden"
-                      style={{
-                        backgroundColor: 'var(--theme-background, #141414)',
-                        borderColor: 'var(--theme-border, #222)',
-                        color: 'var(--theme-text-primary, #cbd5e1)'
-                      }}
-                    >
-                      <code>{activeItem.code}</code>
-                    </pre>
-                  )}
-                </div>
+                        <div className="ml-auto flex items-center gap-2.5 shrink-0">
+                          {/* Minimalist similarity text - Pure colored typography without outer box */}
+                          {matchScore !== undefined && (
+                            <span className={`text-[10px] font-mono font-semibold tabular-nums shrink-0 ${
+                              matchScore >= 85 
+                                ? 'text-emerald-400' 
+                                : matchScore >= 60 
+                                  ? 'text-cyan-400' 
+                                  : 'text-[var(--theme-text-muted)]'
+                            }`}>
+                              {matchScore}%
+                            </span>
+                          )}
+                          <span className="text-[9px] uppercase tracking-wider text-[var(--theme-text-muted)] font-mono">
+                            {item.category}
+                          </span>
+                          {isSelected && (
+                            <CornerDownLeft 
+                              size={11} 
+                              className="text-[var(--theme-accent)] shrink-0 animate-in fade-in slide-in-from-right-1 duration-150" 
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
-                {/* Action Shortcuts for Selected Match */}
+              {/* Right Drawer: Live AST Code Peek (Semantic Nodes Only) */}
+              {activeItem && activeItem.type === 'semantic_node' && (
                 <div 
-                  className="mt-2 pt-2 border-t flex items-center justify-between text-[9px] font-mono"
+                  className="w-[280px] p-3 flex flex-col justify-between overflow-hidden border-l shrink-0"
                   style={{
-                    borderColor: 'var(--theme-border, #222)',
-                    color: 'var(--theme-text-muted, #64748b)'
+                    backgroundColor: 'var(--theme-background, #121314)',
+                    borderColor: 'var(--theme-border, #242628)'
                   }}
                 >
-                  <button 
-                    onClick={() => handleSelect(activeItem, 'warp')}
-                    className="hover:text-[var(--theme-accent)] transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>↵ Warp Map</span>
-                  </button>
-                  <button 
-                    onClick={() => handleSelect(activeItem, 'editor')}
-                    className="hover:text-cyan-400 transition-colors flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>⇧↵ Open Editor</span>
-                  </button>
-                </div>
+                  <div className="overflow-hidden flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono uppercase font-bold text-purple-400 tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6]" /> AST Code Peek
+                      </span>
+                      {/* Minimalist Risk Text - Pure colored typography without outer box */}
+                      <span className={`text-[10px] font-mono font-medium tracking-wider shrink-0 ${
+                        activeItem.risk === 'high' 
+                          ? 'text-red-400' 
+                          : activeItem.risk === 'medium'
+                            ? 'text-amber-400'
+                            : 'text-emerald-400'
+                      }`}>
+                        Risk: {activeItem.risk?.toUpperCase()}
+                      </span>
+                    </div>
 
+                    {activeItem.aiSummary && (
+                      <div 
+                        className="p-2 rounded-lg border text-[10px] font-mono leading-snug"
+                        style={{
+                          backgroundColor: 'var(--theme-surface, #171717)',
+                          borderColor: 'var(--theme-border, #2a2a2a)',
+                          color: 'var(--theme-text-primary, #cbd5e1)'
+                        }}
+                      >
+                        {activeItem.aiSummary}
+                      </div>
+                    )}
+
+                    {activeItem.code && (
+                      <pre 
+                        className="p-2.5 rounded-lg border font-mono text-[10px] overflow-x-auto max-h-[190px] leading-relaxed [&::-webkit-scrollbar]:hidden"
+                        style={{
+                          backgroundColor: 'var(--theme-secondary, #191a1b)',
+                          borderColor: 'var(--theme-border, #242628)',
+                          color: 'var(--theme-text-primary, #cbd5e1)'
+                        }}
+                      >
+                        <code>{activeItem.code}</code>
+                      </pre>
+                    )}
+                  </div>
+
+                  <div 
+                    className="mt-2 pt-2 border-t flex items-center justify-between text-[9px] font-mono"
+                    style={{
+                      borderColor: 'var(--theme-border, #242628)',
+                      color: 'var(--theme-text-muted, #64748b)'
+                    }}
+                  >
+                    <button 
+                      type="button"
+                      onClick={() => handleSelect(activeItem, 'warp')}
+                      className="hover:text-[var(--theme-accent)] transition-colors cursor-pointer"
+                    >
+                      ↵ Warp Map
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => handleSelect(activeItem, 'editor')}
+                      className="hover:text-cyan-400 transition-colors cursor-pointer"
+                    >
+                      ⇧↵ Open Editor
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer Legend matching spatial map */}
+            <div 
+              className="px-3.5 py-1.5 border-t flex items-center justify-between text-[10px] font-mono"
+              style={{
+                backgroundColor: 'var(--theme-secondary, #191a1b)',
+                borderColor: 'var(--theme-border, #242628)',
+                color: 'var(--theme-text-muted, #64748b)'
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span><kbd className="px-1 py-0.2 rounded border bg-[var(--theme-surface)] border-[var(--theme-border)]">↑↓</kbd> Select</span>
+                <span><kbd className="px-1 py-0.2 rounded border bg-[var(--theme-surface)] border-[var(--theme-border)]">↵</kbd> Open</span>
+                <span><kbd className="px-1 py-0.2 rounded border bg-[var(--theme-surface)] border-[var(--theme-border)]">esc</kbd> Close</span>
               </div>
-            )}
+
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#e4ef61]" /> Folder</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6]" /> File</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6]" /> Function</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-[#9f00ad]" /> Command</span>
+              </div>
+            </div>
 
           </div>
         )}
-
-        {/* Footer Navigation Bar */}
-        <div 
-          className="px-4 py-2.5 border-t flex items-center justify-between text-[10px] font-mono"
-          style={{
-            backgroundColor: 'var(--theme-secondary, #191a1b)',
-            borderColor: 'var(--theme-border, #242628)',
-            color: 'var(--theme-text-muted, #64748b)'
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <span><kbd className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', color: 'var(--theme-text-primary)' }}>↑↓</kbd> Select</span>
-            <span><kbd className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', color: 'var(--theme-text-primary)' }}>↵</kbd> Camera Warp</span>
-            <span><kbd className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', color: 'var(--theme-text-primary)' }}>⇧↵</kbd> Code Editor</span>
-            <span><kbd className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: 'var(--theme-surface)', borderColor: 'var(--theme-border)', color: 'var(--theme-text-primary)' }}>esc</kbd> Dismiss</span>
-          </div>
-        </div>
-
       </div>
-    </div>
+    </>
   );
 }

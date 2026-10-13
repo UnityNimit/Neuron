@@ -19,24 +19,38 @@ import { usePersistentState } from './hooks/usePersistentState';
 import { usePhysicsEngine } from './hooks/usePhysicsEngine';
 import { useAiStudio } from './hooks/useAiStudio';
 
-// THE 100K NODE WEBGPU ENGINE (Pure Hardware Acceleration)
-import PixiSpatialEngine from './components/canvas/PixiSpatialEngine';
-import SpatialMinimap from './components/canvas/SpatialMinimap';
+// Modular Multi-Pane Layout System
+import ModularWorkspace from './components/layout/modular/ModularWorkspace';
+import {
+  getAllPanes,
+  findPaneById,
+  findPaneByTabId,
+  addTabToPane,
+  removeTabFromPane,
+  setActiveTabInPane,
+  splitPane,
+  moveTab,
+  closePane,
+  loadLayoutFromStorage,
+  saveLayoutToStorage,
+  createDefaultModularLayout,
+  createMapAndCodeLayout,
+  createTwoCodeFilesLayout,
+  createMapCodeCodeLayout,
+  createThreeCodeFilesLayout,
+  createCompetitiveProgrammingLayout
+} from './components/layout/modular/layoutModel';
+
 import { applyTheme, getCurrentThemeId } from './config/themeConfig';
 import AiSidebar from './components/ai/AiSidebar';
 
 // Layout & UI
-import CodeEditor from './components/layout/CodeEditor';
-import ImageViewer from './components/layout/ImageViewer';
-import UnsupportedFileViewer from './components/layout/UnsupportedFileViewer';
 import TopBar from './components/layout/TopBar';
 import ActivityBar from './components/layout/ActivityBar';
 import Sidebar from './components/layout/Sidebar';
 import SourceControlPanel from './components/layout/SourceControlPanel';
 import SettingsModal from './components/layout/SettingsModal';
 import StatusBar from './components/layout/StatusBar';
-import TerminalPanel from './components/layout/TerminalPanel';
-import RightPanelContainer from './components/layout/RightPanelContainer';
 import CommandPalette from './components/layout/CommandPalette';
 import AgentSupervisorHUD from './components/layout/AgentSupervisorHUD';
 import SplashScreen from './components/layout/SplashScreen'; 
@@ -69,6 +83,20 @@ export default function App() {
     centerView, setCenterView, 
     stdin, setStdin 
   } = usePersistentState();
+
+  // Modular Multi-Pane Layout Tree State (Preserved in localStorage)
+  const [layoutTree, setLayoutTree] = useState(() => {
+    return loadLayoutFromStorage(workspace.openFiles, workspace.currentFile);
+  });
+  const [activePaneId, setActivePaneId] = useState(() => {
+    const panes = getAllPanes(layoutTree);
+    return panes[0]?.id || null;
+  });
+
+  const isSpatialActive = useMemo(() => {
+    const panes = getAllPanes(layoutTree);
+    return panes.some(p => p.activeTabId === 'spatial' || (p.tabs || []).some(t => t.id === 'spatial'));
+  }, [layoutTree]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState('general');
 
@@ -184,7 +212,7 @@ export default function App() {
     workspace.edges || [], 
     workspace.wsRef, 
     workspace.isGraphLoaded, 
-    centerView,
+    isSpatialActive ? 'spatial' : 'editor',
     settings?.physicsSimulation ?? true,
     settings?.spatialAnimationSpeed ?? 1.0
   );
@@ -310,6 +338,15 @@ export default function App() {
     return (fileNode && fileNode.data?.nodeType === 'file') ? (fileNode.data?.code || "") : "";
   }, [nodesMap, workspace.currentFile]);
 
+  const getCodeForFile = useCallback((filePath) => {
+    if (!filePath) return "";
+    if (currentCodeBufferRef.current[filePath] !== undefined) {
+      return currentCodeBufferRef.current[filePath];
+    }
+    const fileNode = nodesMap.get(filePath);
+    return (fileNode && fileNode.data?.nodeType === 'file') ? (fileNode.data?.code || "") : "";
+  }, [nodesMap]);
+
   // ---  FILE TYPE CLASSIFIER (Images, Unsupported Binaries, Code) ---
   const fileExt = useMemo(() => {
     if (!workspace.currentFile) return "";
@@ -369,8 +406,23 @@ export default function App() {
     }
   }, [workspace.currentFile, workspace.wsRef, workspace.setNodes, activeCodeStr]);
 
-  const handleCodeChange = useCallback((newCode, targetFile) => {
-    const file = targetFile || workspace.currentFile;
+  const handleCodeChange = useCallback((arg1, arg2) => {
+    let file = workspace.currentFile;
+    let newCode = "";
+    if (typeof arg1 === 'string' && typeof arg2 === 'string') {
+      if (arg1.includes('/') || arg1.includes('.') || arg1.includes('\\')) {
+        file = arg1;
+        newCode = arg2;
+      } else if (arg2.includes('/') || arg2.includes('.') || arg2.includes('\\')) {
+        newCode = arg1;
+        file = arg2;
+      } else {
+        file = arg1;
+        newCode = arg2;
+      }
+    } else if (typeof arg1 === 'string') {
+      newCode = arg1;
+    }
     if (!file) return;
 
     currentCodeBufferRef.current[file] = newCode;
@@ -461,6 +513,106 @@ export default function App() {
     }
     return workspace.commitGitChanges(message, options);
   }, [dirtyFiles, workspace]);
+
+  // Modular Layout Computations & Menu Toggles
+  const effectiveLayout = useMemo(() => ({
+    sidebar: layout.sidebar,
+    terminal: Boolean(findPaneByTabId(layoutTree, 'terminal') || findPaneByTabId(layoutTree, 'output')),
+    stdin: Boolean(findPaneByTabId(layoutTree, 'stdin'))
+  }), [layout.sidebar, layoutTree]);
+
+  const handleToggleLayout = useCallback((key) => {
+    if (key === 'sidebar') {
+      setLayout(prev => ({ ...prev, sidebar: !prev.sidebar }));
+    } else if (key === 'terminal') {
+      setLayoutTree(prev => {
+        const pane = findPaneByTabId(prev, 'terminal') || findPaneByTabId(prev, 'output');
+        if (pane) {
+          if ((pane.activeTabId === 'terminal' || pane.activeTabId === 'output') && getAllPanes(prev).length > 1) {
+            return closePane(prev, pane.id);
+          } else {
+            setActivePaneId(pane.id);
+            const targetTab = (pane.tabs || []).some(t => t.id === 'terminal') ? 'terminal' : (pane.tabs?.[0]?.id || 'output');
+            return setActiveTabInPane(prev, pane.id, targetTab);
+          }
+        } else {
+          const active = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
+          if (!active) return prev;
+          const res = splitPane(prev, active.id, 'vertical', { id: 'terminal', type: 'terminal', title: 'Terminal' }, false);
+          setActivePaneId(res.newPaneId);
+          return res.tree;
+        }
+      });
+    } else if (key === 'stdin') {
+      setLayoutTree(prev => {
+        const pane = findPaneByTabId(prev, 'stdin');
+        if (pane) {
+          if (pane.activeTabId === 'stdin' && getAllPanes(prev).length > 1) {
+            return closePane(prev, pane.id);
+          } else {
+            setActivePaneId(pane.id);
+            return setActiveTabInPane(prev, pane.id, 'stdin');
+          }
+        } else {
+          const active = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
+          if (!active) return prev;
+          const res = splitPane(prev, active.id, 'horizontal', { id: 'stdin', type: 'stdin', title: 'Input' }, false);
+          setActivePaneId(res.newPaneId);
+          return res.tree;
+        }
+      });
+    }
+  }, [activePaneId, setLayout]);
+
+  const handleFocusSpatialMap = useCallback(() => {
+    setCenterView('spatial');
+    setLayoutTree(prev => {
+      const pane = findPaneByTabId(prev, 'spatial');
+      if (pane) {
+        setActivePaneId(pane.id);
+        return setActiveTabInPane(prev, pane.id, 'spatial');
+      }
+      const targetPane = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
+      if (!targetPane) return prev;
+      return addTabToPane(prev, targetPane.id, {
+        id: 'spatial',
+        type: 'spatial',
+        title: 'Map'
+      });
+    });
+  }, [activePaneId, setCenterView]);
+
+  const handleApplyLayoutPreset = useCallback((presetId) => {
+    const openFiles = workspace.openFiles || [];
+    const activeFile = workspace.currentFile;
+    const workspaceFiles = workspace.files || [];
+
+    let newLayout;
+    if (presetId === 'default') {
+      newLayout = createDefaultModularLayout(openFiles, activeFile, true, true);
+    } else if (presetId === 'map-code') {
+      newLayout = createMapAndCodeLayout(openFiles, activeFile, workspaceFiles);
+    } else if (presetId === 'two-code') {
+      newLayout = createTwoCodeFilesLayout(openFiles, activeFile, workspaceFiles);
+    } else if (presetId === 'map-code-code') {
+      newLayout = createMapCodeCodeLayout(openFiles, activeFile, workspaceFiles);
+    } else if (presetId === 'three-code') {
+      newLayout = createThreeCodeFilesLayout(openFiles, activeFile, workspaceFiles);
+    } else if (presetId === 'competitive') {
+      newLayout = createCompetitiveProgrammingLayout(openFiles, activeFile, workspaceFiles);
+    }
+
+    if (newLayout) {
+      setLayoutTree(newLayout);
+      saveLayoutToStorage(newLayout);
+      const all = getAllPanes(newLayout);
+      if (all.length > 0) {
+        const activePane = all.find(p => (p.tabs || []).some(t => t.id === `file:${activeFile}`)) || all[0];
+        setActivePaneId(activePane.id);
+      }
+      workspace.addNotification?.('info', 'Layout Reset', `Applied ${presetId} layout preset.`, 'layout');
+    }
+  }, [workspace.openFiles, workspace.currentFile, workspace.files, workspace.addNotification]);
 
   // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
   const adjLists = useMemo(() => {
@@ -569,6 +721,16 @@ export default function App() {
           e.preventDefault();
           workspace.wsRef.current.send(JSON.stringify({ event: 'REFACTOR_UNDO' }));
         }
+      }
+      // Toggle Terminal (Ctrl+` / Cmd+`)
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault();
+        handleToggleLayout('terminal');
+      }
+      // Toggle Sidebar (Ctrl+B / Cmd+B)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        handleToggleLayout('sidebar');
       }
       // Fullscreen Toggle (F11)
       if (e.key === 'F11') {
@@ -685,14 +847,14 @@ export default function App() {
 
   // ---  3D CAMERA WARP DISPATCHER ---
   const handleWarpToNode = useCallback((nodeId) => {
-    setCenterView('spatial');
+    handleFocusSpatialMap();
     setWarpTargetNodeId(nodeId);
     setHoveredNodeId(nodeId);
 
     setTimeout(() => {
       setWarpTargetNodeId(null);
     }, 250);
-  }, [setCenterView]);
+  }, [handleFocusSpatialMap]);
 
 // Universal Polyglot Runner command mapping for interactive terminal sessions
 function getTerminalRunCommand(filePath, shellType = 'powershell') {
@@ -868,7 +1030,36 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
       workspace.setIsFileSyncing(true); 
       workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); 
     }
-  }, [workspace, settings?.autoSave, dirtyFiles, handleSaveFile, setCenterView]);
+
+    setLayoutTree(prev => {
+      const tabId = `file:${filename}`;
+      const all = getAllPanes(prev);
+      let targetPane = findPaneById(prev, activePaneId);
+      if (!targetPane && all.length > 0) {
+        targetPane = all[0];
+        setActivePaneId(targetPane.id);
+      }
+      if (!targetPane) return prev;
+
+      if ((targetPane.tabs || []).some(t => t.id === tabId)) {
+        return setActiveTabInPane(prev, targetPane.id, tabId);
+      }
+
+      const otherPane = findPaneByTabId(prev, tabId);
+      if (otherPane) {
+        setActivePaneId(otherPane.id);
+        return setActiveTabInPane(prev, otherPane.id, tabId);
+      }
+
+      const baseName = filename.split('/').pop();
+      return addTabToPane(prev, targetPane.id, {
+        id: tabId,
+        type: 'file',
+        path: filename,
+        title: baseName
+      });
+    });
+  }, [workspace, settings?.autoSave, dirtyFiles, handleSaveFile, setCenterView, activePaneId]);
 
   const handleCloseTab = useCallback((fileToClose, e) => {
     if (e) e.stopPropagation();
@@ -882,11 +1073,21 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     if (workspace.closeFile) {
       workspace.closeFile(fileToClose, (newActive) => {
         if (!newActive) {
-          setCenterView('spatial');
+          handleFocusSpatialMap();
         }
       });
     }
-  }, [workspace, setCenterView]);
+
+    setLayoutTree(prev => {
+      const tabId = `file:${fileToClose}`;
+      const panesWithTab = getAllPanes(prev).filter(p => (p.tabs || []).some(t => t.id === tabId));
+      let cur = prev;
+      for (const p of panesWithTab) {
+        cur = removeTabFromPane(cur, p.id, tabId);
+      }
+      return cur;
+    });
+  }, [workspace, handleFocusSpatialMap]);
 
   const handleOpenFolder = useCallback(() => { 
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) { 
@@ -952,6 +1153,61 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     ).then(() => setIsCompilerReady(true)); 
   }, [workspace]);
 
+    const allModularPanes = useMemo(() => getAllPanes(layoutTree), [layoutTree]);
+  const canCloseSplit = allModularPanes.length > 1;
+
+  const handleSplitActivePane = useCallback((direction) => {
+    setLayoutTree(prev => {
+      const active = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
+      if (!active) return prev;
+
+      const activeTab = (active.tabs || []).find(t => t.id === active.activeTabId) || active.tabs?.[0];
+      if (!activeTab) return prev;
+
+      if ((active.tabs || []).length > 1) {
+        const moved = moveTab(prev, active.id, active.id, activeTab.id, direction === 'horizontal' ? 'right' : 'bottom');
+        setActivePaneId(moved.activePaneId);
+        return moved.tree;
+      }
+
+      const duplicateTab = {
+        ...activeTab,
+        id: activeTab.type === 'file' ? activeTab.id : `${activeTab.id}_split_${Date.now()}`
+      };
+      const result = splitPane(prev, active.id, direction, duplicateTab, false);
+      setActivePaneId(result.newPaneId);
+      return result.tree;
+    });
+  }, [activePaneId]);
+
+  const handleCloseActivePane = useCallback(() => {
+    setLayoutTree(prev => {
+      const all = getAllPanes(prev);
+      if (all.length <= 1) return prev;
+      const targetPane = findPaneById(prev, activePaneId) || all[0];
+      if (!targetPane) return prev;
+      const updated = closePane(prev, targetPane.id);
+      const remaining = getAllPanes(updated);
+      if (remaining.length > 0) {
+        setActivePaneId(remaining[0].id);
+      }
+      return updated;
+    });
+  }, [activePaneId]);
+
+  const handleAddTabToActivePane = useCallback((tab) => {
+    setLayoutTree(prev => {
+      const targetPane = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
+      if (!targetPane) return prev;
+      setActivePaneId(targetPane.id);
+      const updated = addTabToPane(prev, targetPane.id, tab);
+      if (tab.type === 'file' && tab.path) {
+        handleSwitchFile(tab.path);
+      }
+      return updated;
+    });
+  }, [activePaneId, handleSwitchFile]);
+
   if (!workspace.isGraphLoaded || !isCompilerReady || workspace.isFolderLoading) {
     return (
       <SplashScreen 
@@ -972,20 +1228,6 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
       }}
     >
       
-      {/* Omni-Search Command Palette */}
-      <CommandPalette 
-        isOpen={isCommandPaletteOpen} 
-        onClose={() => { setIsCommandPaletteOpen(false); setSearchQuery(""); }} 
-        searchQuery={searchQuery} 
-        setSearchQuery={setSearchQuery} 
-        workspace={workspace} 
-        onRunCode={handleRunCode} 
-        onRunInTerminal={handleRunInTerminal}
-        onOpenSettings={() => handleOpenSettings('general')} 
-        onWarpToNode={handleWarpToNode}
-        onSwitchFile={handleSwitchFile}
-      />
-      
       <SettingsModal 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
@@ -1004,8 +1246,22 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
         onCreateFile={() => { const name = prompt("Enter new file name:"); if (name) handleCreateItem(name, 'file'); }} 
         onOpenSettings={handleOpenSettings} 
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)} 
-        layout={layout} 
-        setLayout={setLayout} 
+        layout={effectiveLayout} 
+        setLayout={handleToggleLayout} 
+        onApplyLayoutPreset={handleApplyLayoutPreset}
+        isCommandPaletteOpen={isCommandPaletteOpen}
+        setIsCommandPaletteOpen={setIsCommandPaletteOpen}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        workspace={workspace}
+        onRunCode={handleRunCode}
+        onRunInTerminal={handleRunInTerminal}
+        onWarpToNode={handleWarpToNode}
+        onSwitchFile={handleSwitchFile}
+        onSplitPane={handleSplitActivePane}
+        onClosePane={handleCloseActivePane}
+        onAddTabToPane={handleAddTabToActivePane}
+        canCloseSplit={canCloseSplit}
       />
       
       <div className="flex flex-row flex-grow overflow-hidden">
@@ -1119,420 +1375,52 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
               </Panel>
               {/* RAZOR-THIN 1PX RESIZE DIVIDER (Sidebar) */}
               <Separator 
-                className="w-[1px] hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
+                className="w-[1px] h-full shrink-0 hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
                 style={{ backgroundColor: 'var(--theme-border, #242628)' }}
               />
             </>
           )}
 
-          <Panel id="main-canvas" order={2} className="flex flex-col" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
-            <Group orientation="vertical" autoSaveId="neuron-vertical-v12">
-              <Panel id="canvas-area" order={1} className="relative flex flex-col" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
-                
-                {/* ----------------------------------------------------------- */}
-                {/* CENTER TAB STRIP (Detached Floating Cards + Bottom Line)    */}
-                {/* ----------------------------------------------------------- */}
-                <div 
-                  className="h-8 shrink-0 flex items-center justify-between px-0 border-b z-40 relative select-none"
-                  style={{
-                    backgroundColor: 'var(--theme-secondary)',
-                    borderColor: 'var(--theme-border)'
-                  }}
-                >
-                  <div className="h-full flex items-center px-1.5 gap-1.5 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
-                    {/* Spatial Map Tab */}
-                    <button 
-                      onClick={() => setCenterView('spatial')} 
-                      className={`neuron-tab-card px-3 gap-1.5 font-mono shrink-0 cursor-pointer group ${
-                        centerView === 'spatial' 
-                          ? 'neuron-tab-card-active' 
-                          : 'neuron-tab-card-inactive'
-                      }`}
-                    >
-                      <span className="leading-none">Spatial Map</span>
-                      <span
-                        className={`neuron-tab-indicator ${
-                          centerView === 'spatial' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
-                        }`}
-                      />
-                    </button>
-
-                    {/* Dynamic Multi-File Tabs */}
-                    {(workspace.openFiles || []).map(file => {
-                      const isDirty = dirtyFiles.has(file);
-                      const rawGStat = (workspace.gitStatuses || {})[file];
-                      const gStat = (isDirty && (!rawGStat || rawGStat === 'I')) ? 'M' : rawGStat;
-                      const isModified = gStat === 'M';
-                      const isUntracked = gStat === 'U';
-                      const isAdded = gStat === 'A';
-                      const isDeleted = gStat === 'D';
-                      const isActive = centerView === 'editor' && workspace.currentFile === file;
-                      
-                      let tabTextClass = "group-hover:text-[var(--theme-text-bright)]";
-                      let tabTextStyle = {
-                        color: isActive ? 'var(--theme-text-bright)' : 'var(--theme-text-secondary)'
-                      };
-                      let iconClass = "";
-                      let iconStyle = {
-                        color: isActive ? 'var(--theme-accent)' : 'var(--theme-text-muted)'
-                      };
-                      let badgeColor = "";
-
-                      if (isDirty) {
-                        tabTextClass = "italic text-amber-500";
-                        tabTextStyle = {};
-                        iconClass = "text-amber-500";
-                        iconStyle = {};
-                        badgeColor = "text-amber-500";
-                      } else if (isModified) {
-                        tabTextClass = "text-amber-500";
-                        tabTextStyle = {};
-                        iconClass = "text-amber-500";
-                        iconStyle = {};
-                        badgeColor = "text-amber-500";
-                      } else if (isUntracked || isAdded) {
-                        tabTextClass = "text-emerald-500";
-                        tabTextStyle = {};
-                        iconClass = "text-emerald-500";
-                        iconStyle = {};
-                        badgeColor = "text-emerald-500";
-                      } else if (isDeleted) {
-                        tabTextClass = "text-red-500 line-through";
-                        tabTextStyle = {};
-                        iconClass = "text-red-500";
-                        iconStyle = {};
-                        badgeColor = "text-red-500";
-                      }
-                      
-                      return (
-                        <div 
-                          key={file} 
-                          onClick={() => handleSwitchFile(file)} 
-                          className={`neuron-tab-card px-3 gap-1.5 font-mono cursor-pointer shrink-0 group ${
-                            isActive 
-                              ? 'neuron-tab-card-active' 
-                              : 'neuron-tab-card-inactive'
-                          }`}
-                        >
-                          <FileCode2 size={12} className={`transition-colors duration-150 shrink-0 ${iconClass}`} style={iconStyle} /> 
-                          
-                          <span className={`leading-none transition-colors duration-150 ${tabTextClass}`} style={tabTextStyle}>
-                            {file.split('/').pop()}
-                          </span>
-                          
-                          {gStat && gStat !== 'I' && (
-                            <span className={`text-[10px] leading-none font-mono font-bold ${badgeColor} pr-0.5`}>
-                              {gStat}
-                            </span>
-                          )}
-
-                          {workspace.isFileSyncing && workspace.currentFile === file && (
-                            <Loader2 size={11} className="animate-spin shrink-0" style={{ color: 'var(--theme-accent)' }} />
-                          )}
-                          
-                          {/* Close Button or Unsaved Dirty Circle */}
-                          <button 
-                            onClick={(e) => handleCloseTab(file, e)} 
-                            className="rounded p-0.5 ml-0.5 transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface)] flex items-center justify-center relative w-4 h-4 group/btn"
-                            title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
-                          >
-                            {isDirty ? (
-                              <>
-                                <span className="w-2 h-2 rounded-full bg-amber-400 group-hover/btn:opacity-0 transition-opacity" />
-                                <X size={12} className="opacity-0 group-hover/btn:opacity-100 transition-opacity absolute inset-0 m-auto text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)]" />
-                              </>
-                            ) : (
-                              <X size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]" />
-                            )}
-                          </button>
-
-                          <span
-                            className={`neuron-tab-indicator ${
-                              isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
-                            }`}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* RUN BUTTONS (Output & Terminal) */}
-                  {!isImageFile && !isUnsupportedFile && (
-                    <div className="ml-auto flex items-center gap-1 pr-2.5 shrink-0 relative z-10">
-                      <button 
-                        onClick={() => handleRunCode()} 
-                        className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-all cursor-pointer"
-                        title="Run in Output (F5)"
-                      >
-                        <Play size={13} strokeWidth={1.8} />
-                      </button>
-                      <button 
-                        onClick={() => handleRunInTerminal()} 
-                        className="w-7 h-6 flex items-center justify-center rounded-md hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-all cursor-pointer"
-                        title="Run in Terminal"
-                      >
-                        <Terminal size={13} strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  )}
-
-                </div>
-
-                <div 
-                  className="flex-grow relative overflow-hidden"
-                  style={{ backgroundColor: 'var(--theme-background, #121314)' }}
-                >
-                  {centerView === 'spatial' ? (
-                    <div className="relative w-full h-full flex flex-col">
-                      {/*  SPATIAL MAP TOP BAR (Exact match to CodeEditor breadcrumb bar) */}
-                      <div 
-                        className="h-6 shrink-0 border-b px-3 flex items-center justify-between text-[11px] font-mono select-none z-20"
-                        style={{
-                          backgroundColor: 'var(--theme-background, #121314)',
-                          borderColor: 'var(--theme-border, #242628)',
-                          color: 'var(--theme-text-secondary, #94a3b8)'
-                        }}
-                      >
-                        <div className="flex items-center gap-4 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#e4ef61' }} />
-                            <span className="text-[var(--theme-text-muted)]">Folder</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#3b82f6' }} />
-                            <span className="text-[var(--theme-text-muted)]">File</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#8b5cf6' }} />
-                            <span className="text-[var(--theme-text-muted)]">Function</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#f59e0b' }} />
-                            <span className="text-[var(--theme-text-muted)]">Medium Risk</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#ef4444' }} />
-                            <span className="text-[var(--theme-text-muted)]">High Risk</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#9f00ad' }} />
-                            <span className="text-[var(--theme-text-muted)]">Call Edge</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="relative flex-1 w-full min-h-0 overflow-hidden">
-                        {/*  THE WEBGPU SPATIAL ENGINE  */}
-                        <PixiSpatialEngine 
-                          simDataRef={simDataRef}
-                          activeRay={activeRay}
-                          focusIsolationId={focusIsolationId}
-                          blastRadius={workspace.blastRadius}
-                          cspRejectionEvent={cspRejection}
-                          warpTargetNodeId={warpTargetNodeId}
-                          refactorEnabled={refactorEnabled}
-                          onDragStart={onDragStart}
-                          onDragMove={onDragMove}
-                          onDragEnd={onDragEnd}
-                          onRefactorDrop={handleRefactorDrop}
-                          onFileMergeDrop={handleFileMergeDrop}
-                          onNodeHover={handleNodeHover}
-                          onNodeDoubleClick={onDoubleClickNode}
-                          settings={settings}
-                        />
-
-                        {/*  EMPTY WORKSPACE ONBOARDING HERO CARD */}
-                        {(workspace.files || []).length === 0 && (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-30 select-none">
-                            <div 
-                              className="pointer-events-auto flex flex-col items-center text-center max-w-sm px-6 py-5 rounded-2xl border backdrop-blur-md shadow-2xl transition-all"
-                              style={{
-                                backgroundColor: 'rgba(18, 19, 20, 0.75)',
-                                borderColor: 'var(--theme-border, rgba(255, 255, 255, 0.08))'
-                              }}
-                            >
-                              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-[var(--theme-accent)]/10 text-[var(--theme-accent)] border border-[var(--theme-accent)]/20">
-                                <Network size={20} />
-                              </div>
-                              <h3 className="text-sm font-semibold text-white tracking-wide">
-                                {workspace.repoName || (workspace.absTargetDir ? workspace.absTargetDir.split(/[\\/]/).pop() : "Workspace")}
-                              </h3>
-                              <p className="text-xs text-slate-400 mt-1 mb-4 leading-relaxed font-sans">
-                                Workspace loaded. Create your first code file in the Explorer or click below to build your celestial map.
-                              </p>
-                              <button
-                                onClick={() => {
-                                  handleCreateItem('main.py', 'file');
-                                }}
-                                className="px-3.5 py-1.5 rounded-lg text-xs font-mono font-medium transition-all cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 bg-[var(--theme-accent, #3b82f6)] text-white hover:brightness-110"
-                              >
-                                <span>+ Create First File</span>
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/*  SPATIAL RADAR MINIMAP OVERLAY */}
-                        {(settings?.spatialMinimap ?? true) && (
-                          <SpatialMinimap 
-                            nodes={workspace.nodes || []} 
-                            simDataRef={simDataRef} 
-                          />
-                        )}
-                        
-                        {/*  SUPER-MINIMALIST FLOATING AI OVERVIEW PANEL */}
-                        {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
-                          <div 
-                            className="absolute top-4 right-4 max-w-sm border rounded-xl p-3.5 z-[100] pointer-events-none animate-in fade-in duration-150"
-                            style={{
-                              backgroundColor: 'var(--theme-surface, #141516)',
-                              borderColor: 'var(--theme-border, #242628)',
-                              boxShadow: '0 8px 30px rgba(0,0,0,0.25)'
-                            }}
-                          >
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono text-xs font-semibold text-[var(--theme-accent)] truncate">
-                                  {workspace.aiInsight.nodeId.split('::').pop()?.replace('()', '')}
-                                </span>
-                                <span className="font-mono text-[10px] text-[var(--theme-text-muted)] truncate shrink-0">
-                                  {workspace.aiInsight.nodeId.split('::')[0]}
-                                </span>
-                              </div>
-                              <p className="text-[var(--theme-text-primary)] font-sans text-xs leading-relaxed">
-                                {workspace.aiInsight.summary}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* --- FLOATING CSP REFACTORING VIOLATION ALERT --- */}
-                        {cspRejection && (
-                          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 max-w-lg w-full bg-[#1c0808]/95 border border-red-800/80 shadow-[0_0_50px_rgba(239,68,68,0.3)] rounded-xl p-4 z-[100] backdrop-blur-md animate-in fade-in slide-in-from-bottom-4 duration-200">
-                            <div className="flex items-start gap-3">
-                              <AlertOctagon size={20} className="text-red-400 shrink-0 mt-0.5" />
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-red-200 font-mono text-xs font-bold uppercase tracking-wider">
-                                    Refactoring Guard: {cspRejection.violationType}
-                                  </h4>
-                                  <button 
-                                    onClick={() => setCspRejection(null)} 
-                                    className="text-red-400 hover:text-red-200 p-0.5"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </div>
-                                <p className="text-slate-300 font-sans text-xs mt-1.5 leading-relaxed">
-                                  {cspRejection.reason}
-                                </p>
-                                {cspRejection.suggestedFix && (
-                                  <p className="text-red-300 font-mono text-[10px] mt-2 bg-black/40 p-2 rounded border border-red-950">
-                                    Suggested: {cspRejection.suggestedFix}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : isImageFile ? (
-                    <ImageViewer 
-                      filename={workspace.currentFile} 
-                      isSyncing={workspace.isFileSyncing}
-                    />
-                  ) : isUnsupportedFile ? (
-                    <UnsupportedFileViewer 
-                      filename={workspace.currentFile} 
-                      onRevealExplorer={(p) => workspace.wsRef.current?.send(JSON.stringify({ event: 'REVEAL_IN_EXPLORER', path: p }))}
-                    />
-                  ) : !workspace.currentFile ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-[var(--theme-text-muted)] font-mono text-xs select-none">
-                      <p>No file open</p>
-                      <button 
-                        onClick={() => setCenterView('spatial')} 
-                        className="mt-3 px-3 py-1.5 rounded bg-[var(--theme-surface)] hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-colors border border-[var(--theme-border)] cursor-pointer shadow-xs active:scale-95"
-                      >
-                        Switch to Spatial Map
-                      </button>
-                    </div>
-                  ) : (
-                    <CodeEditor 
-                      filename={workspace.currentFile} 
-                      initialCode={activeCodeStr} 
-                      isDirty={dirtyFiles.has(workspace.currentFile)}
-                      settings={settings} 
-                      focusLine={editorFocusLine} 
-                      isSyncing={workspace.isFileSyncing}
-                      onCodeChange={handleCodeChange}
-                      onSave={() => handleSaveFile()}
-                      onClearFocus={() => setEditorFocusLine(null)} 
-                    />
-                  )}
-                </div>
-              </Panel>
-              {layout.terminal && ( 
-                <>
-                  {/*  RAZOR-THIN 1PX RESIZE DIVIDER (Terminal) */}
-                  <Separator 
-                    className="h-[1px] hover:bg-[var(--theme-accent)] cursor-row-resize z-50 flex items-center transition-colors outline-none" 
-                    style={{ backgroundColor: 'var(--theme-border, #242628)' }}
-                  />
-                  <Panel 
-                    id="terminal-area" 
-                    order={2} 
-                    defaultSize={250} 
-                    minSize={15} 
-                    maxSize={300} 
-                    style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
-                  >
-                    <TerminalPanel 
-                      logs={workspace.terminalLogs} 
-                      sessions={workspace.terminalSessions} 
-                      activeSessionId={workspace.activeSessionId} 
-                      absTargetDir={workspace.absTargetDir} 
-                      isOutputRunning={workspace.isOutputRunning}
-                      onSelectSession={workspace.setActiveSessionId} 
-                      onCreateSession={workspace.createTerminalSession} 
-                      onCloseSession={workspace.closeTerminalSession} 
-                      onSendTerminalCommand={workspace.sendTerminalCommand} 
-                      onSendStdin={workspace.sendTerminalStdin}
-                      onKillProcess={workspace.killTerminalProcess} 
-                      onClearOutput={() => workspace.clearTerminalSession(workspace.activeSessionId)} 
-                    />
-                  </Panel>
-                </> 
-              )}
-            </Group>
+          <Panel id="modular-workspace" order={2} className="flex flex-col min-w-0 min-h-0 overflow-hidden" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
+            <ModularWorkspace
+              layoutTree={layoutTree}
+              setLayoutTree={setLayoutTree}
+              activePaneId={activePaneId}
+              setActivePaneId={setActivePaneId}
+              onActiveFileChange={handleSwitchFile}
+              workspace={workspace}
+              simDataRef={simDataRef}
+              activeRay={activeRay}
+              focusIsolationId={focusIsolationId}
+              warpTargetNodeId={warpTargetNodeId}
+              refactorEnabled={refactorEnabled}
+              onDragStart={onDragStart}
+              onDragMove={onDragMove}
+              onDragEnd={onDragEnd}
+              handleRefactorDrop={handleRefactorDrop}
+              handleFileMergeDrop={handleFileMergeDrop}
+              handleNodeHover={handleNodeHover}
+              onDoubleClickNode={onDoubleClickNode}
+              hoveredNodeId={hoveredNodeId}
+              cspRejection={cspRejection}
+              setCspRejection={setCspRejection}
+              handleCreateItem={handleCreateItem}
+              getCodeForFile={getCodeForFile}
+              dirtyFiles={dirtyFiles}
+              settings={settings}
+              editorFocusLine={editorFocusLine}
+              setEditorFocusLine={setEditorFocusLine}
+              handleCodeChange={handleCodeChange}
+              handleSaveFile={handleSaveFile}
+              stdin={stdin}
+              setStdin={setStdin}
+              aiStudio={aiStudio}
+              handleOpenSettings={handleOpenSettings}
+              onRunCode={handleRunCode}
+              onRunInTerminal={handleRunInTerminal}
+            />
           </Panel>
-          {layout.stdin && ( 
-            <>
-              {/*  RAZOR-THIN 1PX RESIZE DIVIDER (STDIN) */}
-              <Separator 
-                className="w-[1px] hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
-                style={{ backgroundColor: 'var(--theme-border, #242628)' }}
-              />
-              <Panel 
-                id="stdin-panel" 
-                order={4} 
-                defaultSize={320} 
-                minSize={180} 
-                maxSize={700} 
-                style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
-              >
-                <RightPanelContainer 
-                  stdin={stdin} 
-                  setStdin={setStdin} 
-                  activeFile={workspace.currentFile}
-                  fileContent={currentCodeBufferRef.current[workspace.currentFile] ?? activeCodeStr}
-                  aiStudio={aiStudio}
-                  projectName={workspace.repoName || (workspace.absTargetDir ? workspace.absTargetDir.split(/[\\/]/).pop() : "Neuron")}
-                  onOpenSettings={handleOpenSettings}
-                />
-              </Panel>
-            </> 
-          )}
+
         </Group>
       </div>
 
@@ -1567,7 +1455,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
         onToggleRefactor={() => setRefactorEnabled(prev => !prev)}
         blastProtectionEnabled={blastProtectionEnabled}
         onToggleBlastProtection={handleToggleBlastProtection}
-        onCenterSpatialMap={() => setCenterView('spatial')}
+        onCenterSpatialMap={handleFocusSpatialMap}
         notifications={workspace.notifications}
         onClearNotifications={workspace.clearNotifications}
         onDismissNotification={workspace.dismissNotification}

@@ -632,7 +632,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
     { id: 'general', label: 'General', desc: 'Workspace preferences, auto-saving, and system safety' },
     { id: 'ai', label: 'Agent', desc: 'API keys, model discovery, and agent configuration' },
     { id: 'editor', label: 'Editor', desc: 'Code editing, typography, formatting, and layout' },
-    { id: 'spatial', label: 'Spatial Map', desc: '3D celestial canvas, radar minimap, and physics simulation' },
+    { id: 'spatial', label: 'Map', desc: '3D celestial canvas, radar minimap, and physics simulation' },
     { id: 'appearance', label: 'Appearance', desc: 'Visual theme, color palettes, and custom theme token overrides' },
     { id: 'reference', label: 'Reference', desc: 'Complete keyboard shortcuts and interactive command reference' },
   ];

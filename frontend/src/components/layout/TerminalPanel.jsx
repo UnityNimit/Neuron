@@ -22,7 +22,8 @@ export default function TerminalPanel({
   onSendTerminalCommand, 
   onSendStdin,
   onKillProcess, 
-  onClearOutput 
+  onClearOutput,
+  hideTabStrip = false
 }) {
   const [inputCommand, setInputCommand] = useState("");
   const [commandHistory, setCommandHistory] = useState([]);
@@ -51,7 +52,8 @@ export default function TerminalPanel({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const activeSession = sessions.find(s => s.id === activeSessionId);
+  const activeSession = sessions.find(s => s.id === activeSessionId) || (activeSessionId !== 'output' ? sessions[0] : null);
+  const resolvedSessionId = activeSessionId === 'output' ? 'output' : (activeSession?.id || (sessions[0]?.id || 'output'));
 
   // Global Ctrl+C handler when terminal is active/focused
   useEffect(() => {
@@ -71,7 +73,7 @@ export default function TerminalPanel({
         ) {
           e.preventDefault();
           if (onKillProcess) {
-            onKillProcess(activeSessionId);
+            onKillProcess(resolvedSessionId);
           }
         }
       }
@@ -79,7 +81,7 @@ export default function TerminalPanel({
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [activeSession?.isRunning, activeSessionId, onKillProcess]);
+  }, [activeSession?.isRunning, resolvedSessionId, onKillProcess]);
 
   // Clean up inputCommand immediately when process exits so leftover game keys are never submitted as shell commands
   useEffect(() => {
@@ -109,19 +111,18 @@ export default function TerminalPanel({
     }
 
     // Intercept Ctrl+C to kill running process
-    if (e.ctrlKey && e.key.toLowerCase() === 'c' && (activeSession?.isRunning || (activeSessionId === 'output' && isOutputRunning))) {
+    if (e.ctrlKey && e.key.toLowerCase() === 'c' && (activeSession?.isRunning || (resolvedSessionId === 'output' && isOutputRunning))) {
       e.preventDefault();
-      if (onKillProcess) onKillProcess(activeSessionId);
+      if (onKillProcess) onKillProcess(resolvedSessionId);
       return;
     }
 
     if (e.key === 'Enter') {
       e.preventDefault();
-
       // If process is running, feed input into stdin
       if (activeSession?.isRunning) {
         if (onSendStdin) {
-          onSendStdin(activeSessionId, inputCommand + '\n');
+          onSendStdin(resolvedSessionId, inputCommand + '\n');
         }
         setInputCommand("");
         return;
@@ -138,8 +139,8 @@ export default function TerminalPanel({
       setCommandHistory(prev => [...prev, inputCommand]);
       setHistoryIndex(-1);
 
-      if (activeSessionId !== 'output' && onSendTerminalCommand) {
-        onSendTerminalCommand(activeSessionId, inputCommand);
+      if (resolvedSessionId !== 'output' && onSendTerminalCommand) {
+        onSendTerminalCommand(resolvedSessionId, inputCommand);
       }
       setInputCommand("");
     } 
@@ -176,6 +177,7 @@ export default function TerminalPanel({
       {/* ----------------------------------------------------------------- */}
       {/* 1. ULTRA-MINIMAL TERMINAL TAB STRIP (Detached Floating Cards)     */}
       {/* ----------------------------------------------------------------- */}
+      {!hideTabStrip && (
       <div 
         className="h-8 shrink-0 flex items-center justify-between px-0 border-b select-none relative z-30"
         style={{
@@ -189,13 +191,13 @@ export default function TerminalPanel({
           {/* Output Log Tab */}
           <button 
             onClick={() => onSelectSession && onSelectSession('output')} 
-            className={`neuron-tab-card px-3 gap-1.5 font-mono shrink-0 cursor-pointer group ${
+            className={`neuron-tab-card px-2.5 font-mono shrink-0 cursor-pointer group ${
               activeSessionId === 'output' 
                 ? 'neuron-tab-card-active' 
                 : 'neuron-tab-card-inactive'
             }`}
           >
-            <span className="leading-none">Output</span>
+            <span className="relative z-[2] leading-normal">Output</span>
             <span
               className={`neuron-tab-indicator ${
                 activeSessionId === 'output' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
@@ -210,17 +212,17 @@ export default function TerminalPanel({
               <div 
                 key={s.id} 
                 onClick={() => onSelectSession && onSelectSession(s.id)} 
-                className={`neuron-tab-card px-3 gap-1.5 cursor-pointer font-mono group shrink-0 ${
+                className={`neuron-tab-card px-2.5 gap-1.5 cursor-pointer font-mono group shrink-0 ${
                   isActive 
                     ? 'neuron-tab-card-active' 
                     : 'neuron-tab-card-inactive'
                 }`}
               >
                 <div 
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 ${s.isRunning ? 'animate-pulse' : ''}`}
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 relative z-[2] ${s.isRunning ? 'animate-pulse' : ''}`}
                   style={{ backgroundColor: s.isRunning ? 'var(--theme-accent)' : 'var(--theme-text-muted)' }}
                 />
-                <span className="leading-none">{s.name}</span>
+                <span className="relative z-[2] leading-normal">{s.name}</span>
                 <span
                   className={`neuron-tab-indicator ${
                     isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
@@ -312,6 +314,7 @@ export default function TerminalPanel({
 
         </div>
       </div>
+      )}
 
       {/* ----------------------------------------------------------------- */}
       {/* 2. TERMINAL OUTPUT STREAM (Ultra-Thin Sleek Scrollbar)             */}
@@ -333,7 +336,7 @@ export default function TerminalPanel({
         }}
       >
         {/* Output Mode */}
-        {activeSessionId === 'output' && (
+        {resolvedSessionId === 'output' && (
           <div className="flex flex-col gap-0.5">
             {logs.map((log, index) => (
               <div 
@@ -355,7 +358,7 @@ export default function TerminalPanel({
         )}
 
         {/* Interactive Shell Mode */}
-        {activeSessionId !== 'output' && activeSession && (
+        {resolvedSessionId !== 'output' && activeSession && (
           <div className="flex flex-col gap-1 select-text">
             {(activeSession.history || []).map((h, i) => (
               <div key={i} className="flex flex-col gap-0.5 mb-2.5">
