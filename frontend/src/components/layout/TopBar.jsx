@@ -59,6 +59,16 @@ export default function TopBar({
     window.__TAURI_INTERNALS__ || window.__TAURI__
   );
 
+  // Cross-platform OS detection
+  const isMac = useMemo(() => {
+    if (typeof navigator === 'undefined') return false;
+    const platform = navigator.platform || navigator.userAgentData?.platform || '';
+    const ua = navigator.userAgent || '';
+    return /mac|iphone|ipad|ipod/i.test(platform) || /macintosh|mac os x/i.test(ua);
+  }, []);
+
+  const modKey = isMac ? '⌘' : 'Ctrl';
+
   // -------------------------------------------------------------------------
   // 1. RECENT PROJECTS LOCALSTORAGE SYNC
   // -------------------------------------------------------------------------
@@ -174,38 +184,38 @@ export default function TopBar({
 
   // --- FILE MENU ---
   const fileDropdownItems = useMemo(() => [
-    { label: "Open Folder...", action: onOpenFolder, shortcut: "Ctrl+K Ctrl+O" },
+    { label: "Open Folder...", action: onOpenFolder, shortcut: `${modKey}+K ${modKey}+O` },
     { 
       label: "Open Recent", 
       isSubmenu: true, 
       hasChildren: recentProjects.length > 0 
     },
     { separator: true },
-    { label: "Save", action: onSave, shortcut: "Ctrl+S" },
+    { label: "Save", action: onSave, shortcut: `${modKey}+S` },
     { label: "Auto Save", action: onToggleAutoSave, toggle: autoSave },
     { separator: true },
-    { label: "Preferences", action: onOpenSettings, shortcut: "Ctrl+," },
+    { label: "Preferences", action: onOpenSettings, shortcut: `${modKey}+,` },
     { separator: true },
-    { label: "Close Window", action: handleClose, shortcut: "Ctrl+W" },
-    { label: "Exit Neuron", action: handleQuitCompletely, shortcut: "Alt+F4" }
-  ], [onOpenFolder, onSave, onToggleAutoSave, autoSave, onOpenSettings, recentProjects]);
+    { label: "Close Window", action: handleClose, shortcut: `${modKey}+W` },
+    { label: "Exit Neuron", action: handleQuitCompletely, shortcut: isMac ? "⌘Q" : "Alt+F4" }
+  ], [onOpenFolder, onSave, onToggleAutoSave, autoSave, onOpenSettings, recentProjects, modKey, isMac]);
 
   // --- EDIT MENU ---
   const editDropdownItems = [
-    { label: "Undo", action: () => document.execCommand('undo'), shortcut: "Ctrl+Z" },
-    { label: "Redo", action: () => document.execCommand('redo'), shortcut: "Ctrl+Y" },
+    { label: "Undo", action: () => document.execCommand('undo'), shortcut: `${modKey}+Z` },
+    { label: "Redo", action: () => document.execCommand('redo'), shortcut: isMac ? "⇧⌘Z" : "Ctrl+Y" },
     { separator: true },
-    { label: "Cut", action: () => document.execCommand('cut'), shortcut: "Ctrl+X" },
-    { label: "Copy", action: () => document.execCommand('copy'), shortcut: "Ctrl+C" },
-    { label: "Paste", action: async () => { try { const text = await navigator.clipboard.readText(); document.execCommand('insertText', false, text); } catch { document.execCommand('paste'); } }, shortcut: "Ctrl+V" },
+    { label: "Cut", action: () => document.execCommand('cut'), shortcut: `${modKey}+X` },
+    { label: "Copy", action: () => document.execCommand('copy'), shortcut: `${modKey}+C` },
+    { label: "Paste", action: async () => { try { const text = await navigator.clipboard.readText(); document.execCommand('insertText', false, text); } catch { document.execCommand('paste'); } }, shortcut: `${modKey}+V` },
     { separator: true },
-    { label: "Search", action: onOpenCommandPalette, shortcut: "Ctrl+K" }
+    { label: "Search", action: onOpenCommandPalette, shortcut: `${modKey}+K` }
   ];
 
   // --- LAYOUT MENU ---
   const layoutDropdownItems = [
-    { label: "Explorer Sidebar", action: () => toggleLayout('sidebar'), toggle: layout.sidebar, shortcut: "Ctrl+B" },
-    { label: "Interactive Terminal", action: () => toggleLayout('terminal'), toggle: layout.terminal, shortcut: "Ctrl+`" },
+    { label: "Explorer Sidebar", action: () => toggleLayout('sidebar'), toggle: layout.sidebar, shortcut: `${modKey}+B` },
+    { label: "Interactive Terminal", action: () => toggleLayout('terminal'), toggle: layout.terminal, shortcut: `${modKey}+\`` },
     { label: "Standard Input Panel", action: () => toggleLayout('stdin'), toggle: layout.stdin },
     { separator: true },
     { isHeader: true, label: "Layout Presets" },
@@ -235,7 +245,9 @@ export default function TopBar({
   return (
     <div 
       data-tauri-drag-region
-      className="h-[42px] shrink-0 border-b flex items-center justify-between pl-3 pr-0 text-[12px] font-sans select-none z-[500] relative"
+      className={`h-[42px] shrink-0 border-b flex items-center justify-between ${
+        isTauri && isMac ? 'pl-[78px]' : 'pl-3'
+      } pr-0 text-[12px] font-sans select-none z-[500] relative`}
       style={{
         backgroundColor: 'var(--theme-primary, #121212)',
         borderColor: 'var(--theme-border, #242628)',
@@ -600,8 +612,8 @@ export default function TopBar({
           )}
         </div>
 
-        {/* Seamless Full-Height Native Window Controls for Desktop Tauri */}
-        {isTauri && (
+        {/* Seamless Full-Height Native Window Controls for Desktop Tauri (Windows & Linux) */}
+        {isTauri && !isMac && (
           <div className="flex items-center h-full ml-1.5 border-l" style={{ borderColor: 'var(--theme-border, #242628)' }}>
             {/* Minimize */}
             <button 

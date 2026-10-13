@@ -39,6 +39,7 @@ export default function PixiSpatialEngine({
   blastRadius,
   cspRejectionEvent,
   warpTargetNodeId,
+  selectedNodeIds = [],
   onDragStart, 
   onDragMove, 
   onDragEnd,
@@ -46,6 +47,8 @@ export default function PixiSpatialEngine({
   onFileMergeDrop,
   onNodeDoubleClick, 
   onNodeHover,
+  onNodeRightClick,
+  onCanvasClick,
   refactorEnabled = false,
   settings = {}
 }) {
@@ -55,6 +58,7 @@ export default function PixiSpatialEngine({
   
   const stateRef = useRef({ 
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
+    selectedNodeIds, onNodeRightClick, onCanvasClick,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
     onRefactorDrop, onFileMergeDrop, refactorEnabled, settings 
   });
@@ -62,11 +66,13 @@ export default function PixiSpatialEngine({
   useEffect(() => {
     stateRef.current = { 
       activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
+      selectedNodeIds, onNodeRightClick, onCanvasClick,
       onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
       onRefactorDrop, onFileMergeDrop, refactorEnabled, settings 
     };
   }, [
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
+    selectedNodeIds, onNodeRightClick, onCanvasClick,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
     onRefactorDrop, onFileMergeDrop, refactorEnabled, settings
   ]);
@@ -79,6 +85,7 @@ export default function PixiSpatialEngine({
     const spriteMap = new Map();
     const shockwaves = [];
     const snapBackQueue = new Map();
+    let cleanupCanvasListeners = null;
 
     const initWebGPU = async () => {
       const app = new PIXI.Application();
@@ -124,8 +131,44 @@ export default function PixiSpatialEngine({
         events: app.renderer.events
       });
       viewport.eventMode = 'static';
+
+      let hoveredNodeIdInternal = null;
+
+      const clearActiveHover = () => {
+        if (hoveredNodeIdInternal) {
+          hoveredNodeIdInternal = null;
+          stateRef.current.onNodeHover?.(false, null);
+        }
+      };
       
-      viewport.drag().pinch().wheel().decelerate();
+      viewport.drag({ mouseButtons: 'left' }).pinch().wheel().decelerate();
+      viewport.on('pointerdown', (e) => {
+        if (e.button === 0) {
+          clearActiveHover();
+          stateRef.current.onCanvasClick?.();
+        }
+      });
+      viewport.on('zoomed', clearActiveHover);
+      viewport.on('wheel', clearActiveHover);
+      viewport.on('pinch-start', clearActiveHover);
+      viewport.on('drag-start', clearActiveHover);
+
+      app.stage.on('pointermove', (e) => {
+        if (e.target === app.stage || e.target === viewport) {
+          clearActiveHover();
+        }
+      });
+
+      const handleCanvasPointerLeave = () => {
+        clearActiveHover();
+      };
+      app.canvas.addEventListener('pointerleave', handleCanvasPointerLeave);
+      app.canvas.addEventListener('mouseleave', handleCanvasPointerLeave);
+      cleanupCanvasListeners = () => {
+        app.canvas?.removeEventListener('pointerleave', handleCanvasPointerLeave);
+        app.canvas?.removeEventListener('mouseleave', handleCanvasPointerLeave);
+      };
+
       viewport.moveCenter(0, 0);
       viewport.setZoom(0.45);
       viewport.update(0);
@@ -412,6 +455,22 @@ export default function PixiSpatialEngine({
 
         // DRAG & HIT TESTING
         sprite.on('pointerdown', (e) => {
+          if (e.button === 2) {
+            // Right-click on node: select orb and notify parent for context menu
+            const clientX = e.nativeEvent?.clientX ?? e.global.x;
+            const clientY = e.nativeEvent?.clientY ?? e.global.y;
+            stateRef.current.onNodeRightClick?.({
+              nodeId: node.id,
+              node,
+              clientX,
+              clientY,
+              shiftKey: e.nativeEvent?.shiftKey || false
+            });
+            return;
+          }
+
+          if (e.button !== 0) return;
+
           globalDraggingNodeId = node.id;
           dragOriginPos = { x: node.x || 0, y: node.y || 0 };
           currentCaptureTarget = null;
@@ -493,6 +552,7 @@ export default function PixiSpatialEngine({
               }
             }
 
+            hoveredNodeIdInternal = null;
             stateRef.current.onNodeHover(false, null);
           } 
         };
@@ -501,7 +561,8 @@ export default function PixiSpatialEngine({
         sprite.on('pointerupoutside', stopDrag);
         
         let lastClickTime = 0;
-        sprite.on('pointerdown', () => {
+        sprite.on('pointerdown', (e) => {
+          if (e.button !== 0) return;
           const now = Date.now();
           if (now - lastClickTime < 320) {
             stateRef.current.onNodeDoubleClick(node.data?.filePath || node.id, node.data?.line || 1);
@@ -510,10 +571,18 @@ export default function PixiSpatialEngine({
         });
         
         sprite.on('pointerover', () => {
-          if (!globalDraggingNodeId) stateRef.current.onNodeHover(true, node.id);
+          if (!globalDraggingNodeId) {
+            hoveredNodeIdInternal = node.id;
+            stateRef.current.onNodeHover(true, node.id);
+          }
         });
         sprite.on('pointerout', () => {
-          if (globalDraggingNodeId !== node.id) stateRef.current.onNodeHover(false, null);
+          if (globalDraggingNodeId !== node.id) {
+            if (hoveredNodeIdInternal === node.id) {
+              hoveredNodeIdInternal = null;
+            }
+            stateRef.current.onNodeHover(false, null);
+          }
         });
 
         const label = new PIXI.Text({
@@ -979,6 +1048,52 @@ export default function PixiSpatialEngine({
           });
         }
 
+        // 4. Multi-Orb Right-Click Selection Visuals (Clean Dual Contour Rings & Reticle Highlights)
+        const currentSelectedIds = stateRef.current.selectedNodeIds || [];
+        const selectedSet = new Set(currentSelectedIds);
+        if (selectedSet.size > 0) {
+          const pulse = (Math.sin(frameCount * 0.14 * animSpeed) + 1) * 0.5;
+
+          // Render clean, modern selection halos without any connecting sequence lines
+          currentSelectedIds.forEach(sId => {
+            const sObj = spriteMap.get(sId);
+            if (sObj && !isNaN(sObj.rx) && !isNaN(sObj.ry)) {
+              const baseR = sObj.worldRadius || 24;
+              const ox = Math.round(sObj.rx);
+              const oy = Math.round(sObj.ry);
+
+              // 1. Crisp Inner Selection Ring
+              const innerR = baseR + 3.5 * edgeZoomBoost;
+              refactorOverlay.circle(ox, oy, innerR);
+              refactorOverlay.stroke({ width: 1.8 * edgeZoomBoost, color: 0x38bdf8, alpha: 0.95 });
+
+              // 2. Soft Outer Ambient Breathing Aura
+              const auraR = innerR + 4.5 + (pulse * 2.5);
+              refactorOverlay.circle(ox, oy, auraR);
+              refactorOverlay.stroke({ width: 1.0 * edgeZoomBoost, color: 0x0284c7, alpha: 0.35 + (pulse * 0.15) });
+              refactorOverlay.fill({ color: 0x0284c7, alpha: 0.08 + (pulse * 0.04) });
+
+              // 3. Precision CAD Reticle Accent (4 Subtle Cardinal Marks)
+              const tickGap = 2.0 * edgeZoomBoost;
+              const tickLen = 4.0 * edgeZoomBoost;
+              const tickR = auraR + tickGap;
+              // North
+              refactorOverlay.moveTo(ox, oy - tickR);
+              refactorOverlay.lineTo(ox, oy - tickR - tickLen);
+              // South
+              refactorOverlay.moveTo(ox, oy + tickR);
+              refactorOverlay.lineTo(ox, oy + tickR + tickLen);
+              // West
+              refactorOverlay.moveTo(ox - tickR, oy);
+              refactorOverlay.lineTo(ox - tickR - tickLen, oy);
+              // East
+              refactorOverlay.moveTo(ox + tickR, oy);
+              refactorOverlay.lineTo(ox + tickR + tickLen, oy);
+              refactorOverlay.stroke({ width: 1.2 * edgeZoomBoost, color: 0x38bdf8, alpha: 0.85 });
+            }
+          });
+        }
+
         // ---------------------------------------------------------------------
         // F. DYNAMIC ML NEBULA CONVEX HULLS (Synchronized With Procedural Merging)
         // ---------------------------------------------------------------------
@@ -1252,20 +1367,24 @@ export default function PixiSpatialEngine({
           const showFuncText = !isFolder && !isFile && funcZoomAlpha > 0.01 && m < 0.16;
           const isTextVisible = allowLabels && (showFolderText || showFileText || showFuncText);
           
-          obj.label.visible = allowLabels && inFrustum && isTextVisible && p > 0.85;
+          const isSelected = selectedSet.has(node.id);
+          
+          obj.label.visible = allowLabels && inFrustum && (isTextVisible || isSelected) && p > 0.85;
 
           const isHoveredHighlight = currentActiveRay?.activeN?.has(node.id);
           const isBlastHighlight = blastSet?.has(node.id);
           const isDimmedByRay = (currentActiveRay && !isHoveredHighlight) || (blastSet && !isBlastHighlight);
           
-          const baseAlpha = isDimmedByRay ? (THEME.edges?.opacityDimmed || 0.04) : 1.0;
+          const baseAlpha = isSelected ? 1.0 : (isDimmedByRay ? (THEME.edges?.opacityDimmed || 0.04) : 1.0);
           const nodeZoomAlpha = isFolder ? folderZoomAlpha : isFile ? fileZoomAlpha : funcZoomAlpha;
-          const labelMergeAlpha = Math.max(0, 1 - m * 4.8) * nodeZoomAlpha;
+          const labelMergeAlpha = isSelected ? 1.0 : (Math.max(0, 1 - m * 4.8) * nodeZoomAlpha);
           obj.sprite.alpha = baseAlpha * childMergeAlpha;
           obj.label.alpha = baseAlpha * labelMergeAlpha;
 
           // Electric highlight tints
-          if (isHoveredHighlight) {
+          if (isSelected) {
+            obj.sprite.tint = 0x67e8f9;
+          } else if (isHoveredHighlight) {
             obj.sprite.tint = 0x60a5fa;
           } else if (isBlastHighlight) {
             obj.sprite.tint = 0x00ffff;
@@ -1322,6 +1441,7 @@ export default function PixiSpatialEngine({
 
     return () => {
       isMounted = false;
+      cleanupCanvasListeners?.();
       window.removeEventListener('neuron-theme-change', handleThemeChange);
       resizeObserver.disconnect();
       if (appRef.current) {
@@ -1334,5 +1454,11 @@ export default function PixiSpatialEngine({
     };
   }, [simDataRef]); 
 
-  return <div ref={containerRef} className="w-full h-full absolute inset-0 outline-none overflow-hidden" />;
+  return (
+    <div 
+      ref={containerRef} 
+      onContextMenu={(e) => e.preventDefault()}
+      className="w-full h-full absolute inset-0 outline-none overflow-hidden" 
+    />
+  );
 }

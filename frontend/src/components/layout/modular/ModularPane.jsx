@@ -33,6 +33,8 @@ export default function ModularPane({
   focusIsolationId,
   warpTargetNodeId,
   refactorEnabled,
+  refactorFeedback,
+  setRefactorFeedback,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -188,6 +190,8 @@ export default function ModularPane({
           focusIsolationId={focusIsolationId}
           warpTargetNodeId={warpTargetNodeId}
           refactorEnabled={refactorEnabled}
+          refactorFeedback={refactorFeedback}
+          setRefactorFeedback={setRefactorFeedback}
           onDragStart={onDragStart}
           onDragMove={onDragMove}
           onDragEnd={onDragEnd}

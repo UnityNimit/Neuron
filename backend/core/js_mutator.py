@@ -46,8 +46,8 @@ def calculate_relative_js_import_path(importer_rel_path: str, target_rel_path: s
       target:   'src/components/GlassPanel.jsx'
       Output:   '../components/GlassPanel'
     """
-    importer_dir = posixpath.dirname(importer_rel_path)
-    target_dir = posixpath.dirname(target_rel_path)
+    importer_dir = posixpath.dirname(importer_rel_path) or "."
+    target_dir = posixpath.dirname(target_rel_path) or "."
     
     rel_dir = posixpath.relpath(target_dir, importer_dir).replace("\\", "/")
     
@@ -87,22 +87,30 @@ def extract_symbol_regex_fallback(content: str, symbol_name: str) -> Tuple[Optio
     if start_idx == -1:
         return None, None
 
+    paren_depth = 0
     brace_depth = 0
     in_block = False
     end_idx = len(content)
 
     for i in range(start_idx, len(content)):
         char = content[i]
-        if char == '{':
-            brace_depth += 1
-            in_block = True
+        if char == '(':
+            paren_depth += 1
+        elif char == ')':
+            paren_depth = max(0, paren_depth - 1)
+        elif char == '{':
+            if paren_depth == 0:
+                in_block = True
+            if in_block:
+                brace_depth += 1
         elif char == '}':
-            brace_depth -= 1
-            if in_block and brace_depth == 0:
-                end_idx = i + 1
-                if end_idx < len(content) and content[end_idx] == ';':
-                    end_idx += 1
-                break
+            if in_block:
+                brace_depth -= 1
+                if brace_depth == 0:
+                    end_idx = i + 1
+                    if end_idx < len(content) and content[end_idx] == ';':
+                        end_idx += 1
+                    break
 
     extracted = content[start_idx:end_idx].strip()
     remaining = (content[:start_idx] + content[end_idx:]).strip() + "\n"
@@ -385,7 +393,7 @@ def execute_js_symbol_refactor_transplant(
     all_workspace_files: List[str]
 ) -> Tuple[bool, str]:
     """
-    🚀 THE JS / REACT AST SURGEON (Lossless Atomic Refactoring)
+    THE JS / REACT AST SURGEON (Lossless Atomic Refactoring)
       1. Extracts symbol from source file AST.
       2. Injects import from destination into source file if source still references it.
       3. Forwards needed package/hook imports from source file into destination file.

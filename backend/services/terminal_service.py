@@ -425,6 +425,22 @@ def find_python_interpreter(target_dir: str, file_dir: str) -> Optional[str]:
                     except Exception:
                         pass
 
+    # 3b. Unix / macOS well-known installation paths
+    else:
+        unix_candidates = [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+            "/usr/bin/python",
+            os.path.expanduser("~/.pyenv/shims/python3"),
+            os.path.expanduser("~/.conda/bin/python3"),
+            os.path.expanduser("~/miniconda3/bin/python3"),
+            os.path.expanduser("~/anaconda3/bin/python3"),
+        ]
+        for cand in unix_candidates:
+            if is_valid_executable(cand):
+                return os.path.abspath(cand)
+
     # 4. Local non-frozen development fallback
     if not getattr(sys, "frozen", False) and is_valid_executable(sys.executable):
         base = os.path.basename(sys.executable).lower()
@@ -458,6 +474,18 @@ def find_cpp_compiler() -> Optional[str]:
         for c in candidates:
             if os.path.exists(c):
                 return c
+    else:
+        unix_candidates = [
+            "/usr/bin/clang++",
+            "/usr/bin/g++",
+            "/opt/homebrew/bin/clang++",
+            "/opt/homebrew/bin/g++",
+            "/usr/local/bin/clang++",
+            "/usr/local/bin/g++",
+        ]
+        for c in unix_candidates:
+            if os.path.exists(c):
+                return c
 
     return None
 
@@ -484,6 +512,18 @@ def find_c_compiler() -> Optional[str]:
             os.path.expandvars(r"%LOCALAPPDATA%\Programs\w64devkit\bin\gcc.exe"),
         ]
         for c in candidates:
+            if os.path.exists(c):
+                return c
+    else:
+        unix_candidates = [
+            "/usr/bin/clang",
+            "/usr/bin/gcc",
+            "/opt/homebrew/bin/clang",
+            "/opt/homebrew/bin/gcc",
+            "/usr/local/bin/clang",
+            "/usr/local/bin/gcc",
+        ]
+        for c in unix_candidates:
             if os.path.exists(c):
                 return c
 
@@ -527,10 +567,15 @@ def find_shell_interpreter() -> Optional[str]:
 
         return None
 
-    for name in ["bash", "sh"]:
+    for name in ["zsh", "bash", "sh"]:
         found = shutil.which(name)
         if found and os.path.exists(found):
             return os.path.abspath(found)
+
+    unix_defaults = ["/bin/zsh", "/bin/bash", "/bin/sh", "/usr/bin/zsh", "/usr/bin/bash"]
+    for sh_path in unix_defaults:
+        if os.path.exists(sh_path):
+            return sh_path
 
     return None
 

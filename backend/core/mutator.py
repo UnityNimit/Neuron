@@ -1,6 +1,7 @@
 # backend/core/mutator.py
 import os
 import posixpath
+import re
 from typing import Dict, List, Optional, Set, Tuple
 import libcst as cst
 
@@ -257,7 +258,7 @@ def execute_symbol_refactor_transplant(
     all_workspace_files: List[str]
 ) -> Tuple[bool, str]:
     """
-    🚀 THE PYTHON AST SURGEON (Lossless Atomic Refactoring)
+    THE PYTHON AST SURGEON (Lossless Atomic Refactoring)
       1. Extracts and removes symbol from source file CST.
       2. Injects 'from new_module import symbol' into source file if other functions call it.
       3. Copies necessary dependency imports from source file into destination file.
@@ -388,3 +389,135 @@ def execute_symbol_refactor_transplant(
         return False, f"Atomic transaction aborted and rolled back: {e}"
 
     return True, f"Successfully refactored '{clean_symbol}' from {source_filepath} to {dest_filepath} across {len(file_mutation_queue)} files."
+
+
+def execute_py_file_merge(
+    source_filepath: str,
+    dest_filepath: str,
+    workspace_root: str,
+    all_workspace_files: List[str]
+) -> Tuple[bool, str]:
+    """
+    Merges an entire Python module into a destination Python file:
+      1. Parses source and destination CSTs.
+      2. Deduplicates imports and injects missing imports from source into dest.
+      3. Appends body statements from source into dest.
+      4. Rewrites all workspace imports referencing source_file to point to dest_file.
+      5. Atomically commits updates and deletes source_file, with in-memory rollback.
+    """
+    src_abs = os.path.join(workspace_root, source_filepath)
+    dst_abs = os.path.join(workspace_root, dest_filepath)
+
+    if not os.path.exists(src_abs) or not os.path.exists(dst_abs):
+        return False, "Source or destination file does not exist on disk."
+
+    with open(src_abs, "r", encoding="utf-8") as f:
+        src_code = f.read()
+    with open(dst_abs, "r", encoding="utf-8") as f:
+        dst_code = f.read()
+
+    try:
+        src_cst = cst.parse_module(src_code)
+        dst_cst = cst.parse_module(dst_code)
+    except Exception as e:
+        return False, f"Failed to parse Python CST: {e}"
+
+    src_import_collector = ImportStatementsCollector()
+    src_cst.visit(src_import_collector)
+
+    dst_import_collector = ImportStatementsCollector()
+    dst_cst.visit(dst_import_collector)
+    existing_dst_imports = {
+        cst.Module(body=[stmt]).code.strip()
+        for stmt in dst_import_collector.all_import_stmts
+    }
+
+    src_body_statements = []
+    old_full_mod, old_aliases = file_path_to_module_aliases(source_filepath)
+    new_full_mod, _ = file_path_to_module_aliases(dest_filepath)
+
+    for stmt in src_cst.body:
+        if isinstance(stmt, cst.SimpleStatementLine):
+            is_import = any(isinstance(sub, (cst.Import, cst.ImportFrom)) for sub in stmt.body)
+            if not is_import:
+                src_body_statements.append(stmt)
+        else:
+            src_body_statements.append(stmt)
+
+    modified_dst = dst_cst
+    for import_stmt in src_import_collector.all_import_stmts:
+        stmt_code = cst.Module(body=[import_stmt]).code.strip()
+        if stmt_code not in existing_dst_imports:
+            if new_full_mod in stmt_code or old_full_mod in stmt_code:
+                continue
+            injector = ImportInjector(import_stmt)
+            modified_dst = modified_dst.visit(injector)
+            existing_dst_imports.add(stmt_code)
+
+    if src_body_statements:
+        first_stmt = src_body_statements[0].with_changes(
+            leading_lines=[
+                cst.EmptyLine(),
+                cst.EmptyLine(comment=cst.Comment(f"# --- MERGED FROM {source_filepath} ---")),
+                cst.EmptyLine()
+            ]
+        )
+        new_dst_body = list(modified_dst.body) + [first_stmt] + list(src_body_statements[1:])
+    else:
+        new_dst_body = list(modified_dst.body)
+
+    final_dst_cst = modified_dst.with_changes(body=new_dst_body)
+
+    file_mutation_queue = [(dst_abs, final_dst_cst.code)]
+
+    for rel_file in all_workspace_files:
+        if not rel_file.endswith(".py") or rel_file in (source_filepath, dest_filepath):
+            continue
+
+        abs_file = os.path.join(workspace_root, rel_file)
+        if not os.path.exists(abs_file):
+            continue
+
+        try:
+            with open(abs_file, "r", encoding="utf-8") as f:
+                other_code = f.read()
+
+            transformed_code = other_code
+            for alias in old_aliases:
+                transformed_code = re.sub(
+                    r'(from\s+)' + re.escape(alias) + r'(\s+import\b)',
+                    r'\1' + new_full_mod + r'\2',
+                    transformed_code
+                )
+                transformed_code = re.sub(
+                    r'(import\s+)' + re.escape(alias) + r'(\b)',
+                    r'\1' + new_full_mod + r'\2',
+                    transformed_code
+                )
+
+            if transformed_code != other_code:
+                file_mutation_queue.append((abs_file, transformed_code))
+        except Exception:
+            continue
+
+    backups: Dict[str, str] = {}
+    try:
+        for target_path, _ in file_mutation_queue:
+            with open(target_path, "r", encoding="utf-8") as f:
+                backups[target_path] = f.read()
+
+        for target_path, mutated_content in file_mutation_queue:
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(mutated_content)
+
+        os.remove(src_abs)
+    except Exception as e:
+        for target_path, original_content in backups.items():
+            try:
+                with open(target_path, "w", encoding="utf-8") as f:
+                    f.write(original_content)
+            except Exception:
+                pass
+        return False, f"Python merge transaction failed and rolled back: {e}"
+
+    return True, f"Merged {source_filepath} into {dest_filepath} and updated imports across {len(file_mutation_queue)} files."

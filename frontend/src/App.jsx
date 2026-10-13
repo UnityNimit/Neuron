@@ -127,6 +127,19 @@ export default function App() {
   const hoverTimerRef = useRef(null);
   const pendingRefactorRef = useRef(null);
   const [cspRejection, setCspRejection] = useState(null);
+  const [refactorFeedback, setRefactorFeedback] = useState(null);
+  const refactorFeedbackTimerRef = useRef(null);
+
+  const showRefactorFeedback = useCallback((feedback) => {
+    if (refactorFeedbackTimerRef.current) {
+      clearTimeout(refactorFeedbackTimerRef.current);
+    }
+    setRefactorFeedback(feedback);
+    const duration = feedback.status === 'done' ? 3000 : 4500;
+    refactorFeedbackTimerRef.current = setTimeout(() => {
+      setRefactorFeedback(null);
+    }, duration);
+  }, []);
   const [refactorEnabled, setRefactorEnabled] = useState(false);
   const [blastProtectionEnabled, setBlastProtectionEnabled] = useState(() => {
     try {
@@ -789,6 +802,9 @@ export default function App() {
         else if (data.event === 'REFACTOR_CSP_VIOLATION') {
           const payload = data.payload || {};
           const pending = pendingRefactorRef.current;
+          const rawReason = payload.reason || payload.error || "cyclic dependency detected";
+          const cleanReason = rawReason.replace(/^Constraint Violation:\s*/i, '').toLowerCase();
+          showRefactorFeedback({ status: 'cant', reason: cleanReason });
           
           setCspRejection({
             timestamp: Date.now(),
@@ -801,23 +817,47 @@ export default function App() {
             originalPos: pending?.originalPos
           });
         }
-        else if (data.event === 'REFACTOR_SUCCESS' || data.event === 'REFACTOR_FILE_MERGE_SUCCESS') {
+        else if (data.event === 'REFACTOR_ERROR') {
+          const rawReason = data.payload?.reason || data.reason || "refactor failed";
+          showRefactorFeedback({ status: 'cant', reason: rawReason.toLowerCase() });
+        }
+        else if (data.event === 'REFACTOR_SUCCESS' || data.event === 'REFACTOR_FILE_MERGE_SUCCESS' || data.event === 'REFACTOR_FILE_SPLIT_SUCCESS') {
+          showRefactorFeedback({ status: 'done' });
           setCspRejection(null);
           pendingRefactorRef.current = null;
+        }
+        else if (data.event === 'REFACTOR_FILE_MERGE_ERROR') {
+          const rawReason = data.reason || "merge failed";
+          showRefactorFeedback({ status: 'cant', reason: rawReason.toLowerCase() });
+        }
+        else if (data.event === 'REFACTOR_FILE_SPLIT_ERROR') {
+          const rawReason = data.reason || "split failed";
+          showRefactorFeedback({ status: 'cant', reason: rawReason.toLowerCase() });
         }
       } catch (e) {}
     };
 
     ws.addEventListener('message', handleWsEvents);
     return () => ws.removeEventListener('message', handleWsEvents);
-  }, [workspace.isWsConnected, hoveredNodeId]);
+  }, [workspace.isWsConnected, hoveredNodeId, showRefactorFeedback]);
 
   // --- FUNCTION-TO-FILE AST TRANSPLANT DISPATCHER ---
-  const handleRefactorDrop = useCallback(({ symbolName, sourceFile, destFile, nodeId, originalPos }) => {
-    if (!refactorEnabled) {
-      workspace.addNotification?.('info', 'Refactor Disabled', 'Toggle Refactor ON in the bottom status bar to move functions or merge files.', 'ai');
+  const handleRefactorDrop = useCallback(({ symbolName, sourceFile, destFile, nodeId, originalPos, force }) => {
+    if (!refactorEnabled && !force) {
+      showRefactorFeedback({ status: 'cant', reason: 'refactor mode is disabled' });
       return;
     }
+    if (!destFile) {
+      showRefactorFeedback({ status: 'cant', reason: 'no destination file selected' });
+      return;
+    }
+    const normSrc = (sourceFile || '').replace(/\\/g, '/').toLowerCase();
+    const normDst = (destFile || '').replace(/\\/g, '/').toLowerCase();
+    if (normSrc && normDst && (normSrc === normDst || normSrc.endsWith('/' + normDst) || normDst.endsWith('/' + normSrc))) {
+      showRefactorFeedback({ status: 'cant', reason: 'already in this file' });
+      return;
+    }
+    showRefactorFeedback({ status: 'moving' });
     pendingRefactorRef.current = { symbolName, sourceFile, destFile, nodeId, originalPos };
     
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
@@ -828,14 +868,25 @@ export default function App() {
         dest_file: destFile
       }));
     }
-  }, [workspace.wsRef, refactorEnabled, workspace.addNotification]);
+  }, [workspace.wsRef, refactorEnabled, showRefactorFeedback]);
 
   // --- FILE-TO-FILE FUSION DISPATCHER ---
-  const handleFileMergeDrop = useCallback(({ sourceFile, destFile }) => {
-    if (!refactorEnabled) {
-      workspace.addNotification?.('info', 'Refactor Disabled', 'Toggle Refactor ON in the bottom status bar to move functions or merge files.', 'ai');
+  const handleFileMergeDrop = useCallback(({ sourceFile, destFile, force }) => {
+    if (!refactorEnabled && !force) {
+      showRefactorFeedback({ status: 'cant', reason: 'refactor mode is disabled' });
       return;
     }
+    if (!destFile) {
+      showRefactorFeedback({ status: 'cant', reason: 'no destination file selected' });
+      return;
+    }
+    const normSrc = (sourceFile || '').replace(/\\/g, '/').toLowerCase();
+    const normDst = (destFile || '').replace(/\\/g, '/').toLowerCase();
+    if (normSrc && normDst && (normSrc === normDst || normSrc.endsWith('/' + normDst) || normDst.endsWith('/' + normSrc))) {
+      showRefactorFeedback({ status: 'cant', reason: 'cannot merge file into itself' });
+      return;
+    }
+    showRefactorFeedback({ status: 'moving' });
     if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
       workspace.wsRef.current.send(JSON.stringify({
         event: 'REFACTOR_FILE_MERGE',
@@ -843,7 +894,7 @@ export default function App() {
         dest_file: destFile
       }));
     }
-  }, [workspace.wsRef, refactorEnabled, workspace.addNotification]);
+  }, [workspace.wsRef, refactorEnabled, showRefactorFeedback]);
 
   // ---  3D CAMERA WARP DISPATCHER ---
   const handleWarpToNode = useCallback((nodeId) => {
@@ -1121,27 +1172,34 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
   // STABLE WEBGPU HOVER ROUTER
   const handleNodeHover = useCallback((isHovering, id) => {
-    setHoveredNodeId(isHovering ? id : null);
+    const nextHoverId = (isHovering && id) ? id : null;
+    setHoveredNodeId(nextHoverId);
     
-    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
     
-    if (isHovering && id) {
+    if (nextHoverId) {
+      workspace.setAiInsight(null);
       hoverTimerRef.current = setTimeout(() => {
         if (workspace.wsRef.current?.readyState === WebSocket.OPEN) {
-          const targetNode = nodesMap.get(id);
+          const targetNode = nodesMap.get(nextHoverId);
           if (targetNode?.data?.code) {
             workspace.setAiInsight({
-              nodeId: id,
+              nodeId: nextHoverId,
               summary: "Analyzing AST topology & dependencies..." 
             });
             workspace.wsRef.current.send(JSON.stringify({ 
               event: 'REQUEST_LLM_SUMMARY', 
-              node_id: id, 
+              node_id: nextHoverId, 
               code: targetNode.data.code 
             }));
           }
         }
       }, 550);
+    } else {
+      workspace.setAiInsight(null);
     }
   }, [workspace.wsRef, nodesMap, workspace]);
 
@@ -1394,6 +1452,8 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
               focusIsolationId={focusIsolationId}
               warpTargetNodeId={warpTargetNodeId}
               refactorEnabled={refactorEnabled}
+              refactorFeedback={refactorFeedback}
+              setRefactorFeedback={showRefactorFeedback}
               onDragStart={onDragStart}
               onDragMove={onDragMove}
               onDragEnd={onDragEnd}

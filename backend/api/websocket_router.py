@@ -15,6 +15,8 @@ import networkx as nx
 from ai.agent_supervisor import agent_supervisor
 from ai.vector_search import vector_engine
 from core.js_mutator import execute_js_file_merge
+from core.mutator import execute_py_file_merge
+from core.splitter import get_file_split_preview, execute_file_split
 from core.state import AppState
 from ml.analyzer import sanitize_for_json
 from services.ai_service import (
@@ -539,35 +541,120 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(handle_refactor())
 
             elif evt == "REFACTOR_FILE_MERGE":
-                source_file = message.get("source_file")
+                source_files = message.get("source_files") or ([message.get("source_file")] if message.get("source_file") else [])
                 dest_file = message.get("dest_file")
 
                 async def handle_file_merge():
                     try:
                         state = await asyncio.to_thread(get_workspace_state)
                         all_files = list(state.get("files", []))
-                        src_ext = os.path.splitext(source_file)[1].lower()
                         dst_ext = os.path.splitext(dest_file)[1].lower()
-
                         js_exts = {".js", ".jsx", ".ts", ".tsx", ".mjs"}
-                        if src_ext in js_exts and dst_ext in js_exts:
-                            success, msg = await asyncio.to_thread(
-                                execute_js_file_merge, source_file, dest_file, AppState.TARGET_DIR, all_files
-                            )
-                        else:
-                            success, msg = False, "Cross-language module merging must be performed via symbol move."
 
-                        if success:
-                            await safe_send_json(websocket, {"event": "REFACTOR_FILE_MERGE_SUCCESS", "message": msg})
-                            await broadcast_workspace(force_full_sync=True)
-                            trigger_background_indexing()
-                        else:
-                            await safe_send_json(websocket, {"event": "REFACTOR_FILE_MERGE_ERROR", "reason": msg})
+                        merged_count = 0
+                        last_msg = ""
+                        for src_f in source_files:
+                            if src_f == dest_file:
+                                continue
+                            src_ext = os.path.splitext(src_f)[1].lower()
+                            if src_ext == ".py" and dst_ext == ".py":
+                                success, msg = await asyncio.to_thread(
+                                    execute_py_file_merge, src_f, dest_file, AppState.TARGET_DIR, all_files
+                                )
+                            elif src_ext in js_exts and dst_ext in js_exts:
+                                success, msg = await asyncio.to_thread(
+                                    execute_js_file_merge, src_f, dest_file, AppState.TARGET_DIR, all_files
+                                )
+                            else:
+                                success, msg = False, f"Incompatible language boundaries for direct merge ({src_ext} -> {dst_ext})."
+
+                            if not success:
+                                await safe_send_json(websocket, {"event": "REFACTOR_FILE_MERGE_ERROR", "reason": msg})
+                                return
+                            merged_count += 1
+                            last_msg = msg
+
+                        await safe_send_json(websocket, {
+                            "event": "REFACTOR_FILE_MERGE_SUCCESS",
+                            "message": f"Successfully merged {merged_count} file(s) into {dest_file}." if merged_count > 1 else last_msg
+                        })
+                        await broadcast_workspace(force_full_sync=True)
+                        trigger_background_indexing()
                     except Exception as err:
                         print(f"[ERROR] File merge failed: {err}")
                         await safe_send_json(websocket, {"event": "REFACTOR_FILE_MERGE_ERROR", "reason": str(err)})
 
                 asyncio.create_task(handle_file_merge())
+
+            elif evt == "GET_FILE_SPLIT_PREVIEW":
+                file_path = message.get("file_path")
+                strategy = message.get("strategy", "modular")
+                num_parts = int(message.get("num_parts", 2))
+                custom_plan = message.get("custom_plan")
+
+                async def handle_split_preview():
+                    try:
+                        preview = await asyncio.to_thread(
+                            get_file_split_preview,
+                            file_path=file_path,
+                            workspace_root=AppState.TARGET_DIR,
+                            strategy=strategy,
+                            num_parts=num_parts,
+                            custom_plan=custom_plan
+                        )
+                        await safe_send_json(websocket, {
+                            "event": "FILE_SPLIT_PREVIEW_RESULT",
+                            "payload": preview
+                        })
+                    except Exception as err:
+                        print(f"[ERROR] Split preview failed: {err}")
+                        await safe_send_json(websocket, {
+                            "event": "FILE_SPLIT_PREVIEW_RESULT",
+                            "payload": {"success": False, "reason": str(err)}
+                        })
+
+                asyncio.create_task(handle_split_preview())
+
+            elif evt == "REFACTOR_FILE_SPLIT":
+                source_file = message.get("source_file")
+                split_plan = message.get("split_plan", {})
+                keep_reexports = bool(message.get("keep_reexports", True))
+                rewrite_workspace_imports = bool(message.get("rewrite_workspace_imports", True))
+
+                async def handle_file_split():
+                    try:
+                        state = await asyncio.to_thread(get_workspace_state)
+                        all_files = list(state.get("files", []))
+                        success, msg, summary = await asyncio.to_thread(
+                            execute_file_split,
+                            source_filepath=source_file,
+                            split_plan=split_plan,
+                            workspace_root=AppState.TARGET_DIR,
+                            all_workspace_files=all_files,
+                            keep_reexports=keep_reexports,
+                            rewrite_workspace_imports=rewrite_workspace_imports
+                        )
+                        if success:
+                            await safe_send_json(websocket, {
+                                "event": "REFACTOR_FILE_SPLIT_SUCCESS",
+                                "message": msg,
+                                "summary": summary
+                            })
+                            await broadcast_workspace(force_full_sync=True)
+                            trigger_background_indexing()
+                        else:
+                            await safe_send_json(websocket, {
+                                "event": "REFACTOR_FILE_SPLIT_ERROR",
+                                "reason": msg
+                            })
+                    except Exception as err:
+                        print(f"[ERROR] File split failed: {err}")
+                        await safe_send_json(websocket, {
+                            "event": "REFACTOR_FILE_SPLIT_ERROR",
+                            "reason": str(err)
+                        })
+
+                asyncio.create_task(handle_file_split())
 
             elif evt == "REFACTOR_UNDO":
                 latest_batch_id = list(agent_supervisor.active_batches.keys())[-1] if agent_supervisor.active_batches else None

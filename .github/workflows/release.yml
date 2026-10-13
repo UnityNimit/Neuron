@@ -1,0 +1,96 @@
+name: Release Multi-Platform Builds
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            os-name: windows
+            target-triple: x86_64-pc-windows-msvc
+          - platform: macos-latest
+            os-name: macos
+            target-triple: aarch64-apple-darwin
+          - platform: ubuntu-22.04
+            os-name: linux
+            target-triple: x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pyinstaller
+
+      - name: Set up Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Linux System Dependencies
+        if: matrix.os-name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Compile Standalone Python Backend Sidecar
+        run: |
+          python backend/build_sidecar.py
+
+      - name: Verify Sidecar Binary Output
+        shell: bash
+        run: |
+          ls -la frontend/src-tauri/binaries/
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Tauri Desktop Application
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: frontend
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.2.0' }}
+          releaseName: 'Neuron IDE ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.2.0' }}'
+          releaseBody: 'Automated release build of Neuron IDE for Windows, Linux, and macOS with native Python sidecar engine.'
+          releaseDraft: false
+          prerelease: false
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuron-${{ matrix.os-name }}-${{ matrix.target-triple }}
+          path: |
+            frontend/src-tauri/target/release/bundle/*/*
+            frontend/src-tauri/binaries/*
+          if-no-files-found: warn

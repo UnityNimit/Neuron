@@ -28,6 +28,8 @@ export default function ModularWorkspace({
   focusIsolationId,
   warpTargetNodeId,
   refactorEnabled,
+  refactorFeedback,
+  setRefactorFeedback,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -195,6 +197,8 @@ export default function ModularWorkspace({
           focusIsolationId={focusIsolationId}
           warpTargetNodeId={warpTargetNodeId}
           refactorEnabled={refactorEnabled}
+          refactorFeedback={refactorFeedback}
+          setRefactorFeedback={setRefactorFeedback}
           onDragStart={onDragStart}
           onDragMove={onDragMove}
           onDragEnd={onDragEnd}

@@ -21,7 +21,7 @@ pub struct ProcessState {
     pub is_quitting: Arc<AtomicBool>,
 }
 
-/// 🚀 IMMEDIATE LOG FLUSHER (Writes to %TEMP%\neuron_debug.log)
+/// IMMEDIATE LOG FLUSHER (Writes to %TEMP%\neuron_debug.log)
 fn log_debug(msg: &str) {
     let log_path = std::env::temp_dir().join("neuron_debug.log");
     println!("[NEURON DEBUG] {}", msg);
@@ -85,6 +85,15 @@ fn kill_all_backend_processes(state: &ProcessState) {
             .spawn();
     }
 
+    #[cfg(not(windows))]
+    {
+        let _ = StdCommand::new("pkill")
+            .args(&["-9", "-f", "neuron-backend"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
+
     log_debug("Backend process termination signals dispatched.");
 }
 
@@ -122,12 +131,12 @@ async fn restart_backend(app: AppHandle, state: State<'_, ProcessState>) -> Resu
 /// Multi-tier launcher with comprehensive logging
 fn launch_backend_with_logging(app: &AppHandle, state: &ProcessState) {
     if is_backend_running() {
-        log_debug("⚡ [INSTANT START] Backend is ALREADY running on port 8000. Skipping spawn!");
+        log_debug("[INSTANT START] Backend is ALREADY running on port 8000. Skipping spawn!");
         return;
     }
 
     log_debug("=================================================");
-    log_debug("🚀 STARTING NEURON BACKEND LAUNCH SEQUENCE");
+    log_debug("STARTING NEURON BACKEND LAUNCH SEQUENCE");
     log_debug("=================================================");
 
     // -------------------------------------------------------------------------
@@ -186,20 +195,43 @@ fn launch_backend_with_logging(app: &AppHandle, state: &ProcessState) {
 
     let mut candidate_paths: Vec<PathBuf> = Vec::new();
 
+    // Determine platform-specific binary name variants
+    let mut bin_names: Vec<String> = vec!["neuron-backend".to_string()];
+    #[cfg(windows)]
+    {
+        bin_names.push("neuron-backend.exe".to_string());
+        bin_names.push("neuron-backend-x86_64-pc-windows-msvc.exe".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        bin_names.push("neuron-backend-aarch64-apple-darwin".to_string());
+        bin_names.push("neuron-backend-x86_64-apple-darwin".to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        bin_names.push("neuron-backend-x86_64-unknown-linux-gnu".to_string());
+        bin_names.push("neuron-backend-aarch64-unknown-linux-gnu".to_string());
+    }
+
     if let Ok(current_exe) = std::env::current_exe() {
         log_debug(&format!("Current executable location: {:?}", current_exe));
         if let Some(exe_dir) = current_exe.parent() {
-            candidate_paths.push(exe_dir.join("neuron-backend.exe"));
-            candidate_paths.push(exe_dir.join("neuron-backend-x86_64-pc-windows-msvc.exe"));
-            candidate_paths.push(exe_dir.join("binaries").join("neuron-backend.exe"));
-            candidate_paths.push(exe_dir.join("binaries").join("neuron-backend-x86_64-pc-windows-msvc.exe"));
+            for name in &bin_names {
+                candidate_paths.push(exe_dir.join(name));
+                candidate_paths.push(exe_dir.join("binaries").join(name));
+                // macOS .app bundle layout: Neuron.app/Contents/MacOS/.. -> Resources/binaries
+                candidate_paths.push(exe_dir.join("../Resources/binaries").join(name));
+            }
         }
     }
 
-    // Development fallback paths
-    candidate_paths.push(PathBuf::from("binaries/neuron-backend-x86_64-pc-windows-msvc.exe"));
-    candidate_paths.push(PathBuf::from("src-tauri/binaries/neuron-backend-x86_64-pc-windows-msvc.exe"));
-    candidate_paths.push(PathBuf::from("../backend/dist/neuron-backend.exe"));
+    // Development & workspace fallback paths
+    for name in &bin_names {
+        candidate_paths.push(PathBuf::from(format!("binaries/{}", name)));
+        candidate_paths.push(PathBuf::from(format!("src-tauri/binaries/{}", name)));
+        candidate_paths.push(PathBuf::from(format!("../backend/dist/{}", name)));
+        candidate_paths.push(PathBuf::from(format!("backend/dist/{}", name)));
+    }
 
     for bin_path in &candidate_paths {
         let exists = bin_path.exists();
@@ -244,7 +276,7 @@ fn launch_backend_with_logging(app: &AppHandle, state: &ProcessState) {
             match cmd.spawn() {
                 Ok(child) => {
                     let pid = child.id();
-                    log_debug(&format!("🟢 Tier 2: Successfully spawned backend process! (PID: {})", pid));
+                    log_debug(&format!("[TIER 2] Successfully spawned backend process! (PID: {})", pid));
 
                     if let Ok(mut lock) = state.std_child.lock() {
                         *lock = Some(child);
@@ -260,7 +292,7 @@ fn launch_backend_with_logging(app: &AppHandle, state: &ProcessState) {
         }
     }
 
-    log_debug("❌ [CRITICAL] All backend spawn attempts failed. Check paths in neuron_debug.log.");
+    log_debug("[CRITICAL] All backend spawn attempts failed. Check paths in neuron_debug.log.");
 }
 
 /// Health check probe loop
@@ -272,7 +304,7 @@ fn start_health_probe() {
             tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             if let Ok(resp) = client.get("http://127.0.0.1:8000/health").send().await {
                 if resp.status().is_success() {
-                    log_debug("🟢 [SUCCESS] Backend health check PASSED! ws://127.0.0.1:8000/ws is online.");
+                    log_debug("[SUCCESS] Backend health check PASSED! ws://127.0.0.1:8000/ws is online.");
                     break;
                 }
             }
@@ -280,7 +312,7 @@ fn start_health_probe() {
         }
 
         if attempts >= 60 {
-            log_debug("⚠️ [TIMEOUT] Backend did not respond to /health within 15 seconds.");
+            log_debug("[TIMEOUT] Backend did not respond to /health within 15 seconds.");
         }
     });
 }
@@ -313,9 +345,19 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
-            // Maximize main window on launch to fit 1920x1080 and any display
+            // Configure window display per platform
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.maximize();
+                #[cfg(target_os = "macos")]
+                {
+                    // On macOS, native traffic-lights overlay seamlessly atop custom TopBar
+                    let _ = window.set_decorations(true);
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    // Windows & Linux use seamless custom borderless window
+                    let _ = window.set_decorations(false);
+                }
             }
 
             // Spawn backend engine

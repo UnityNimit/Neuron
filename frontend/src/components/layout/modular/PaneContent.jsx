@@ -4,6 +4,10 @@ import { AlertOctagon, X, Terminal } from 'lucide-react';
 
 import PixiSpatialEngine from '../../canvas/PixiSpatialEngine';
 import SpatialMinimap from '../../canvas/SpatialMinimap';
+import RefactorContextMenu from '../../canvas/RefactorContextMenu';
+import RefactorSelectionHUD from '../../canvas/RefactorSelectionHUD';
+import FileSplitModal from '../../canvas/FileSplitModal';
+import FileMergeModal from '../../canvas/FileMergeModal';
 import CodeEditor from '../CodeEditor';
 import ImageViewer from '../ImageViewer';
 import UnsupportedFileViewer from '../UnsupportedFileViewer';
@@ -32,6 +36,8 @@ export default function PaneContent({
   focusIsolationId,
   warpTargetNodeId,
   refactorEnabled,
+  refactorFeedback,
+  setRefactorFeedback,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -61,6 +67,150 @@ export default function PaneContent({
   // Pane Switch / Open actions
   onOpenTabInPane
 }) {
+  // Multi-Orb Refactoring & Selection State
+  const [selectedNodeIds, setSelectedNodeIds] = React.useState([]);
+  const [contextMenu, setContextMenu] = React.useState({ isOpen: false, position: null, targetNode: null });
+  const [splitModalFile, setSplitModalFile] = React.useState(null);
+  const [mergeModalFiles, setMergeModalFiles] = React.useState(null);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setSelectedNodeIds([]);
+        setContextMenu({ isOpen: false, position: null, targetNode: null });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const allNodes = workspace.nodes || simDataRef?.current?.nodes || [];
+  const selectedNodes = React.useMemo(() => {
+    const nodeMap = new Map();
+    allNodes.forEach(n => nodeMap.set(n.id, n));
+    return selectedNodeIds.map(id => nodeMap.get(id)).filter(Boolean);
+  }, [selectedNodeIds, allNodes]);
+
+  const summaryFileLocation = React.useMemo(() => {
+    if (!workspace.aiInsight?.nodeId) return '';
+    const rawId = workspace.aiInsight.nodeId;
+    const nodeObj = allNodes.find(n => n.id === rawId);
+    if (nodeObj?.data?.filePath) {
+      return nodeObj.data.filePath.replace(/\\/g, '/');
+    }
+    let clean = rawId.replace(/^(file|function)::/, '');
+    if (clean.includes('::')) {
+      clean = clean.split('::')[0];
+    }
+    return clean.replace(/\\/g, '/');
+  }, [workspace.aiInsight?.nodeId, allNodes]);
+
+  const handleNodeRightClick = React.useCallback(({ nodeId, node, clientX, clientY, shiftKey }) => {
+    setSelectedNodeIds(prev => {
+      if (prev.includes(nodeId)) {
+        if (shiftKey) return prev.filter(id => id !== nodeId);
+        return prev;
+      }
+      return [...prev, nodeId];
+    });
+
+    setContextMenu({
+      isOpen: true,
+      position: { x: clientX, y: clientY },
+      targetNode: node
+    });
+  }, []);
+
+  const handleCanvasClick = React.useCallback(() => {
+    setContextMenu({ isOpen: false, position: null, targetNode: null });
+    setSelectedNodeIds([]);
+  }, []);
+
+  const handleClearSelection = React.useCallback(() => {
+    setSelectedNodeIds([]);
+    setContextMenu({ isOpen: false, position: null, targetNode: null });
+  }, []);
+
+  const handleDeselectNode = React.useCallback((nodeId) => {
+    setSelectedNodeIds(prev => prev.filter(id => id !== nodeId));
+  }, []);
+
+  const handleDivideFile = React.useCallback((fileNode) => {
+    if (!fileNode) {
+      setRefactorFeedback?.({ status: 'cant', reason: 'select a file to divide' });
+      return;
+    }
+    setSplitModalFile(fileNode);
+  }, [setRefactorFeedback]);
+
+  const handleCombineFiles = React.useCallback((fileNodes) => {
+    if (!fileNodes || fileNodes.length < 2) {
+      setRefactorFeedback?.({ status: 'cant', reason: 'select at least 2 files to combine' });
+      return;
+    }
+    setMergeModalFiles(fileNodes);
+  }, [setRefactorFeedback]);
+
+  const handleMoveFunctions = React.useCallback((funcNodes, targetFileNode) => {
+    const destFile = targetFileNode?.data?.filePath || targetFileNode?.id;
+    if (!targetFileNode || !destFile) {
+      setRefactorFeedback?.({ status: 'cant', reason: 'no destination file selected' });
+      return;
+    }
+    let attempted = false;
+    funcNodes.forEach(fn => {
+      const rawLabel = fn.data?.label || fn.id;
+      const funcName = rawLabel.replace('def ', '').split('(')[0].trim().split('.').pop();
+      const sourceFile = fn.data?.filePath;
+      const normSrc = (sourceFile || '').replace(/\\/g, '/').toLowerCase();
+      const normDst = (destFile || '').replace(/\\/g, '/').toLowerCase();
+      if (normSrc && normDst && (normSrc === normDst || normSrc.endsWith('/' + normDst) || normDst.endsWith('/' + normSrc))) {
+        setRefactorFeedback?.({ status: 'cant', reason: 'already in this file' });
+        return;
+      }
+      if (sourceFile && destFile) {
+        attempted = true;
+        handleRefactorDrop?.({
+          symbolName: funcName,
+          sourceFile,
+          destFile,
+          nodeId: fn.id,
+          originalPos: { x: fn.x, y: fn.y },
+          force: true
+        });
+      }
+    });
+    if (attempted) {
+      setSelectedNodeIds([]);
+    }
+  }, [handleRefactorDrop, setRefactorFeedback]);
+
+  const handleExtractFunctions = React.useCallback((funcNodes) => {
+    if (funcNodes.length === 0) return;
+    const firstFunc = funcNodes[0];
+    const sourceFile = firstFunc.data?.filePath;
+    if (!sourceFile) return;
+    const ext = sourceFile.split('.').pop();
+    const cleanSym = (firstFunc.data?.label || firstFunc.id).replace('def ', '').split('(')[0].trim().split('.').pop();
+    const targetFile = `${cleanSym.toLowerCase()}_extracted.${ext}`;
+
+    handleCreateItem(targetFile, 'file');
+    setTimeout(() => {
+      funcNodes.forEach(fn => {
+        const rawLabel = fn.data?.label || fn.id;
+        const fnName = rawLabel.replace('def ', '').split('(')[0].trim().split('.').pop();
+        handleRefactorDrop?.({
+          symbolName: fnName,
+          sourceFile: fn.data?.filePath || sourceFile,
+          destFile: targetFile,
+          nodeId: fn.id,
+          originalPos: { x: fn.x, y: fn.y }
+        });
+      });
+      setSelectedNodeIds([]);
+    }, 250);
+  }, [handleCreateItem, handleRefactorDrop]);
+
   if (!activeTab) {
     return (
       <div 
@@ -151,6 +301,7 @@ export default function PaneContent({
             cspRejectionEvent={cspRejection}
             warpTargetNodeId={warpTargetNodeId}
             refactorEnabled={refactorEnabled}
+            selectedNodeIds={selectedNodeIds}
             onDragStart={onDragStart}
             onDragMove={onDragMove}
             onDragEnd={onDragEnd}
@@ -158,7 +309,87 @@ export default function PaneContent({
             onFileMergeDrop={handleFileMergeDrop}
             onNodeHover={handleNodeHover}
             onNodeDoubleClick={onDoubleClickNode}
+            onNodeRightClick={handleNodeRightClick}
+            onCanvasClick={handleCanvasClick}
             settings={settings}
+          />
+
+          {/* SUPER MINIMAL REFACTOR FEEDBACK INDICATOR */}
+          {refactorFeedback && (
+            <div 
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 h-7 flex items-center gap-1.5 px-3 rounded-full border shadow-lg backdrop-blur-md text-[11px] font-mono select-none pointer-events-none animate-in fade-in duration-150"
+              style={{
+                backgroundColor: 'rgba(18, 19, 22, 0.94)',
+                borderColor: 'var(--theme-border, rgba(255, 255, 255, 0.12))',
+                boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.5)'
+              }}
+            >
+              {refactorFeedback.status === 'done' && (
+                <span className="text-emerald-400 font-medium font-mono">done</span>
+              )}
+              {refactorFeedback.status === 'cant' && (
+                <div className="flex items-center gap-1.5 max-w-[500px]">
+                  <span className="text-rose-400 font-medium font-mono shrink-0">can't</span>
+                  <span className="text-zinc-600 font-mono shrink-0">·</span>
+                  <span className="text-zinc-300 font-sans truncate">{refactorFeedback.reason}</span>
+                </div>
+              )}
+              {refactorFeedback.status === 'moving' && (
+                <span className="text-cyan-400 font-mono animate-pulse">moving...</span>
+              )}
+            </div>
+          )}
+
+          {/* FLOATING REFACTOR SELECTION HUD */}
+          {!refactorFeedback && (
+            <RefactorSelectionHUD
+              selectedNodes={selectedNodes}
+              onDivideFile={handleDivideFile}
+              onCombineFiles={handleCombineFiles}
+              onMoveFunctions={handleMoveFunctions}
+              onExtractFunctions={handleExtractFunctions}
+              onDeselectNode={handleDeselectNode}
+              onClearSelection={handleClearSelection}
+            />
+          )}
+
+          {/* REFACTOR CONTEXT MENU */}
+          <RefactorContextMenu
+            isOpen={contextMenu.isOpen}
+            position={contextMenu.position}
+            selectedNodes={selectedNodes}
+            targetNode={contextMenu.targetNode}
+            onClose={() => setContextMenu({ isOpen: false, position: null, targetNode: null })}
+            onDivideFile={handleDivideFile}
+            onCombineFiles={handleCombineFiles}
+            onMoveFunctions={handleMoveFunctions}
+            onExtractFunctions={handleExtractFunctions}
+            onOpenInEditor={(path) => onDoubleClickNode(path, 1)}
+            onClearSelection={handleClearSelection}
+          />
+
+          {/* FILE SPLIT MODAL */}
+          <FileSplitModal
+            isOpen={!!splitModalFile}
+            fileNode={splitModalFile}
+            workspace={workspace}
+            onClose={() => setSplitModalFile(null)}
+            onSplitSuccess={() => {
+              setSelectedNodeIds([]);
+              workspace.addNotification?.('success', 'File Split Complete', 'Symbols successfully separated into distinct files.', 'ai');
+            }}
+          />
+
+          {/* FILE MERGE MODAL */}
+          <FileMergeModal
+            isOpen={!!mergeModalFiles}
+            selectedFiles={mergeModalFiles || []}
+            workspace={workspace}
+            onClose={() => setMergeModalFiles(null)}
+            onMergeSuccess={() => {
+              setSelectedNodeIds([]);
+              workspace.addNotification?.('success', 'Files Combined', 'Selected files merged successfully.', 'ai');
+            }}
           />
 
           {/* EMPTY WORKSPACE ONBOARDING HERO CARD */}
@@ -202,26 +433,19 @@ export default function PaneContent({
           {/* FLOATING AI OVERVIEW PANEL */}
           {workspace.aiInsight && workspace.aiInsight.nodeId === hoveredNodeId && (
             <div 
-              className="absolute top-4 right-4 max-w-sm border rounded-xl p-3.5 z-[100] pointer-events-none animate-in fade-in duration-150"
+              className="absolute top-3 right-3 max-w-xs z-30 border rounded-none p-3 pointer-events-none select-none flex flex-col gap-1.5 animate-in fade-in duration-100"
               style={{
-                backgroundColor: 'var(--theme-surface, #141516)',
+                backgroundColor: 'var(--theme-surface, #161719)',
                 borderColor: 'var(--theme-border, #242628)',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.25)'
+                boxShadow: 'none'
               }}
             >
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-semibold text-[var(--theme-accent)] truncate">
-                    {workspace.aiInsight.nodeId.split('::').pop()?.replace('()', '')}
-                  </span>
-                  <span className="font-mono text-[10px] text-[var(--theme-text-muted)] truncate shrink-0">
-                    {workspace.aiInsight.nodeId.split('::')[0]}
-                  </span>
-                </div>
-                <p className="text-[var(--theme-text-primary)] font-sans text-xs leading-relaxed">
-                  {workspace.aiInsight.summary}
-                </p>
+              <div className="font-mono text-[11px] text-[var(--theme-text-muted, #71717a)] truncate leading-tight">
+                {summaryFileLocation}
               </div>
+              <p className="font-sans text-xs text-[var(--theme-text-primary, #e4e4e7)] leading-relaxed">
+                {workspace.aiInsight.summary}
+              </p>
             </div>
           )}
 

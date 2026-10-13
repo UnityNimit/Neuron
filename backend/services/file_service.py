@@ -315,11 +315,36 @@ def refactor_symbol_move_service(
     clean_sym = symbol_name.replace("()", "").replace("def ", "").strip().split(".")[-1]
     file_asts = collect_workspace_file_asts()
 
+    target_dir = os.path.abspath(AppState.TARGET_DIR)
+
+    def normalize_rel_path(p: str) -> str:
+        if not p:
+            return ""
+        clean = p.replace("\\", "/").strip()
+        for prefix in ["file::", "function::"]:
+            if clean.startswith(prefix):
+                clean = clean[len(prefix):]
+        if os.path.isabs(clean) or (len(clean) > 1 and clean[1] == ":"):
+            try:
+                rel = os.path.relpath(clean, target_dir)
+                clean = rel.replace("\\", "/")
+            except Exception:
+                pass
+        clean = posixpath.normpath(clean).lstrip("/")
+        if clean not in file_asts:
+            for k in file_asts:
+                if k.lower() == clean.lower() or k.endswith("/" + clean) or clean.endswith("/" + k):
+                    return k
+        return clean
+
+    norm_source = normalize_rel_path(source_file)
+    norm_dest = normalize_rel_path(dest_file)
+
     # 1. SOLVE CSP VIA AC-3 ARC CONSISTENCY
     csp_result: CSPValidationResult = ac3_validate_refactor(
         symbol_name=clean_sym,
-        source_file=source_file,
-        dest_file=dest_file,
+        source_file=norm_source,
+        dest_file=norm_dest,
         file_asts=file_asts
     )
 
@@ -333,24 +358,24 @@ def refactor_symbol_move_service(
         }
 
     all_files = list(file_asts.keys())
-    src_ext = os.path.splitext(source_file)[1].lower()
-    dst_ext = os.path.splitext(dest_file)[1].lower()
+    src_ext = os.path.splitext(norm_source)[1].lower()
+    dst_ext = os.path.splitext(norm_dest)[1].lower()
 
     js_exts = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 
     # 2. ROUTE TO SPECIALIZED AST TRANSPLANT SURGEON
     if src_ext == ".py" and dst_ext == ".py":
         success, message = execute_symbol_refactor_transplant(
-            source_filepath=source_file,
-            dest_filepath=dest_file,
+            source_filepath=norm_source,
+            dest_filepath=norm_dest,
             symbol_name=clean_sym,
             workspace_root=AppState.TARGET_DIR,
             all_workspace_files=all_files
         )
     elif src_ext in js_exts and dst_ext in js_exts:
         success, message = execute_js_symbol_refactor_transplant(
-            source_filepath=source_file,
-            dest_filepath=dest_file,
+            source_filepath=norm_source,
+            dest_filepath=norm_dest,
             symbol_name=clean_sym,
             workspace_root=AppState.TARGET_DIR,
             all_workspace_files=all_files
@@ -486,7 +511,7 @@ def edit_code(node_id: str, new_code: str, target_file_name: str) -> bool:
     LibCST in-place function node replacement for Python.
     """
     clean_file_name = target_file_name.strip()
-    for prefix in ["📝 ", "ƒ ", "📄 "]:
+    for prefix in ["\U0001f4dd ", "ƒ ", "\U0001f4c4 "]:
         if clean_file_name.startswith(prefix):
             clean_file_name = clean_file_name.replace(prefix, "")
     if " (Whole File)" in clean_file_name:
