@@ -108,6 +108,14 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCompilerReady, setIsCompilerReady] = useState(false);
+  const [minSplashElapsed, setMinSplashElapsed] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMinSplashElapsed(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
   
   const [editorFocusLine, setEditorFocusLine] = useState(null);
   const [focusIsolationId, setFocusIsolationId] = useState(null);
@@ -1266,7 +1274,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     });
   }, [activePaneId, handleSwitchFile]);
 
-  if (!workspace.isGraphLoaded || !isCompilerReady || workspace.isFolderLoading) {
+  if (!minSplashElapsed || !workspace.isGraphLoaded || !isCompilerReady || workspace.isFolderLoading) {
     return (
       <SplashScreen 
         session={session} 
