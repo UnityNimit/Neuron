@@ -1,6 +1,6 @@
 // src/components/layout/SplashScreen.jsx
 import React from 'react';
-import NeuronLogo from '../common/NeuronLogo';
+import GenesisAnimatedLogo from '../common/GenesisAnimatedLogo';
 import { useTheme } from '../../config/themeConfig';
 
 export default function SplashScreen({ 
@@ -11,67 +11,43 @@ export default function SplashScreen({
 }) {
   const { theme } = useTheme();
 
+  const isDark = theme?.isDark !== false;
+  const fgColor = isDark 
+    ? (theme?.textBright || '#ffffff') 
+    : (theme?.textPrimary || '#080808');
+  const bgColor = theme?.background || (isDark ? '#121314' : '#ffffff');
+  const haloColor = isDark 
+    ? 'rgba(255, 255, 255, 0.09)' 
+    : 'rgba(8, 8, 8, 0.06)';
+
   return (
     <div 
       className="w-screen h-screen flex flex-col items-center justify-center select-none overflow-hidden overscroll-none transition-colors duration-200"
       style={{
-        backgroundColor: theme?.background || 'var(--theme-background, #121314)',
-        color: theme?.textPrimary || 'var(--theme-text-primary, #cbd5e1)'
+        backgroundColor: bgColor,
+        color: fgColor
       }}
     >
       <div className="flex flex-col items-center justify-center animate-in fade-in duration-300">
         
-        {/* Centered Minimalist Logo (Interactive on unauthenticated state) */}
+        {/* Centered Minimalist Vector Genesis Animation on Loop */}
         <div 
           onClick={!session ? onLogin : undefined}
           className={`relative flex items-center justify-center transition-transform duration-200 ease-out ${
             !session ? 'cursor-pointer hover:scale-105 active:scale-95' : ''
           }`}
           style={{ transform: 'translateZ(0)' }}
+          title={!session ? 'Click to sign in' : undefined}
         >
-          <NeuronLogo 
-            size={56} 
-            color={theme?.accent || 'var(--theme-accent, #3b82f6)'}
-            style={{
-              color: theme?.accent || 'var(--theme-accent, #3b82f6)',
-              transform: 'translateZ(0)',
-              willChange: 'transform, opacity'
-            }}
-            className="pointer-events-none select-none transition-colors duration-200" 
-          />
-        </div>
-
-        {/* Minimalist Kinetic Pulse Loader */}
-        <div className="flex items-center gap-2 mt-8">
-          <span 
-            className="w-1.5 h-1.5 rounded-full animate-pulse"
-            style={{ 
-              backgroundColor: theme?.accent || 'var(--theme-accent, #3b82f6)',
-              animationDuration: '1s',
-              animationDelay: '0ms',
-              transform: 'translateZ(0)',
-              willChange: 'transform, opacity'
-            }} 
-          />
-          <span 
-            className="w-1.5 h-1.5 rounded-full animate-pulse"
-            style={{ 
-              backgroundColor: theme?.accent || 'var(--theme-accent, #3b82f6)',
-              animationDuration: '1s',
-              animationDelay: '180ms',
-              transform: 'translateZ(0)',
-              willChange: 'transform, opacity'
-            }} 
-          />
-          <span 
-            className="w-1.5 h-1.5 rounded-full animate-pulse"
-            style={{ 
-              backgroundColor: theme?.accent || 'var(--theme-accent, #3b82f6)',
-              animationDuration: '1s',
-              animationDelay: '360ms',
-              transform: 'translateZ(0)',
-              willChange: 'transform, opacity'
-            }} 
+          <GenesisAnimatedLogo 
+            size="min(34vh, 250px)"
+            color={fgColor}
+            bgColor={bgColor}
+            halo={true}
+            haloColor={haloColor}
+            duration={4800}
+            speed={1.0}
+            interactive={true}
           />
         </div>
 
