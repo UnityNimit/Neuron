@@ -40,7 +40,7 @@ export default function SplashScreen({
           title={!session ? 'Click to sign in' : undefined}
         >
           <GenesisAnimatedLogo 
-            size="min(34vh, 250px)"
+            size={64}
             color={fgColor}
             bgColor={bgColor}
             halo={true}

@@ -39,7 +39,7 @@ const easeOutBack = t => {
 };
 
 export default function GenesisAnimatedLogo({
-  size = 'min(36vh, 260px)',
+  size = 64,
   width,
   height,
   color = 'currentColor',
@@ -236,7 +236,7 @@ export default function GenesisAnimatedLogo({
         cancelAnimationFrame(rafIdRef.current);
       }
     };
-  }, [duration, speed]);
+  }, [duration, speed, bgColor]);
 
   const handleContainerClick = (e) => {
     if (interactive) {
