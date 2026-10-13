@@ -74,14 +74,26 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Determine Release Metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "title=Neuron IDE ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v1.2.0" >> $GITHUB_OUTPUT
+            echo "title=Neuron IDE v1.2.0" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build Tauri Desktop Application
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: frontend
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.2.0' }}
-          releaseName: 'Neuron IDE ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.2.0' }}'
+          tagName: ${{ steps.meta.outputs.tag }}
+          releaseName: ${{ steps.meta.outputs.title }}
           releaseBody: 'Automated release build of Neuron IDE for Windows, Linux, and macOS with native Python sidecar engine.'
           releaseDraft: false
           prerelease: false
