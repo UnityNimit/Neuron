@@ -97,7 +97,7 @@ export default function App() {
   });
   const [lastActiveEditorPaneId, setLastActiveEditorPaneId] = useState(() => {
     const panes = getAllPanes(layoutTree);
-    const candidate = panes.find(p => !isMapPane(p) && (p.tabs || []).some(t => t.type === 'file')) || panes.find(p => !isMapPane(p));
+    const candidate = panes.find(p => isEditorPane(p) && (p.tabs || []).some(t => t.type === 'file')) || panes.find(isEditorPane);
     return candidate?.id || null;
   });
 
@@ -105,7 +105,7 @@ export default function App() {
     setActivePaneId(paneId);
     if (!layoutTree) return;
     const target = findPaneById(layoutTree, paneId);
-    if (target && !isMapPane(target)) {
+    if (target && isEditorPane(target)) {
       setLastActiveEditorPaneId(paneId);
     }
   }, [layoutTree]);
@@ -1126,39 +1126,40 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
   const handleSwitchFile = useCallback((filename) => { 
     if (!filename) return;
-    if ((settings?.autoSave ?? true) && workspace.currentFile && workspace.currentFile !== filename && dirtyFiles.has(workspace.currentFile)) {
+    const cleanFile = filename.replace(/\\/g, '/');
+    if ((settings?.autoSave ?? true) && workspace.currentFile && workspace.currentFile !== cleanFile && dirtyFiles.has(workspace.currentFile)) {
       handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
     }
     //  0ms Optimistic UI updates: instantly select tab, update path & breadcrumbs
-    workspace.setCurrentFile(filename);
-    workspace.setOpenFiles(prev => prev.includes(filename) ? prev : [...prev, filename]);
-    if (filename !== workspace.currentFile) { 
+    workspace.setCurrentFile(cleanFile);
+    workspace.setOpenFiles(prev => prev.includes(cleanFile) ? prev : [...prev, cleanFile]);
+    if (cleanFile !== workspace.currentFile) { 
       workspace.setIsFileSyncing(true); 
-      workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename })); 
+      workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: cleanFile })); 
     }
 
     setLayoutTree(prev => {
-      const tabId = `file:${filename}`;
+      const tabId = `file:${cleanFile}`;
       const all = getAllPanes(prev);
 
       // Check 1: Is this file ALREADY OPEN in any pane?
       const existingPane = findPaneByTabId(prev, tabId);
       if (existingPane) {
         setActivePaneId(existingPane.id);
-        if (!isMapPane(existingPane)) {
+        if (isEditorPane(existingPane)) {
           setLastActiveEditorPaneId(existingPane.id);
         }
         return setActiveTabInPane(prev, existingPane.id, tabId);
       }
 
-      // Check 2: Determine target editor pane (respecting active window & non-stackable Map)
+      // Check 2: Determine target editor pane (strictly an editor pane - never map, never terminal, never agent/input)
       const targetEditorPane = getCandidateEditorPane(prev, activePaneId, lastActiveEditorPaneId);
 
-      const baseName = filename.split('/').pop();
+      const baseName = cleanFile.split('/').pop();
       const newTab = {
         id: tabId,
         type: 'file',
-        path: filename,
+        path: cleanFile,
         title: baseName
       };
 
@@ -1168,10 +1169,19 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
         return addTabToPane(prev, targetEditorPane.id, newTab);
       }
 
-      // Check 3: If NO editor pane exists (e.g. only Map is open), automatically split the Map horizontally!
-      const mapPane = all.find(isMapPane) || all[0];
+      // Check 3: If NO editor pane exists (e.g. only Map + Terminal + Agent are open),
+      // automatically split the Map horizontally!
+      const mapPane = all.find(isMapPane);
       if (mapPane) {
         const splitResult = splitPane(prev, mapPane.id, 'horizontal', newTab, false);
+        setActivePaneId(splitResult.newPaneId);
+        setLastActiveEditorPaneId(splitResult.newPaneId);
+        return splitResult.tree;
+      }
+
+      const fallbackPane = all[0];
+      if (fallbackPane) {
+        const splitResult = splitPane(prev, fallbackPane.id, 'horizontal', newTab, false);
         setActivePaneId(splitResult.newPaneId);
         setLastActiveEditorPaneId(splitResult.newPaneId);
         return splitResult.tree;

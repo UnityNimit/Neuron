@@ -487,34 +487,89 @@ export function cleanTree(node) {
       return null;
     }
 
+    // 1. Role 1: Dedicated Map Pane (strictly spatial)
     const hasSpatial = uniqueTabs.some(t => t.id === 'spatial' || t.type === 'spatial');
     if (hasSpatial && uniqueTabs.length > 1) {
-      // Map is strictly non-stackable: separate spatial into its own dedicated pane
       const mapTab = uniqueTabs.find(t => t.id === 'spatial' || t.type === 'spatial');
       const otherTabs = uniqueTabs.filter(t => t.id !== 'spatial' && t.type !== 'spatial');
 
       const isMapActive = node.activeTabId === 'spatial';
-
       const paneMap = {
         type: 'pane',
         id: isMapActive ? node.id : generatePaneId(),
         activeTabId: 'spatial',
         tabs: [mapTab]
       };
-
       const paneOther = {
         type: 'pane',
         id: isMapActive ? generatePaneId() : node.id,
         activeTabId: isMapActive ? otherTabs[0].id : node.activeTabId,
         tabs: otherTabs
       };
-
       return {
         type: 'split',
         id: generateSplitId(),
         direction: 'horizontal',
         sizes: [50, 50],
         children: [paneMap, paneOther]
+      };
+    }
+
+    // 2. Role 2: Dedicated Bottom Console (strictly output and terminal)
+    const hasConsole = uniqueTabs.some(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal');
+    const hasNonConsoleInConsole = hasConsole && uniqueTabs.some(t => t.id !== 'output' && t.type !== 'output' && t.id !== 'terminal' && t.type !== 'terminal');
+    if (hasNonConsoleInConsole) {
+      const consoleTabs = uniqueTabs.filter(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal');
+      const otherTabs = uniqueTabs.filter(t => t.id !== 'output' && t.type !== 'output' && t.id !== 'terminal' && t.type !== 'terminal');
+
+      const isConsoleActive = consoleTabs.some(t => t.id === node.activeTabId);
+      const paneConsole = {
+        type: 'pane',
+        id: isConsoleActive ? node.id : generatePaneId(),
+        activeTabId: isConsoleActive ? node.activeTabId : consoleTabs[0].id,
+        tabs: consoleTabs
+      };
+      const paneOther = {
+        type: 'pane',
+        id: isConsoleActive ? generatePaneId() : node.id,
+        activeTabId: isConsoleActive ? otherTabs[0].id : node.activeTabId,
+        tabs: otherTabs
+      };
+      return {
+        type: 'split',
+        id: generateSplitId(),
+        direction: 'vertical',
+        sizes: [72, 28],
+        children: [paneOther, paneConsole]
+      };
+    }
+
+    // 3. Role 3: Dedicated Right Panel (strictly ai and stdin)
+    const hasRight = uniqueTabs.some(t => t.id === 'ai' || t.type === 'ai' || t.id === 'stdin' || t.type === 'stdin');
+    const hasNonRightInRight = hasRight && uniqueTabs.some(t => t.id !== 'ai' && t.type !== 'ai' && t.id !== 'stdin' && t.type !== 'stdin');
+    if (hasNonRightInRight) {
+      const rightTabs = uniqueTabs.filter(t => t.id === 'ai' || t.type === 'ai' || t.id === 'stdin' || t.type === 'stdin');
+      const otherTabs = uniqueTabs.filter(t => t.id !== 'ai' && t.type !== 'ai' && t.id !== 'stdin' && t.type !== 'stdin');
+
+      const isRightActive = rightTabs.some(t => t.id === node.activeTabId);
+      const paneRight = {
+        type: 'pane',
+        id: isRightActive ? node.id : generatePaneId(),
+        activeTabId: isRightActive ? node.activeTabId : rightTabs[0].id,
+        tabs: rightTabs
+      };
+      const paneOther = {
+        type: 'pane',
+        id: isRightActive ? generatePaneId() : node.id,
+        activeTabId: isRightActive ? otherTabs[0].id : node.activeTabId,
+        tabs: otherTabs
+      };
+      return {
+        type: 'split',
+        id: generateSplitId(),
+        direction: 'horizontal',
+        sizes: [75, 25],
+        children: [paneOther, paneRight]
       };
     }
 
@@ -564,43 +619,58 @@ export function isMapPane(pane) {
   return Boolean(pane && (pane.tabs || []).some(t => t.id === 'spatial' || t.type === 'spatial'));
 }
 
-export function isEditorPane(pane) {
+export function isBottomConsolePane(pane) {
   if (!pane || isMapPane(pane)) return false;
-  return (pane.tabs || []).some(t => t.type === 'file');
+  return (pane.tabs || []).some(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal');
+}
+
+export function isRightPanelPane(pane) {
+  if (!pane || isMapPane(pane)) return false;
+  return (pane.tabs || []).some(t => t.id === 'stdin' || t.type === 'stdin' || t.id === 'ai' || t.type === 'ai');
+}
+
+export function isSpecializedPane(pane) {
+  return isMapPane(pane) || isBottomConsolePane(pane) || isRightPanelPane(pane);
+}
+
+export function isEditorPane(pane) {
+  if (!pane) return false;
+  return !isSpecializedPane(pane);
 }
 
 export function getCandidateEditorPane(tree, activePaneId = null, lastActiveEditorPaneId = null) {
   const all = getAllPanes(tree);
   if (all.length === 0) return null;
 
-  // 1. If activePaneId is a valid non-map pane, use it
+  // 1. If activePaneId is a valid non-specialized editor pane, use it
   if (activePaneId) {
     const active = findPaneById(tree, activePaneId);
-    if (active && !isMapPane(active)) {
+    if (active && isEditorPane(active)) {
       return active;
     }
   }
 
-  // 2. If lastActiveEditorPaneId exists and is still in tree, use it
+  // 2. If lastActiveEditorPaneId exists and is an editor pane still in tree, use it
   if (lastActiveEditorPaneId) {
     const lastActive = findPaneById(tree, lastActiveEditorPaneId);
-    if (lastActive && !isMapPane(lastActive)) {
+    if (lastActive && isEditorPane(lastActive)) {
       return lastActive;
     }
   }
 
   // 3. Any pane currently containing file tabs
-  const editorPanes = all.filter(p => !isMapPane(p) && (p.tabs || []).some(t => t.type === 'file'));
+  const panesWithFiles = all.filter(p => isEditorPane(p) && (p.tabs || []).some(t => t.type === 'file'));
+  if (panesWithFiles.length > 0) {
+    return panesWithFiles[0];
+  }
+
+  // 4. Any dedicated editor pane in tree
+  const editorPanes = all.filter(p => isEditorPane(p));
   if (editorPanes.length > 0) {
     return editorPanes[0];
   }
 
-  // 4. Any non-map pane (e.g. terminal / output / ai)
-  const nonMapPanes = all.filter(p => !isMapPane(p));
-  if (nonMapPanes.length > 0) {
-    return nonMapPanes[0];
-  }
-
+  // 5. No editor pane exists! Return null so caller can auto-split the Map to create one
   return null;
 }
 
@@ -619,32 +689,61 @@ export function normalizeTree(tree) {
 
 export function addTabToPane(tree, paneId, tab, targetIndex = -1) {
   const isTabMap = tab.id === 'spatial' || tab.type === 'spatial';
+  const isTabConsole = tab.id === 'output' || tab.type === 'output' || tab.id === 'terminal' || tab.type === 'terminal';
+  const isTabRight = tab.id === 'ai' || tab.type === 'ai' || tab.id === 'stdin' || tab.type === 'stdin';
+  const isTabFile = tab.type === 'file';
 
-  // If trying to add Map tab
+  // 1. If trying to add Map tab
   if (isTabMap) {
     const existingMapPane = getAllPanes(tree).find(isMapPane);
     if (existingMapPane) {
-      // Map pane already exists; focus it and do not duplicate
       return setActiveTabInPane(tree, existingMapPane.id, 'spatial');
     }
     const targetPane = findPaneById(tree, paneId);
     if (targetPane && (targetPane.tabs || []).length > 0) {
-      // Target pane has other tabs: split horizontally so Map gets its own dedicated pane
       return splitPane(tree, paneId, 'horizontal', tab, true).tree;
     }
   }
 
-  // If trying to add non-map tab (code file, terminal, output, etc.)
-  if (!isTabMap) {
+  // 2. If trying to add a file tab
+  if (isTabFile) {
     const targetPane = findPaneById(tree, paneId);
-    if (targetPane && isMapPane(targetPane)) {
-      // Target pane is a Map pane! Map is strictly non-stackable!
+    if (targetPane && isSpecializedPane(targetPane)) {
       const candidate = getCandidateEditorPane(tree, null, null);
       if (candidate) {
         return addTabToPane(tree, candidate.id, tab, targetIndex);
       }
       // No editor pane exists: split the Map pane horizontally!
-      return splitPane(tree, targetPane.id, 'horizontal', tab, false).tree;
+      const mapPane = getAllPanes(tree).find(isMapPane) || targetPane;
+      return splitPane(tree, mapPane.id, 'horizontal', tab, false).tree;
+    }
+  }
+
+  // 3. If trying to add a console tab (output, terminal)
+  if (isTabConsole) {
+    const targetPane = findPaneById(tree, paneId);
+    if (targetPane && !isBottomConsolePane(targetPane)) {
+      const existingConsolePane = getAllPanes(tree).find(isBottomConsolePane);
+      if (existingConsolePane) {
+        if ((existingConsolePane.tabs || []).some(t => t.id === tab.id)) {
+          return setActiveTabInPane(tree, existingConsolePane.id, tab.id);
+        }
+        return addTabToPane(tree, existingConsolePane.id, tab, targetIndex);
+      }
+    }
+  }
+
+  // 4. If trying to add a right panel tab (ai, stdin)
+  if (isTabRight) {
+    const targetPane = findPaneById(tree, paneId);
+    if (targetPane && !isRightPanelPane(targetPane)) {
+      const existingRightPane = getAllPanes(tree).find(isRightPanelPane);
+      if (existingRightPane) {
+        if ((existingRightPane.tabs || []).some(t => t.id === tab.id)) {
+          return setActiveTabInPane(tree, existingRightPane.id, tab.id);
+        }
+        return addTabToPane(tree, existingRightPane.id, tab, targetIndex);
+      }
     }
   }
 
@@ -826,13 +925,22 @@ export function moveTab(tree, sourcePaneId, targetPaneId, tabId, dropZone, targe
 
   const targetPane = findPaneById(tree, targetPaneId);
   const isMovingMap = tabId === 'spatial' || tab?.type === 'spatial';
+  const isMovingConsole = tabId === 'output' || tab?.type === 'output' || tabId === 'terminal' || tab?.type === 'terminal';
+  const isMovingRight = tabId === 'ai' || tab?.type === 'ai' || tabId === 'stdin' || tab?.type === 'stdin';
 
-  // Map is strictly non-stackable: never stack inside or on top of Map
-  if (targetPane && isMapPane(targetPane) && !isMovingMap && dropZone === 'center') {
-    dropZone = 'right';
-  }
-  if (targetPane && !isMapPane(targetPane) && isMovingMap && dropZone === 'center') {
-    dropZone = 'left';
+  // Specialized panes (Map, Bottom Console, Right Panel) are strictly non-stackable with foreign tabs
+  if (targetPane && dropZone === 'center') {
+    if (isMapPane(targetPane) && !isMovingMap) {
+      dropZone = 'right';
+    } else if (!isMapPane(targetPane) && isMovingMap) {
+      dropZone = 'left';
+    } else if (isBottomConsolePane(targetPane) && !isMovingConsole) {
+      dropZone = 'top';
+    } else if (isRightPanelPane(targetPane) && !isMovingRight) {
+      dropZone = 'left';
+    } else if (isEditorPane(targetPane) && (isMovingConsole || isMovingRight)) {
+      dropZone = isMovingConsole ? 'bottom' : 'right';
+    }
   }
 
   function removeTabWithoutClean(node) {
