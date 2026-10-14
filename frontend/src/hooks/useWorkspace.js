@@ -58,7 +58,26 @@ export function useWorkspace(session) {
   const [isGraphLoaded, setIsGraphLoaded] = useState(false);
   const [isFolderLoading, setIsFolderLoading] = useState(false);
   const folderLoadingStartTimeRef = useRef(0);
-  const [isFileSyncing, setIsFileSyncing] = useState(false);
+  const folderLoadingTimeoutRef = useRef(null);
+
+  const setIsFolderLoadingSafe = useCallback((loading) => {
+    if (loading) {
+      if (folderLoadingTimeoutRef.current) {
+        clearTimeout(folderLoadingTimeoutRef.current);
+        folderLoadingTimeoutRef.current = null;
+      }
+      folderLoadingStartTimeRef.current = Date.now();
+      setIsGraphLoaded(false);
+      setIsFolderLoading(true);
+    } else {
+      if (folderLoadingTimeoutRef.current) {
+        clearTimeout(folderLoadingTimeoutRef.current);
+        folderLoadingTimeoutRef.current = null;
+      }
+      folderLoadingStartTimeRef.current = 0;
+      setIsFolderLoading(false);
+    }
+  }, []);
   const [isWsConnected, setIsWsConnected] = useState(false);
   const [wsLatency, setWsLatency] = useState(0);
   
@@ -232,12 +251,22 @@ export function useWorkspace(session) {
 
             // 0b. WORKSPACE FOLDER LOADING & CANCEL (Minimalist Splash Loading)
             else if (data.event === 'WORKSPACE_LOADING') {
+              if (folderLoadingTimeoutRef.current) {
+                clearTimeout(folderLoadingTimeoutRef.current);
+                folderLoadingTimeoutRef.current = null;
+              }
               folderLoadingStartTimeRef.current = Date.now();
+              setIsGraphLoaded(false);
               setIsFolderLoading(true);
             }
             else if (data.event === 'FOLDER_PICK_CANCELLED') {
-              setIsFolderLoading(false);
+              if (folderLoadingTimeoutRef.current) {
+                clearTimeout(folderLoadingTimeoutRef.current);
+                folderLoadingTimeoutRef.current = null;
+              }
               folderLoadingStartTimeRef.current = 0;
+              setIsFolderLoading(false);
+              setIsGraphLoaded(true);
             }
 
             // 1. FULL WORKSPACE INITIALIZATION / SYNC
@@ -370,19 +399,31 @@ export function useWorkspace(session) {
               setNodes(sanitizedNodes);
               setEdges(payload.graph?.edges || []);
               
-              setIsGraphLoaded(true); 
               setIsFileSyncing(false); 
 
-              //  Smoothly exit folder loading screen (350ms min display prevents visual jitter)
-              const elapsed = Date.now() - (folderLoadingStartTimeRef.current || 0);
-              const minDisplayTime = 350;
-              if (folderLoadingStartTimeRef.current && elapsed < minDisplayTime) {
-                setTimeout(() => {
+              // Enforce 5-second minimum display time on folder change / loading
+              const MIN_SPLASH_TIME = 5000;
+              const isFolderSession = Boolean(folderLoadingStartTimeRef.current > 0 || isDirSwitch);
+              const startTime = folderLoadingStartTimeRef.current || (isDirSwitch ? Date.now() : 0);
+              const elapsed = startTime > 0 ? (Date.now() - startTime) : MIN_SPLASH_TIME;
+              const remaining = Math.max(0, MIN_SPLASH_TIME - elapsed);
+
+              if (folderLoadingTimeoutRef.current) {
+                clearTimeout(folderLoadingTimeoutRef.current);
+                folderLoadingTimeoutRef.current = null;
+              }
+
+              if (isFolderSession && remaining > 0) {
+                setIsFolderLoading(true);
+                folderLoadingTimeoutRef.current = setTimeout(() => {
                   setIsFolderLoading(false);
+                  setIsGraphLoaded(true);
                   folderLoadingStartTimeRef.current = 0;
-                }, minDisplayTime - elapsed);
+                  folderLoadingTimeoutRef.current = null;
+                }, remaining);
               } else {
                 setIsFolderLoading(false);
+                setIsGraphLoaded(true);
                 folderLoadingStartTimeRef.current = 0;
               }
             }
@@ -990,7 +1031,7 @@ export function useWorkspace(session) {
 
   return {
     isGraphLoaded, setIsGraphLoaded, 
-    isFolderLoading, setIsFolderLoading,
+    isFolderLoading, setIsFolderLoading: setIsFolderLoadingSafe,
     isFileSyncing, setIsFileSyncing,
     isWsConnected, wsLatency,
     items, files, currentFile, setCurrentFile, absTargetDir,
