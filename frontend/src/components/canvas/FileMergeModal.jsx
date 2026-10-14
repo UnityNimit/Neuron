@@ -97,12 +97,12 @@ export default function FileMergeModal({
         )}
 
         {/* TICK & CROSS BUTTONS */}
-        <div className="flex items-center justify-end gap-1.5 pt-1">
+        <div className="flex items-center justify-end gap-3 pt-1 font-mono">
           <button
             type="button"
             onClick={onClose}
             disabled={executing}
-            className="w-6 h-6 flex items-center justify-center border border-white/10 hover:border-white/30 text-zinc-400 hover:text-white transition-colors cursor-pointer text-xs rounded-none"
+            className="text-zinc-400 hover:text-white transition-colors cursor-pointer text-sm font-bold px-1"
             title="Cancel"
           >
             ✕
@@ -111,7 +111,7 @@ export default function FileMergeModal({
             type="button"
             onClick={handleExecuteMerge}
             disabled={executing || !destFile}
-            className="w-6 h-6 flex items-center justify-center border border-white/20 hover:border-white/50 bg-white/5 hover:bg-white/15 text-white transition-colors cursor-pointer text-xs rounded-none disabled:opacity-30 disabled:pointer-events-none"
+            className="text-zinc-200 hover:text-white transition-colors cursor-pointer text-sm font-bold px-1 disabled:opacity-30 disabled:pointer-events-none"
             title="Confirm"
           >
             {executing ? '...' : '✓'}
