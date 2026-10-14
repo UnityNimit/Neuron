@@ -60,6 +60,7 @@ export default function ModularPane({
   const [dropZone, setDropZone] = useState(null); // 'left' | 'right' | 'top' | 'bottom' | 'center' | null
   const contentContainerRef = useRef(null);
 
+  const activeTab = (pane.tabs || []).find(t => t.id === pane.activeTabId) || pane.tabs?.[0];
   const isMapOnlyPane = (pane.tabs || []).some(t => t.id === 'spatial' || t.type === 'spatial');
 
   // Sync dropZone when pointer drag coordinates change
