@@ -29,9 +29,6 @@ const easeInOutQuintic = (t) => {
   return t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2;
 };
 
-const FUNCTION_CAPTURE_PROXIMITY_PX = 85;
-const FILE_MERGE_PROXIMITY_PX = 110;
-
 export default function PixiSpatialEngine({ 
   simDataRef, 
   activeRay, 
@@ -45,6 +42,7 @@ export default function PixiSpatialEngine({
   onDragEnd,
   onRefactorDrop,
   onFileMergeDrop,
+  onNodeClick,
   onNodeDoubleClick, 
   onNodeHover,
   onNodeRightClick,
@@ -58,7 +56,7 @@ export default function PixiSpatialEngine({
   
   const stateRef = useRef({ 
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
-    selectedNodeIds, onNodeRightClick, onCanvasClick,
+    selectedNodeIds, onNodeClick, onNodeRightClick, onCanvasClick,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
     onRefactorDrop, onFileMergeDrop, refactorEnabled, settings 
   });
@@ -66,13 +64,13 @@ export default function PixiSpatialEngine({
   useEffect(() => {
     stateRef.current = { 
       activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
-      selectedNodeIds, onNodeRightClick, onCanvasClick,
+      selectedNodeIds, onNodeClick, onNodeRightClick, onCanvasClick,
       onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
       onRefactorDrop, onFileMergeDrop, refactorEnabled, settings 
     };
   }, [
     activeRay, focusIsolationId, blastRadius, cspRejectionEvent, warpTargetNodeId,
-    selectedNodeIds, onNodeRightClick, onCanvasClick,
+    selectedNodeIds, onNodeClick, onNodeRightClick, onCanvasClick,
     onNodeHover, onNodeDoubleClick, onDragStart, onDragMove, onDragEnd, 
     onRefactorDrop, onFileMergeDrop, refactorEnabled, settings
   ]);
@@ -202,8 +200,6 @@ export default function PixiSpatialEngine({
 
       let globalDraggingNodeId = null;
       let dragOriginPos = { x: 0, y: 0 };
-      let currentCaptureTarget = null;
-      let isFileMergeMode = false;
       let lastWarpProcessedId = null;
 
       // Deterministic [0, 1) hash from node ID for organic stagger and swirl direction
@@ -473,8 +469,6 @@ export default function PixiSpatialEngine({
 
           globalDraggingNodeId = node.id;
           dragOriginPos = { x: node.x || 0, y: node.y || 0 };
-          currentCaptureTarget = null;
-          isFileMergeMode = false;
           viewport.pause = true; 
           
           const pos = viewport.toLocal(e.global);
@@ -486,70 +480,25 @@ export default function PixiSpatialEngine({
           if (globalDraggingNodeId === node.id) {
             const pos = viewport.toLocal(e.global);
             stateRef.current.onDragMove(node.id, pos.x, pos.y);
-
-            const isCurrentFunction = node.data?.nodeType === 'function';
-            const isCurrentFile = node.data?.nodeType === 'file';
-
-            let nearestCandidate = null;
-            let shortestDist = isCurrentFile ? FILE_MERGE_PROXIMITY_PX : FUNCTION_CAPTURE_PROXIMITY_PX;
-
-            if (stateRef.current.refactorEnabled) {
-              (simDataRef.current.nodes || []).forEach(candidate => {
-                if (candidate.data?.nodeType === 'file' && candidate.id !== node.id) {
-                  if (isCurrentFunction && candidate.data?.filePath === node.data?.filePath) return;
-                  
-                  const cx = typeof candidate.rx === 'number' ? candidate.rx : (candidate.x || 0);
-                  const cy = typeof candidate.ry === 'number' ? candidate.ry : (candidate.y || 0);
-                  const dx = cx - pos.x;
-                  const dy = cy - pos.y;
-                  const dist = Math.sqrt(dx * dx + dy * dy);
-                  if (dist < shortestDist) {
-                    shortestDist = dist;
-                    nearestCandidate = candidate;
-                  }
-                }
-              });
-
-              currentCaptureTarget = nearestCandidate;
-              isFileMergeMode = isCurrentFile && !!nearestCandidate;
-            } else {
-              currentCaptureTarget = null;
-              isFileMergeMode = false;
-            }
           }
         });
         
-        const stopDrag = () => { 
+        const stopDrag = (e) => { 
           if (globalDraggingNodeId === node.id) { 
-            const targetFile = currentCaptureTarget;
-            const origin = { ...dragOriginPos };
             const draggedId = node.id;
-            const wasFileMerge = isFileMergeMode;
             
             globalDraggingNodeId = null; 
-            currentCaptureTarget = null;
-            isFileMergeMode = false;
             viewport.pause = false; 
 
             stateRef.current.onDragEnd(draggedId);
 
-            if (targetFile && stateRef.current.refactorEnabled) {
-              if (wasFileMerge && stateRef.current.onFileMergeDrop) {
-                stateRef.current.onFileMergeDrop({
-                  sourceFile: node.data?.filePath || node.id,
-                  destFile: targetFile.data?.filePath || targetFile.id
-                });
-              } else if (node.data?.nodeType === 'function' && stateRef.current.onRefactorDrop) {
-                const rawLabel = node.data?.label || node.id;
-                const funcName = rawLabel.replace('def ', '').split('(')[0].trim().split('.').pop();
-                stateRef.current.onRefactorDrop({
-                  symbolName: funcName,
-                  sourceFile: node.data?.filePath,
-                  destFile: targetFile.data?.filePath,
-                  nodeId: draggedId,
-                  originalPos: origin
-                });
-              }
+            // If the cursor moved less than 5px, treat as selection click when refactorEnabled is active
+            const dx = (node.x || 0) - dragOriginPos.x;
+            const dy = (node.y || 0) - dragOriginPos.y;
+            const distMoved = Math.sqrt(dx * dx + dy * dy);
+            if (distMoved < 5 && stateRef.current.refactorEnabled) {
+              const shiftKey = e?.nativeEvent?.shiftKey || false;
+              stateRef.current.onNodeClick?.(node.id, node, shiftKey);
             }
 
             hoveredNodeIdInternal = null;
@@ -998,23 +947,6 @@ export default function PixiSpatialEngine({
         refactorOverlay.clear();
         blastRadiusOverlay.clear();
 
-        // 1. Refactor Capture Rings
-        if (currentCaptureTarget) {
-          const capX = typeof currentCaptureTarget.rx === 'number' ? currentCaptureTarget.rx : currentCaptureTarget.x;
-          const capY = typeof currentCaptureTarget.ry === 'number' ? currentCaptureTarget.ry : currentCaptureTarget.y;
-          if (typeof capX === 'number' && !isNaN(capX)) {
-            const pulse = (Math.sin(frameCount * 0.18 * animSpeed) + 1) * 0.5;
-            const capObj = spriteMap.get(currentCaptureTarget.id);
-            const baseR = capObj ? capObj.worldRadius : (THEME.sizes?.file?.px || 26) * globalNodeScale;
-            const ringRadius = baseR + (isFileMergeMode ? 30 : 22) + (pulse * 8);
-            const ringColor = isFileMergeMode ? 0xf59e0b : 0x38bdf8;
-            
-            refactorOverlay.circle(Math.round(capX), Math.round(capY), ringRadius);
-            refactorOverlay.stroke({ width: 2.5 * edgeZoomBoost, color: ringColor, alpha: 0.9 });
-            refactorOverlay.circle(Math.round(capX), Math.round(capY), Math.max(4, ringRadius - 6));
-            refactorOverlay.fill({ color: ringColor, alpha: 0.15 });
-          }
-        }
 
         // 2. Shockwave Rings
         for (let i = shockwaves.length - 1; i >= 0; i--) {
@@ -1048,8 +980,8 @@ export default function PixiSpatialEngine({
           });
         }
 
-        // 4. Multi-Orb Right-Click Selection Visuals (Clean Dual Contour Rings & Reticle Highlights)
-        const currentSelectedIds = stateRef.current.selectedNodeIds || [];
+        // Multi-Orb Selection Visuals (Clean Dual Contour Rings & Reticle Highlights)
+        const currentSelectedIds = stateRef.current.refactorEnabled ? (stateRef.current.selectedNodeIds || []) : [];
         const selectedSet = new Set(currentSelectedIds);
         if (selectedSet.size > 0) {
           const pulse = (Math.sin(frameCount * 0.14 * animSpeed) + 1) * 0.5;

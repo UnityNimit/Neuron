@@ -105,7 +105,28 @@ export default function PaneContent({
     return clean.replace(/\\/g, '/');
   }, [workspace.aiInsight?.nodeId, allNodes]);
 
+  // Reset all refactoring selections and modals when refactoring is turned off in the bottom section
+  React.useEffect(() => {
+    if (!refactorEnabled) {
+      setSelectedNodeIds([]);
+      setContextMenu({ isOpen: false, position: null, targetNode: null });
+      setSplitModalFile(null);
+      setMergeModalFiles(null);
+    }
+  }, [refactorEnabled]);
+
+  const handleNodeClick = React.useCallback((nodeId, node, shiftKey) => {
+    if (!refactorEnabled) return;
+    setSelectedNodeIds(prev => {
+      if (prev.includes(nodeId)) {
+        return prev.filter(id => id !== nodeId);
+      }
+      return [...prev, nodeId];
+    });
+  }, [refactorEnabled]);
+
   const handleNodeRightClick = React.useCallback(({ nodeId, node, clientX, clientY, shiftKey }) => {
+    if (!refactorEnabled) return;
     setSelectedNodeIds(prev => {
       if (prev.includes(nodeId)) {
         if (shiftKey) return prev.filter(id => id !== nodeId);
@@ -119,7 +140,7 @@ export default function PaneContent({
       position: { x: clientX, y: clientY },
       targetNode: node
     });
-  }, []);
+  }, [refactorEnabled]);
 
   const handleCanvasClick = React.useCallback(() => {
     setContextMenu({ isOpen: false, position: null, targetNode: null });
@@ -307,6 +328,7 @@ export default function PaneContent({
             onDragEnd={onDragEnd}
             onRefactorDrop={handleRefactorDrop}
             onFileMergeDrop={handleFileMergeDrop}
+            onNodeClick={handleNodeClick}
             onNodeHover={handleNodeHover}
             onNodeDoubleClick={onDoubleClickNode}
             onNodeRightClick={handleNodeRightClick}
@@ -341,7 +363,7 @@ export default function PaneContent({
           )}
 
           {/* FLOATING REFACTOR SELECTION HUD */}
-          {!refactorFeedback && (
+          {refactorEnabled && !refactorFeedback && (
             <RefactorSelectionHUD
               selectedNodes={selectedNodes}
               onDivideFile={handleDivideFile}
@@ -354,19 +376,21 @@ export default function PaneContent({
           )}
 
           {/* REFACTOR CONTEXT MENU */}
-          <RefactorContextMenu
-            isOpen={contextMenu.isOpen}
-            position={contextMenu.position}
-            selectedNodes={selectedNodes}
-            targetNode={contextMenu.targetNode}
-            onClose={() => setContextMenu({ isOpen: false, position: null, targetNode: null })}
-            onDivideFile={handleDivideFile}
-            onCombineFiles={handleCombineFiles}
-            onMoveFunctions={handleMoveFunctions}
-            onExtractFunctions={handleExtractFunctions}
-            onOpenInEditor={(path) => onDoubleClickNode(path, 1)}
-            onClearSelection={handleClearSelection}
-          />
+          {refactorEnabled && (
+            <RefactorContextMenu
+              isOpen={contextMenu.isOpen}
+              position={contextMenu.position}
+              selectedNodes={selectedNodes}
+              targetNode={contextMenu.targetNode}
+              onClose={() => setContextMenu({ isOpen: false, position: null, targetNode: null })}
+              onDivideFile={handleDivideFile}
+              onCombineFiles={handleCombineFiles}
+              onMoveFunctions={handleMoveFunctions}
+              onExtractFunctions={handleExtractFunctions}
+              onOpenInEditor={(path) => onDoubleClickNode(path, 1)}
+              onClearSelection={handleClearSelection}
+            />
+          )}
 
           {/* FILE SPLIT MODAL */}
           <FileSplitModal
