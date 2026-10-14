@@ -46,9 +46,13 @@ export default function PaneHeader({
 }) {
   const [showShellMenu, setShowShellMenu] = useState(false);
   const [showSessionMenu, setShowSessionMenu] = useState(false);
+  const [showAddTabMenu, setShowAddTabMenu] = useState(false);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   const shellMenuRef = useRef(null);
   const sessionMenuRef = useRef(null);
+  const addTabMenuRef = useRef(null);
+  const dragPendingRef = useRef(null);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -57,6 +61,9 @@ export default function PaneHeader({
       }
       if (sessionMenuRef.current && !sessionMenuRef.current.contains(e.target)) {
         setShowSessionMenu(false);
+      }
+      if (addTabMenuRef.current && !addTabMenuRef.current.contains(e.target)) {
+        setShowAddTabMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -72,47 +79,102 @@ export default function PaneHeader({
   const activeTerminalSession = terminalSessions.find(s => s.id === activeSessionId) || terminalSessions[0];
   const isCurrentTerminalRunning = Boolean(activeTerminalSession?.isRunning);
 
+  const handleTabPointerDown = (e, tab) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('button')) return;
+
+    dragPendingRef.current = {
+      tab,
+      sourcePaneId: pane.id,
+      startX: e.clientX,
+      startY: e.clientY
+    };
+
+    const handleWindowPointerMove = (moveEvt) => {
+      if (!dragPendingRef.current) return;
+      const dx = moveEvt.clientX - dragPendingRef.current.startX;
+      const dy = moveEvt.clientY - dragPendingRef.current.startY;
+      if (Math.hypot(dx, dy) > 5) {
+        const payload = {
+          sourcePaneId: pane.id,
+          tabId: tab.id,
+          tab,
+          isPointerDrag: true,
+          x: moveEvt.clientX,
+          y: moveEvt.clientY
+        };
+        setDraggedTabInfo(payload);
+        window.__neuronDraggedTab = payload;
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+        dragPendingRef.current = null;
+      }
+    };
+
+    const handleWindowPointerUp = () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      dragPendingRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+  };
+
   const handleTabDragStart = (e, tab) => {
     const payload = {
       sourcePaneId: pane.id,
       tabId: tab.id,
-      tab
+      tab,
+      isPointerDrag: false
     };
     setDraggedTabInfo(payload);
     window.__neuronDraggedTab = payload;
     try {
       e.dataTransfer.setData('application/json', JSON.stringify(payload));
+      e.dataTransfer.setData('text/plain', tab.id);
       e.dataTransfer.effectAllowed = 'move';
     } catch {}
+    document.body.style.cursor = 'grabbing';
   };
 
   const handleTabDragEnd = () => {
     setDraggedTabInfo(null);
     window.__neuronDraggedTab = null;
+    setDragOverIndex(null);
+    document.body.style.cursor = '';
   };
 
   const handleTabDropOnTab = (e, targetIndex) => {
     e.preventDefault();
     e.stopPropagation();
+    setDragOverIndex(null);
     const info = draggedTabInfo || window.__neuronDraggedTab;
     if (!info) return;
     onMoveTab(info.sourcePaneId, pane.id, info.tabId, 'center', targetIndex);
     setDraggedTabInfo(null);
     window.__neuronDraggedTab = null;
+    document.body.style.cursor = '';
   };
 
   const handleTabStripDragOver = (e) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
   };
 
   const handleTabStripDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    setDragOverIndex(null);
     const info = draggedTabInfo || window.__neuronDraggedTab;
     if (!info) return;
     onMoveTab(info.sourcePaneId, pane.id, info.tabId, 'center', (pane.tabs || []).length);
     setDraggedTabInfo(null);
     window.__neuronDraggedTab = null;
+    document.body.style.cursor = '';
   };
 
   return (
@@ -168,80 +230,108 @@ export default function PaneHeader({
           }
 
           return (
-            <div
-              key={tab.id}
-              draggable={true}
-              onDragStart={(e) => handleTabDragStart(e, tab)}
-              onDragEnd={handleTabDragEnd}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }}
-              onDrop={(e) => handleTabDropOnTab(e, tabIdx)}
-              onClick={() => onSelectTab(pane.id, tab.id)}
-              className={`neuron-tab-card ${
-                isFile ? 'pl-2.5 pr-1.5' : 'pl-3 pr-1.5'
-              } font-mono cursor-pointer shrink-0 group ${
-                isActive ? 'neuron-tab-card-active' : 'neuron-tab-card-inactive'
-              }`}
-              title={tab.title}
-            >
-              {/* Only code files display an icon; Map, Output, Terminal, AI Agent, Input have no icon */}
-              {isFile && (
-                <FileCode2 
-                  size={12} 
-                  className={`transition-colors duration-150 shrink-0 mr-1.5 ${iconClass}`} 
-                  style={iconStyle} 
-                />
+            <React.Fragment key={tab.id}>
+              {/* Visual drop insertion line before tab */}
+              {dragOverIndex === tabIdx && (
+                <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shadow-[0_0_8px_var(--theme-accent)] shrink-0 transition-all pointer-events-none" />
               )}
-
-              <span 
-                className={`relative z-[2] leading-normal transition-colors duration-150 truncate max-w-[140px] select-none ${tabTextClass}`} 
-                style={tabTextStyle}
-              >
-                {tab.title}
-              </span>
-
-              {gStat && gStat !== 'I' && (
-                <span className={`relative z-[2] text-[10px] leading-normal font-mono font-bold ${badgeColor} ml-1`}>
-                  {gStat}
-                </span>
-              )}
-
-              {isFileSyncing && currentSyncingFile === filePath && (
-                <Loader2 size={11} className="relative z-[2] animate-spin shrink-0 ml-1" style={{ color: 'var(--theme-accent)' }} />
-              )}
-
-              {/* Close Tab Button or Dirty Indicator Dot (Super compact margins) */}
-              <button
-                type="button"
-                onClick={(e) => {
+              <div
+                draggable={true}
+                onPointerDown={(e) => handleTabPointerDown(e, tab)}
+                onDragStart={(e) => handleTabDragStart(e, tab)}
+                onDragEnd={handleTabDragEnd}
+                onDragOver={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
-                  onCloseTab(pane.id, tab.id);
+                  if (e.dataTransfer) {
+                    e.dataTransfer.dropEffect = 'move';
+                  }
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const mid = rect.left + rect.width / 2;
+                  if (e.clientX < mid) {
+                    if (dragOverIndex !== tabIdx) setDragOverIndex(tabIdx);
+                  } else {
+                    if (dragOverIndex !== tabIdx + 1) setDragOverIndex(tabIdx + 1);
+                  }
                 }}
-                className={`ml-1 w-3.5 h-3.5 rounded flex items-center justify-center transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] relative z-[2] shrink-0 cursor-pointer ${
-                  isActive ? 'opacity-70 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'
+                onDragLeave={() => {
+                  setDragOverIndex(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const targetIdx = dragOverIndex !== null ? dragOverIndex : tabIdx;
+                  handleTabDropOnTab(e, targetIdx);
+                }}
+                onClick={() => onSelectTab(pane.id, tab.id)}
+                className={`neuron-tab-card ${
+                  isFile ? 'pl-2.5 pr-1.5' : 'pl-3 pr-1.5'
+                } font-mono cursor-grab active:cursor-grabbing shrink-0 group ${
+                  isActive ? 'neuron-tab-card-active' : 'neuron-tab-card-inactive'
                 }`}
-                title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
+                title={tab.title}
               >
-                {isDirty ? (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 group-hover:opacity-0 transition-opacity" />
-                    <X size={10} strokeWidth={2.2} className="opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 m-auto text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)]" />
-                  </>
-                ) : (
-                  <X size={10} strokeWidth={2.2} className="transition-opacity text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]" />
+                {/* Only code files display an icon; Map, Output, Terminal, AI Agent, Input have no icon */}
+                {isFile && (
+                  <FileCode2 
+                    size={12} 
+                    className={`transition-colors duration-150 shrink-0 mr-1.5 ${iconClass}`} 
+                    style={iconStyle} 
+                  />
                 )}
-              </button>
 
-              <span
-                className={`neuron-tab-indicator ${
-                  isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
-                }`}
-              />
-            </div>
+                <span 
+                  className={`relative z-[2] leading-normal transition-colors duration-150 truncate max-w-[140px] select-none ${tabTextClass}`} 
+                  style={tabTextStyle}
+                >
+                  {tab.title}
+                </span>
+
+                {gStat && gStat !== 'I' && (
+                  <span className={`relative z-[2] text-[10px] leading-normal font-mono font-bold ${badgeColor} ml-1`}>
+                    {gStat}
+                  </span>
+                )}
+
+                {isFileSyncing && currentSyncingFile === filePath && (
+                  <Loader2 size={11} className="relative z-[2] animate-spin shrink-0 ml-1" style={{ color: 'var(--theme-accent)' }} />
+                )}
+
+                {/* Close Tab Button or Dirty Indicator Dot (Super compact margins) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseTab(pane.id, tab.id);
+                  }}
+                  className={`ml-1 w-3.5 h-3.5 rounded flex items-center justify-center transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] relative z-[2] shrink-0 cursor-pointer ${
+                    isActive ? 'opacity-70 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
+                >
+                  {isDirty ? (
+                    <>
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 group-hover:opacity-0 transition-opacity" />
+                      <X size={10} strokeWidth={2.2} className="opacity-0 group-hover:opacity-100 transition-opacity absolute inset-0 m-auto text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)]" />
+                    </>
+                  ) : (
+                    <X size={10} strokeWidth={2.2} className="transition-opacity text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)]" />
+                  )}
+                </button>
+
+                <span
+                  className={`neuron-tab-indicator ${
+                    isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
+                  }`}
+                />
+              </div>
+            </React.Fragment>
           );
         })}
+        {/* Visual drop insertion line at end of tab strip */}
+        {dragOverIndex === (pane.tabs || []).length && (
+          <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shadow-[0_0_8px_var(--theme-accent)] shrink-0 transition-all pointer-events-none" />
+        )}
       </div>
 
       {/* ----------------------------------------------------------------- */}
@@ -424,6 +514,114 @@ export default function PaneHeader({
             </button>
           </div>
         )}
+
+        {/* Pane Layout Actions: Split Horizontal, Split Vertical, Add Tab, Close Pane */}
+        <div className="flex items-center gap-0.5 ml-1 pl-1 border-l border-[var(--theme-border)]">
+          {/* Quick Add Tab Dropdown */}
+          <div className="relative" ref={addTabMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowAddTabMenu(prev => !prev)}
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
+              title="Add Tab to Pane"
+            >
+              <Plus size={12} strokeWidth={2} />
+            </button>
+            {showAddTabMenu && (
+              <div 
+                className="absolute top-full right-0 mt-1 w-44 border shadow-2xl rounded-lg p-1 text-[11px] font-mono backdrop-blur-xl z-[100]"
+                style={{
+                  backgroundColor: 'var(--theme-secondary)',
+                  borderColor: 'var(--theme-border)',
+                  color: 'var(--theme-text-primary)'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAddTabToPane && onAddTabToPane(pane.id, { id: 'spatial', type: 'spatial', title: 'Map' });
+                    setShowAddTabMenu(false);
+                  }}
+                  className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)]">●</span> Map
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAddTabToPane && onAddTabToPane(pane.id, { id: 'ai', type: 'ai', title: 'AI Agent' });
+                    setShowAddTabMenu(false);
+                  }}
+                  className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)]">●</span> AI Agent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAddTabToPane && onAddTabToPane(pane.id, { id: 'output', type: 'output', title: 'Output' });
+                    setShowAddTabMenu(false);
+                  }}
+                  className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)]">●</span> Output
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAddTabToPane && onAddTabToPane(pane.id, { id: 'terminal', type: 'terminal', title: 'Terminal' });
+                    setShowAddTabMenu(false);
+                  }}
+                  className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)]">●</span> Terminal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onAddTabToPane && onAddTabToPane(pane.id, { id: 'stdin', type: 'stdin', title: 'Input' });
+                    setShowAddTabMenu(false);
+                  }}
+                  className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
+                >
+                  <span className="text-[var(--theme-accent)]">●</span> Input
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Split Pane Right */}
+          <button
+            type="button"
+            onClick={() => onSplitPane && onSplitPane(pane.id, 'horizontal')}
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
+            title="Split Right"
+          >
+            <Columns2 size={12} strokeWidth={1.8} />
+          </button>
+
+          {/* Split Pane Down */}
+          <button
+            type="button"
+            onClick={() => onSplitPane && onSplitPane(pane.id, 'vertical')}
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
+            title="Split Down"
+          >
+            <Rows2 size={12} strokeWidth={1.8} />
+          </button>
+
+          {/* Close Pane Button (when more than 1 pane exists) */}
+          {totalPanes > 1 && (
+            <button
+              type="button"
+              onClick={() => onClosePane && onClosePane(pane.id)}
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-rose-500/15 hover:text-rose-400 text-[var(--theme-text-muted)] transition-colors cursor-pointer"
+              title="Close Pane"
+            >
+              <PanelRightClose size={12} strokeWidth={1.8} />
+            </button>
+          )}
+        </div>
 
       </div>
     </div>

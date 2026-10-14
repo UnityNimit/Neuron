@@ -688,6 +688,21 @@ export function moveTab(tree, sourcePaneId, targetPaneId, tabId, dropZone, targe
     return { tree, activePaneId: targetPaneId };
   }
 
+  // If user splits a single-tab pane against itself, duplicate the tab into the new split
+  if (sourcePaneId === targetPaneId && dropZone !== 'center' && (sourcePane.tabs || []).length <= 1) {
+    const duplicateTab = {
+      ...tab,
+      id: tab.type === 'file' ? tab.id : `${tab.id}_split_${Date.now()}`
+    };
+    const direction = (dropZone === 'left' || dropZone === 'right') ? 'horizontal' : 'vertical';
+    const insertBefore = (dropZone === 'left' || dropZone === 'top');
+    const splitResult = splitPane(tree, targetPaneId, direction, duplicateTab, insertBefore);
+    return {
+      tree: splitResult.tree,
+      activePaneId: splitResult.newPaneId
+    };
+  }
+
   function removeTabWithoutClean(node) {
     if (!node) return null;
     if (node.type === 'pane') {

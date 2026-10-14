@@ -1,6 +1,7 @@
 // frontend/src/components/layout/modular/ModularWorkspace.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
+import { FileCode2 } from 'lucide-react';
 import ModularPane from './ModularPane';
 import {
   getAllPanes,
@@ -161,6 +162,75 @@ export default function ModularWorkspace({
     });
   }, [setActivePaneId, setLayoutTree, onActiveFileChange]);
 
+  // Global pointer move and pointer up coordinator for tab dragging
+  useEffect(() => {
+    if (!draggedTabInfo || !draggedTabInfo.isPointerDrag) return;
+
+    const handlePointerMove = (e) => {
+      setDraggedTabInfo(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          x: e.clientX,
+          y: e.clientY
+        };
+      });
+    };
+
+    const handlePointerUp = (e) => {
+      const info = draggedTabInfo || window.__neuronDraggedTab;
+      if (info) {
+        const elements = document.elementsFromPoint(e.clientX, e.clientY) || [];
+        const contentEl = elements.find(el => el.getAttribute && el.getAttribute('data-modular-content-id'));
+        if (contentEl) {
+          const targetPaneId = contentEl.getAttribute('data-modular-content-id');
+          const rect = contentEl.getBoundingClientRect();
+          const relX = (e.clientX - rect.left) / rect.width;
+          const relY = (e.clientY - rect.top) / rect.height;
+          const edgeMargin = 0.22;
+          let zone = 'center';
+          if (relX < edgeMargin) zone = 'left';
+          else if (relX > 1 - edgeMargin) zone = 'right';
+          else if (relY < edgeMargin) zone = 'top';
+          else if (relY > 1 - edgeMargin) zone = 'bottom';
+          else zone = 'center';
+
+          handleMoveTab(info.sourcePaneId, targetPaneId, info.tabId, zone);
+        } else {
+          const paneEl = elements.find(el => el.getAttribute && el.getAttribute('data-modular-pane-id'));
+          if (paneEl) {
+            const targetPaneId = paneEl.getAttribute('data-modular-pane-id');
+            handleMoveTab(info.sourcePaneId, targetPaneId, info.tabId, 'center');
+          }
+        }
+      }
+
+      setDraggedTabInfo(null);
+      window.__neuronDraggedTab = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setDraggedTabInfo(null);
+        window.__neuronDraggedTab = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [draggedTabInfo, handleMoveTab]);
+
   // Recursive Renderer for the Layout Tree
   const renderNode = (node) => {
     if (!node) return null;
@@ -272,8 +342,32 @@ export default function ModularWorkspace({
     <div 
       className="w-full h-full flex flex-col min-w-0 min-h-0 overflow-hidden relative select-none"
       style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer) {
+          e.dataTransfer.dropEffect = 'move';
+        }
+      }}
     >
       {renderNode(layoutTree)}
+
+      {/* Floating Ghost Tab Badge for Smooth Dragging across all platforms */}
+      {draggedTabInfo && (
+        <div 
+          className="fixed pointer-events-none z-[99999] px-2.5 py-1 rounded-md border shadow-2xl flex items-center gap-1.5 font-mono text-xs font-semibold backdrop-blur-md"
+          style={{
+            left: (draggedTabInfo.x ?? 0) + 12,
+            top: (draggedTabInfo.y ?? 0) + 12,
+            backgroundColor: 'var(--theme-surface, #1e1f22)',
+            borderColor: 'var(--theme-accent, #6366f1)',
+            color: 'var(--theme-text-bright, #fff)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+          }}
+        >
+          {draggedTabInfo.tab?.type === 'file' && <FileCode2 size={12} style={{ color: 'var(--theme-accent)' }} />}
+          <span>{draggedTabInfo.tab?.title || 'Tab'}</span>
+        </div>
+      )}
     </div>
   );
 }

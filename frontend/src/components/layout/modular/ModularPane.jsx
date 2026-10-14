@@ -1,5 +1,5 @@
 // frontend/src/components/layout/modular/ModularPane.jsx
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Columns2, Rows2, PlusSquare } from 'lucide-react';
 import PaneHeader from './PaneHeader';
 import PaneContent from './PaneContent';
@@ -62,9 +62,47 @@ export default function ModularPane({
 
   const activeTab = (pane.tabs || []).find(t => t.id === pane.activeTabId) || pane.tabs?.[0];
 
+  // Sync dropZone when pointer drag coordinates change
+  useEffect(() => {
+    if (!draggedTabInfo || !draggedTabInfo.isPointerDrag || !contentContainerRef.current) {
+      if (!draggedTabInfo && dropZone) {
+        setDropZone(null);
+      }
+      return;
+    }
+
+    const { x, y } = draggedTabInfo;
+    const rect = contentContainerRef.current.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      const relX = (x - rect.left) / rect.width;
+      const relY = (y - rect.top) / rect.height;
+      const edgeMargin = 0.22;
+      let zone = 'center';
+
+      if (relX < edgeMargin) {
+        zone = 'left';
+      } else if (relX > 1 - edgeMargin) {
+        zone = 'right';
+      } else if (relY < edgeMargin) {
+        zone = 'top';
+      } else if (relY > 1 - edgeMargin) {
+        zone = 'bottom';
+      } else {
+        zone = 'center';
+      }
+
+      setDropZone(zone);
+    } else {
+      setDropZone(null);
+    }
+  }, [draggedTabInfo]);
+
   const handleDragOver = (e) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
 
     if (!contentContainerRef.current) return;
     const rect = contentContainerRef.current.getBoundingClientRect();
@@ -88,17 +126,27 @@ export default function ModularPane({
       zone = 'center';
     }
 
-    setDropZone(zone);
+    if (dropZone !== zone) {
+      setDropZone(zone);
+    }
   };
 
   const handleDragLeave = (e) => {
-    if (contentContainerRef.current && !contentContainerRef.current.contains(e.relatedTarget)) {
+    if (!contentContainerRef.current) return;
+    const rect = contentContainerRef.current.getBoundingClientRect();
+    if (
+      e.clientX <= rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY <= rect.top ||
+      e.clientY >= rect.bottom
+    ) {
       setDropZone(null);
     }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     const zone = dropZone || 'center';
     setDropZone(null);
 
@@ -108,6 +156,7 @@ export default function ModularPane({
     onMoveTab(info.sourcePaneId, pane.id, info.tabId, zone);
     setDraggedTabInfo(null);
     window.__neuronDraggedTab = null;
+    document.body.style.cursor = '';
   };
 
   let overlayStyle = "";
@@ -138,6 +187,7 @@ export default function ModularPane({
 
   return (
     <div 
+      data-modular-pane-id={pane.id}
       className="relative w-full h-full flex flex-col overflow-hidden outline-none select-none"
       style={{ backgroundColor: 'var(--theme-background, #121314)' }}
       onClick={() => onActivatePane && onActivatePane(pane.id)}
@@ -176,6 +226,7 @@ export default function ModularPane({
       {/* Pane Content Area with Drag-over Drop Detection */}
       <div 
         ref={contentContainerRef}
+        data-modular-content-id={pane.id}
         className="flex-1 min-h-0 relative overflow-hidden"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -217,18 +268,33 @@ export default function ModularPane({
           onOpenTabInPane={onAddTabToPane}
         />
 
+        {/* Drag-Capture Shield to isolate Monaco Editor, Pixi Canvas, and Terminal from intercepting drag */}
+        {draggedTabInfo && (
+          <div 
+            className="absolute inset-0 z-40 bg-transparent cursor-grabbing pointer-events-auto"
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          />
+        )}
+
         {/* Visual Drop Zone Feedback Overlay */}
         {dropZone && (
           <div 
-            className={`absolute z-50 pointer-events-none rounded-lg flex items-center justify-center border-2 border-dashed transition-all duration-150 backdrop-blur-[2px] ${overlayStyle}`}
+            className={`absolute z-50 pointer-events-auto cursor-grabbing rounded-lg flex items-center justify-center border-2 border-dashed transition-all duration-150 backdrop-blur-[2px] ${overlayStyle}`}
             style={{
               backgroundColor: 'color-mix(in srgb, var(--theme-accent) 18%, transparent)',
               borderColor: 'var(--theme-accent)',
               boxShadow: '0 0 20px color-mix(in srgb, var(--theme-accent) 30%, transparent)'
             }}
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
             <div 
-              className="px-3 py-1.5 rounded-lg border font-mono text-xs font-semibold shadow-2xl flex items-center gap-2"
+              className="px-3 py-1.5 rounded-lg border font-mono text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none"
               style={{
                 backgroundColor: 'var(--theme-surface)',
                 borderColor: 'var(--theme-border)',
