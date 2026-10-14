@@ -241,10 +241,10 @@ export default function PaneContent({
         <div className="flex items-center gap-2 mt-3">
           <button
             type="button"
-            onClick={() => onOpenTabInPane(paneId, { id: 'spatial', type: 'spatial', title: 'Map' })}
+            onClick={() => onOpenTabInPane(paneId, { id: 'spatial', type: 'spatial', title: 'Spatial Map' })}
             className="px-2.5 py-1.5 rounded bg-[var(--theme-surface)] hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-colors border border-[var(--theme-border)] cursor-pointer"
           >
-            Map
+            Spatial Map
           </button>
           <button
             type="button"

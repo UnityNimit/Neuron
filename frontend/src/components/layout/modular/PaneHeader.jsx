@@ -11,6 +11,7 @@ import {
   Square,
   ChevronDown
 } from 'lucide-react';
+import { isEditorPane } from './layoutModel';
 
 export default function PaneHeader({
   pane,
@@ -178,8 +179,8 @@ export default function PaneHeader({
         borderColor: 'var(--theme-border)'
       }}
     >
-      {/* Active Pane Top Accent Indicator */}
-      {isActivePane && (
+      {/* Active Pane Top Accent Indicator (Code Editor Panes Only) */}
+      {isActivePane && isEditorPane(pane) && (
         <div 
           className="absolute top-0 left-0 right-0 h-[2px] z-50 pointer-events-none transition-all duration-200"
           style={{
@@ -300,8 +301,8 @@ export default function PaneHeader({
                   <Loader2 size={11} className="relative z-[2] animate-spin shrink-0 ml-1" style={{ color: 'var(--theme-accent)' }} />
                 )}
 
-                {/* Close Tab Button or Dirty Indicator Dot (Super compact margins) */}
-                {(!(tab.id === 'spatial' || tab.type === 'spatial') || totalPanes > 1) && (
+                {/* Close Tab Button or Dirty Indicator Dot (Code Files Only) */}
+                {isFile && (
                   <button
                     type="button"
                     onClick={(e) => {
