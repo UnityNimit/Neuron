@@ -21,6 +21,8 @@ export default function ModularWorkspace({
   setLayoutTree,
   activePaneId,
   setActivePaneId,
+  onActivatePane,
+  lastActiveEditorPaneId,
   onActiveFileChange,
   // Content Props
   workspace,
@@ -85,7 +87,11 @@ export default function ModularWorkspace({
   }, [activePaneId, layoutTree, workspace.currentFile, onActiveFileChange]);
 
   const handleSelectTab = useCallback((paneId, tabId) => {
-    setActivePaneId(paneId);
+    if (onActivatePane) {
+      onActivatePane(paneId);
+    } else {
+      setActivePaneId(paneId);
+    }
     setLayoutTree(prev => {
       const updated = setActiveTabInPane(prev, paneId, tabId);
       const targetPane = findPaneById(updated, paneId);
@@ -95,7 +101,7 @@ export default function ModularWorkspace({
       }
       return updated;
     });
-  }, [setActivePaneId, setLayoutTree, onActiveFileChange]);
+  }, [onActivatePane, setActivePaneId, setLayoutTree, onActiveFileChange]);
 
   const handleCloseTab = useCallback((paneId, tabId) => {
     setLayoutTree(prev => {
@@ -245,7 +251,7 @@ export default function ModularWorkspace({
           isActivePane={isActivePane}
           totalPanes={totalPanes}
           totalEditorPanes={totalEditorPanes}
-          onActivatePane={setActivePaneId}
+          onActivatePane={onActivatePane || setActivePaneId}
           dirtyFiles={dirtyFiles}
           gitStatuses={workspace.gitStatuses || {}}
           isFileSyncing={workspace.isFileSyncing}
