@@ -227,6 +227,8 @@ export default function App() {
     applyTheme(getCurrentThemeId());
   }, []);
 
+  const isSplashVisible = !minSplashElapsed || !workspace.isGraphLoaded || workspace.isFolderLoading;
+
   // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
     workspace.nodes || [], 
@@ -234,7 +236,7 @@ export default function App() {
     workspace.wsRef, 
     workspace.isGraphLoaded, 
     isSpatialActive ? 'spatial' : 'editor',
-    settings?.physicsSimulation ?? true,
+    !isSplashVisible && (settings?.physicsSimulation ?? true),
     settings?.spatialAnimationSpeed ?? 1.0
   );
 
@@ -1211,13 +1213,19 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     }
   }, [workspace.wsRef, nodesMap, workspace]);
 
-  // --- INIT PYODIDE ENGINE ---
+  // --- INIT PYODIDE ENGINE (Deferred until splash completes so startup animation runs at full 60fps) ---
   useEffect(() => { 
-    loadPyodideEngine(
-      (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: false }]), 
-      (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: true }])
-    ).then(() => setIsCompilerReady(true)); 
-  }, [workspace]);
+    if (!minSplashElapsed) return;
+
+    const timer = setTimeout(() => {
+      loadPyodideEngine(
+        (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: false }]), 
+        (msg) => workspace.setTerminalLogs(prev => [...prev, { text: msg, isError: true }])
+      ).then(() => setIsCompilerReady(true)).catch(() => {}); 
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [minSplashElapsed, workspace]);
 
     const allModularPanes = useMemo(() => getAllPanes(layoutTree), [layoutTree]);
   const canCloseSplit = allModularPanes.length > 1;
@@ -1274,7 +1282,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     });
   }, [activePaneId, handleSwitchFile]);
 
-  if (!minSplashElapsed || !workspace.isGraphLoaded || !isCompilerReady || workspace.isFolderLoading) {
+  if (isSplashVisible) {
     return (
       <SplashScreen 
         session={session} 

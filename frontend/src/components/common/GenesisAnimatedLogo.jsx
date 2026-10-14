@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, memo } from 'react';
 
 /**
  * GenesisAnimatedLogo
  * Continuous vector logo genesis and liquid fusion animation.
+ * Hardware-composited and zero-GC frame ticker with precomputed trajectory cache.
  */
 
 const PATH_1 = "M1743.24 591.184C1763.49 588.065 1779.49 588.21 1789.9 588.929C1795.09 589.287 1799.08 589.799 1801.88 590.208C1803.69 590.472 1804.26 590.576 1806.48 590.918C1806.94 590.988 1808.12 591.17 1809.57 591.365C1851.94 599.477 1874.56 617.468 1885.72 627.416C1928.73 665.735 1949.57 708.395 1954.65 768.035C1955.1 792.977 1950.01 808.672 1943.9 817.863C1937.71 822.164 1931.59 824.157 1926.08 824.596C1919.36 823.543 1910.76 819.848 1897.13 806.32C1896.49 805.684 1895.84 805.056 1895.18 804.438C1893.27 802.644 1888.64 798.568 1885.48 795.78C1881.32 792.108 1875.97 787.395 1870.67 782.729C1865.35 778.039 1860.08 773.396 1856 769.798C1850.94 765.326 1849.7 764.201 1850.51 764.97C1850 764.491 1849.49 764.017 1848.97 763.55C1789.45 710.147 1734.11 690.436 1671.05 674.231C1656.87 670.402 1650.48 665.746 1647.33 662.244C1645.28 657.458 1645.03 653.872 1646.13 648.718C1651.27 635.563 1661.81 623.032 1685.82 610.204C1705.58 600.581 1725.76 593.878 1743.24 591.184Z";
@@ -27,6 +28,8 @@ const CUTTERS = [
   { cx: 546.4,  cy: 308.0,  r: 271.5, appearAt: 0.94 }
 ];
 
+const SAMPLES = 600;
+
 const clamp = (v, min = 0, max = 1) => Math.max(min, Math.min(max, v));
 const invLerp = (a, b, v) => clamp((v - a) / (b - a));
 const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
@@ -38,7 +41,7 @@ const easeOutBack = t => {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 };
 
-export default function GenesisAnimatedLogo({
+function GenesisAnimatedLogo({
   size = 64,
   width,
   height,
@@ -82,15 +85,20 @@ export default function GenesisAnimatedLogo({
       lenDroplet = 0;
     }
 
+    // Pre-sample trajectory points along corePath once to completely eliminate getPointAtLength CPU bottlenecks
+    const precomputedPoints = new Float32Array(SAMPLES * 2);
+    if (lenCore > 0) {
+      try {
+        for (let i = 0; i < SAMPLES; i++) {
+          const pt = corePath.getPointAtLength((i / (SAMPLES - 1)) * lenCore);
+          precomputedPoints[i * 2] = pt.x;
+          precomputedPoints[i * 2 + 1] = pt.y;
+        }
+      } catch (_) {}
+    }
+
     function renderFrame(t) {
       t = clamp(t, 0, 1);
-
-      if (lenCore === 0 && corePath) {
-        try {
-          lenCore = corePath.getTotalLength() || 0;
-          lenDroplet = dropletPath.getTotalLength() || 0;
-        } catch (_) {}
-      }
 
       const collapseP = easeInOutCubic(invLerp(0.89, 0.995, t));
       const drawP = easeInOutCubic(invLerp(0.24, 0.72, t));
@@ -103,6 +111,7 @@ export default function GenesisAnimatedLogo({
         if (!data) return;
 
         if (collapseP > 0) {
+          el._wasHidden = false;
           const implodeFly = easeInOutCubic(invLerp(0.91, 0.995, t));
           const cx = data.cx + (CENTER.x - data.cx) * implodeFly;
           const cy = data.cy + (CENTER.y - data.cy) * implodeFly;
@@ -114,18 +123,22 @@ export default function GenesisAnimatedLogo({
           el.setAttribute('stroke-width', '185');
           el.setAttribute('opacity', (alpha * 0.95).toFixed(3));
         } else {
-          const appearAlpha = easeOutCubic(invLerp(0.0, 0.04, t));
-          const flyP = easeOutBack(invLerp(0.02 + data.delay * 0.35, 0.17 + data.delay * 0.35, t));
-          const ringP = easeInOutCubic(invLerp(0.14 + data.delay * 0.25, 0.28 + data.delay * 0.25, t));
-
           const absorbStart = data.absorbAt - 0.04;
           const absorbEnd = data.absorbAt + 0.14;
           const absorbP = easeInOutCubic(invLerp(absorbStart, absorbEnd, drawP));
           const fadeOut = 1 - absorbP;
 
           if (fadeOut <= 0.005) {
-            el.setAttribute('opacity', '0');
+            if (!el._wasHidden) {
+              el.setAttribute('opacity', '0');
+              el._wasHidden = true;
+            }
           } else {
+            el._wasHidden = false;
+            const appearAlpha = easeOutCubic(invLerp(0.0, 0.04, t));
+            const flyP = easeOutBack(invLerp(0.02 + data.delay * 0.35, 0.17 + data.delay * 0.35, t));
+            const ringP = easeInOutCubic(invLerp(0.14 + data.delay * 0.25, 0.28 + data.delay * 0.25, t));
+
             const cx = CENTER.x + (data.cx - CENTER.x) * flyP;
             const cy = CENTER.y + (data.cy - CENTER.y) * flyP;
             const targetR = data.isDroplet ? 95 : data.r;
@@ -155,15 +168,29 @@ export default function GenesisAnimatedLogo({
         const baseAlpha = clamp(invLerp(0.16 + idx * 0.015, 0.22 + idx * 0.015, t)) * outP;
         const finalAlpha = (baseAlpha * 0.26 + flash * 0.28) * (1 - invLerp(0.70, 0.75, t));
 
-        el.setAttribute('r', (data.r * Math.max(0.1, inP)).toFixed(1));
-        el.setAttribute('opacity', Math.max(0, finalAlpha).toFixed(3));
+        if (finalAlpha <= 0.005) {
+          if (!el._wasHidden) {
+            el.setAttribute('opacity', '0');
+            el._wasHidden = true;
+          }
+        } else {
+          el._wasHidden = false;
+          el.setAttribute('r', (data.r * Math.max(0.1, inP)).toFixed(1));
+          el.setAttribute('opacity', finalAlpha.toFixed(3));
+        }
       });
 
       // 3. Real-Time Ribbon Trace & Fusion
       if (t < 0.24) {
-        corePath.setAttribute('opacity', '0');
-        dropletPath.setAttribute('opacity', '0');
+        if (!corePath._wasZero) {
+          corePath.setAttribute('opacity', '0');
+          dropletPath.setAttribute('opacity', '0');
+          corePath._wasZero = true;
+          corePath._isDrawn = false;
+        }
       } else if (collapseP > 0) {
+        corePath._wasZero = false;
+        corePath._isDrawn = false;
         const rem = 1 - collapseP;
         const seg = lenCore > 0 ? lenCore / 5 : 500;
         corePath.style.strokeDasharray = `${(seg * rem).toFixed(1)} ${(seg * (1 - rem) + 0.1).toFixed(1)}`;
@@ -174,6 +201,8 @@ export default function GenesisAnimatedLogo({
         dropletPath.style.strokeDasharray = `${(lenDroplet * rem).toFixed(1)} ${lenDroplet || 500}`;
         dropletPath.setAttribute('opacity', clamp(rem * 1.6, 0, 1).toFixed(3));
       } else if (drawP < 0.999 && lenCore > 0) {
+        corePath._wasZero = false;
+        corePath._isDrawn = false;
         const L = lenCore;
         const drawn = L * drawP;
         corePath.style.strokeDasharray = `${drawn.toFixed(1)} ${L.toFixed(1)}`;
@@ -188,40 +217,50 @@ export default function GenesisAnimatedLogo({
         dropletPath.setAttribute('stroke-width', (120 + 71 * dP).toFixed(1));
         dropletPath.setAttribute('opacity', dP > 0.01 ? '1' : '0');
       } else {
-        corePath.style.strokeDasharray = 'none';
-        corePath.style.strokeDashoffset = '0';
-        corePath.setAttribute('stroke-width', '202');
-        corePath.setAttribute('opacity', '1');
+        corePath._wasZero = false;
+        if (!corePath._isDrawn) {
+          corePath.style.strokeDasharray = 'none';
+          corePath.style.strokeDashoffset = '0';
+          corePath.setAttribute('stroke-width', '202');
+          corePath.setAttribute('opacity', '1');
 
-        dropletPath.style.strokeDasharray = 'none';
-        dropletPath.style.strokeDashoffset = '0';
-        dropletPath.setAttribute('stroke-width', '191');
-        dropletPath.setAttribute('opacity', '1');
+          dropletPath.style.strokeDasharray = 'none';
+          dropletPath.style.strokeDashoffset = '0';
+          dropletPath.setAttribute('stroke-width', '191');
+          dropletPath.setAttribute('opacity', '1');
+          corePath._isDrawn = true;
+        }
       }
 
-      // 4. Negative-Space Vector Eyelet at Tip
+      // 4. Negative-Space Vector Eyelet at Tip (Instant O(1) Cache Lookup)
       if (leadDot) {
         if (t >= 0.25 && t <= 0.71 && lenCore > 0) {
           const eyeAlpha = clamp(invLerp(0.25, 0.28, t)) * (1 - clamp(invLerp(0.68, 0.71, t)));
-          try {
-            const pt = corePath.getPointAtLength(drawP * lenCore);
-            leadDot.setAttribute('cx', pt.x.toFixed(1));
-            leadDot.setAttribute('cy', pt.y.toFixed(1));
-            leadDot.setAttribute('opacity', eyeAlpha.toFixed(3));
-          } catch (_) {
-            leadDot.setAttribute('opacity', '0');
-          }
+          const sampleIdx = Math.min(SAMPLES - 1, Math.max(0, Math.round(drawP * (SAMPLES - 1))));
+          const px = precomputedPoints[sampleIdx * 2];
+          const py = precomputedPoints[sampleIdx * 2 + 1];
+          leadDot.setAttribute('cx', px.toFixed(1));
+          leadDot.setAttribute('cy', py.toFixed(1));
+          leadDot.setAttribute('opacity', eyeAlpha.toFixed(3));
+          leadDot._wasZero = false;
         } else {
-          leadDot.setAttribute('opacity', '0');
+          if (!leadDot._wasZero) {
+            leadDot.setAttribute('opacity', '0');
+            leadDot._wasZero = true;
+          }
         }
       }
     }
 
     lastTimeRef.current = performance.now();
+    // Render frame 0 immediately on mount to prevent initial blank frame flicker
+    renderFrame(0);
 
     function loop(now) {
-      const dt = Math.min(now - lastTimeRef.current, 100) * speed;
+      const rawDt = now - lastTimeRef.current;
       lastTimeRef.current = now;
+      // Cap at 34ms (max 2 frames at 60fps) to eliminate sudden visual hiccups
+      const dt = Math.max(0, Math.min(rawDt, 34)) * speed;
 
       progressRef.current = (progressRef.current + dt / duration) % 1;
       renderFrame(progressRef.current);
@@ -258,6 +297,10 @@ export default function GenesisAnimatedLogo({
         width: typeof containerWidth === 'number' ? `${containerWidth}px` : containerWidth,
         height: typeof containerHeight === 'number' ? `${containerHeight}px` : containerHeight,
         aspectRatio: '2051 / 2281',
+        willChange: 'transform',
+        transform: 'translateZ(0)',
+        backfaceVisibility: 'hidden',
+        contain: 'layout paint size',
         ...style
       }}
       onClick={handleContainerClick}
@@ -277,7 +320,12 @@ export default function GenesisAnimatedLogo({
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className="w-full h-full overflow-visible block"
-        style={{ color }}
+        style={{ 
+          color,
+          willChange: 'transform',
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden'
+        }}
       >
         <g>
           {CUTTERS.map((c, i) => (
@@ -341,3 +389,5 @@ export default function GenesisAnimatedLogo({
     </div>
   );
 }
+
+export default memo(GenesisAnimatedLogo);

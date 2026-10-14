@@ -1,9 +1,9 @@
 // src/components/layout/SplashScreen.jsx
-import React from 'react';
+import React, { memo } from 'react';
 import GenesisAnimatedLogo from '../common/GenesisAnimatedLogo';
 import { useTheme } from '../../config/themeConfig';
 
-export default function SplashScreen({ 
+function SplashScreen({ 
   session, 
   isGraphLoaded, 
   isCompilerReady, 
@@ -25,11 +25,19 @@ export default function SplashScreen({
       className="w-screen h-screen flex flex-col items-center justify-center select-none overflow-hidden overscroll-none transition-colors duration-200"
       style={{
         backgroundColor: bgColor,
-        color: fgColor
+        color: fgColor,
+        contain: 'strict',
+        willChange: 'transform',
+        transform: 'translateZ(0)'
       }}
     >
-      <div className="flex flex-col items-center justify-center animate-in fade-in duration-300">
-        
+      <div 
+        className="flex flex-col items-center justify-center animate-in fade-in duration-300"
+        style={{
+          willChange: 'transform',
+          transform: 'translateZ(0)'
+        }}
+      >
         {/* Centered Minimalist Vector Genesis Animation on Loop */}
         <div 
           onClick={!session ? onLogin : undefined}
@@ -50,8 +58,9 @@ export default function SplashScreen({
             interactive={true}
           />
         </div>
-
       </div>
     </div>
   );
 }
+
+export default memo(SplashScreen);
