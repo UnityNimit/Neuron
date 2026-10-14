@@ -108,13 +108,42 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCompilerReady, setIsCompilerReady] = useState(false);
+  // 5-second minimum display guarantee on startup and whenever the splash screen appears
   const [minSplashElapsed, setMinSplashElapsed] = useState(false);
+  const splashLockSessionRef = useRef(false);
+  const splashLockTimerRef = useRef(null);
+
+  const rawSplashNeeded = !workspace.isGraphLoaded || workspace.isFolderLoading;
 
   useEffect(() => {
+    if (rawSplashNeeded) {
+      if (!splashLockSessionRef.current) {
+        splashLockSessionRef.current = true;
+        setMinSplashElapsed(false);
+
+        if (splashLockTimerRef.current) {
+          clearTimeout(splashLockTimerRef.current);
+        }
+
+        splashLockTimerRef.current = setTimeout(() => {
+          setMinSplashElapsed(true);
+          splashLockSessionRef.current = false;
+        }, 5000);
+      }
+    }
+  }, [rawSplashNeeded]);
+
+  // Initial startup splash timer
+  useEffect(() => {
+    splashLockSessionRef.current = true;
     const timer = setTimeout(() => {
       setMinSplashElapsed(true);
+      splashLockSessionRef.current = false;
     }, 5000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (splashLockTimerRef.current) clearTimeout(splashLockTimerRef.current);
+    };
   }, []);
   
   const [editorFocusLine, setEditorFocusLine] = useState(null);
@@ -227,7 +256,7 @@ export default function App() {
     applyTheme(getCurrentThemeId());
   }, []);
 
-  const isSplashVisible = !minSplashElapsed || !workspace.isGraphLoaded || workspace.isFolderLoading;
+  const isSplashVisible = !minSplashElapsed || rawSplashNeeded;
 
   // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
