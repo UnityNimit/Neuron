@@ -78,6 +78,7 @@ export function useWorkspace(session) {
       setIsFolderLoading(false);
     }
   }, []);
+  const [isFileSyncing, setIsFileSyncing] = useState(false);
   const [isWsConnected, setIsWsConnected] = useState(false);
   const [wsLatency, setWsLatency] = useState(0);
   
