@@ -510,13 +510,30 @@ export default function PixiSpatialEngine({
         sprite.on('pointerupoutside', stopDrag);
         
         let lastClickTime = 0;
+        const handleNodeDoubleClickAction = () => {
+          if (node.data?.nodeType === 'folder') return;
+          let targetFile = node.data?.filePath || (node.id && node.id.includes('::') ? node.id.split('::')[0] : node.id);
+          if (targetFile) {
+            targetFile = targetFile.replace(/\\/g, '/');
+            stateRef.current.onNodeDoubleClick?.(targetFile, node.data?.line || 1);
+          }
+        };
+
         sprite.on('pointerdown', (e) => {
           if (e.button !== 0) return;
           const now = Date.now();
-          if (now - lastClickTime < 320) {
-            stateRef.current.onNodeDoubleClick(node.data?.filePath || node.id, node.data?.line || 1);
+          if (now - lastClickTime < 450) {
+            handleNodeDoubleClickAction();
+            lastClickTime = 0;
+            return;
           }
           lastClickTime = now;
+        });
+
+        sprite.on('dblclick', (e) => {
+          if (e.button === 0) {
+            handleNodeDoubleClickAction();
+          }
         });
         
         sprite.on('pointerover', () => {
@@ -546,6 +563,7 @@ export default function PixiSpatialEngine({
         });
         label.anchor.set(0.5, 0);
         label.alpha = 0;
+        label.eventMode = 'none';
 
         nodeLayer.addChild(sprite);
         labelLayer.addChild(label);

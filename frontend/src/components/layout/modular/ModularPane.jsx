@@ -189,11 +189,7 @@ export default function ModularPane({
   return (
     <div 
       data-modular-pane-id={pane.id}
-      className={`relative w-full h-full flex flex-col overflow-hidden outline-none select-none transition-shadow duration-150 ${
-        isActivePane && totalPanes > 1 
-          ? 'ring-1 ring-[var(--theme-accent,#38bdf8)]/35 shadow-[inset_0_0_20px_color-mix(in_srgb,var(--theme-accent,#38bdf8)_4%,transparent)]' 
-          : ''
-      }`}
+      className="relative w-full h-full flex flex-col overflow-hidden outline-none select-none"
       style={{ backgroundColor: 'var(--theme-background, #121314)' }}
       onMouseDown={() => onActivatePane && onActivatePane(pane.id)}
       onClick={() => onActivatePane && onActivatePane(pane.id)}

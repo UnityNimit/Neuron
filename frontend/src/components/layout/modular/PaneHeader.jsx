@@ -4,12 +4,9 @@ import {
   FileCode2, 
   Terminal, 
   X, 
-  Columns2, 
-  Rows2, 
   Play, 
   Plus, 
   Loader2, 
-  PanelRightClose,
   Trash2,
   Square,
   ChevronDown
@@ -46,12 +43,10 @@ export default function PaneHeader({
 }) {
   const [showShellMenu, setShowShellMenu] = useState(false);
   const [showSessionMenu, setShowSessionMenu] = useState(false);
-  const [showAddTabMenu, setShowAddTabMenu] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState(null);
 
   const shellMenuRef = useRef(null);
   const sessionMenuRef = useRef(null);
-  const addTabMenuRef = useRef(null);
   const dragPendingRef = useRef(null);
 
   useEffect(() => {
@@ -61,9 +56,6 @@ export default function PaneHeader({
       }
       if (sessionMenuRef.current && !sessionMenuRef.current.contains(e.target)) {
         setShowSessionMenu(false);
-      }
-      if (addTabMenuRef.current && !addTabMenuRef.current.contains(e.target)) {
-        setShowAddTabMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -351,22 +343,6 @@ export default function PaneHeader({
       {/* RIGHT: Pane Action Buttons & Quick Add Menu                       */}
       {/* ----------------------------------------------------------------- */}
       <div className="ml-auto flex items-center gap-0.5 pr-2 shrink-0 relative z-20">
-        {/* Active Window Badge */}
-        {isActivePane && totalPanes > 1 && (
-          <div 
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium shrink-0 border select-none transition-all mr-1.5"
-            style={{
-              backgroundColor: 'color-mix(in srgb, var(--theme-accent, #38bdf8) 12%, transparent)',
-              borderColor: 'color-mix(in srgb, var(--theme-accent, #38bdf8) 35%, transparent)',
-              color: 'var(--theme-accent, #38bdf8)'
-            }}
-            title="Active Window (New files open here)"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse shrink-0" />
-            <span>Active</span>
-          </div>
-        )}
-        
         {/* Code Editor Controls */}
         {isCodeFileActive && (
           <div className="flex items-center gap-0.5">
@@ -542,117 +518,6 @@ export default function PaneHeader({
             </button>
           </div>
         )}
-
-        {/* Pane Layout Actions: Split Horizontal, Split Vertical, Add Tab, Close Pane */}
-        <div className="flex items-center gap-0.5 ml-1 pl-1 border-l border-[var(--theme-border)]">
-          {/* Quick Add Tab Dropdown (Hidden on dedicated Map pane to keep Map non-stackable) */}
-          {!isMapOnlyPane && (
-            <div className="relative" ref={addTabMenuRef}>
-              <button
-                type="button"
-                onClick={() => setShowAddTabMenu(prev => !prev)}
-                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
-                title="Add Tab to Pane"
-              >
-                <Plus size={12} strokeWidth={2} />
-              </button>
-              {showAddTabMenu && (
-                <div 
-                  className="absolute top-full right-0 mt-1 w-44 border shadow-2xl rounded-lg p-1 text-[11px] font-mono backdrop-blur-xl z-[100]"
-                  style={{
-                    backgroundColor: 'var(--theme-secondary)',
-                    borderColor: 'var(--theme-border)',
-                    color: 'var(--theme-text-primary)'
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddTabToPane && onAddTabToPane(pane.id, { id: 'spatial', type: 'spatial', title: 'Map' });
-                      setShowAddTabMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)]">●</span> Map
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddTabToPane && onAddTabToPane(pane.id, { id: 'ai', type: 'ai', title: 'AI Agent' });
-                      setShowAddTabMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)]">●</span> AI Agent
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddTabToPane && onAddTabToPane(pane.id, { id: 'output', type: 'output', title: 'Output' });
-                      setShowAddTabMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)]">●</span> Output
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddTabToPane && onAddTabToPane(pane.id, { id: 'terminal', type: 'terminal', title: 'Terminal' });
-                      setShowAddTabMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)]">●</span> Terminal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onAddTabToPane && onAddTabToPane(pane.id, { id: 'stdin', type: 'stdin', title: 'Input' });
-                      setShowAddTabMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)]">●</span> Input
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Split Pane Right */}
-          <button
-            type="button"
-            onClick={() => onSplitPane && onSplitPane(pane.id, 'horizontal')}
-            className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
-            title="Split Right"
-          >
-            <Columns2 size={12} strokeWidth={1.8} />
-          </button>
-
-          {/* Split Pane Down */}
-          <button
-            type="button"
-            onClick={() => onSplitPane && onSplitPane(pane.id, 'vertical')}
-            className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer"
-            title="Split Down"
-          >
-            <Rows2 size={12} strokeWidth={1.8} />
-          </button>
-
-          {/* Close Pane Button (when more than 1 pane exists) */}
-          {totalPanes > 1 && (
-            <button
-              type="button"
-              onClick={() => onClosePane && onClosePane(pane.id)}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-rose-500/15 hover:text-rose-400 text-[var(--theme-text-muted)] transition-colors cursor-pointer"
-              title="Close Pane"
-            >
-              <PanelRightClose size={12} strokeWidth={1.8} />
-            </button>
-          )}
-        </div>
-
       </div>
     </div>
   );
