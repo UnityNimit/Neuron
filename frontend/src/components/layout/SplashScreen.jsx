@@ -16,9 +16,6 @@ function SplashScreen({
     ? (theme?.textBright || '#ffffff') 
     : (theme?.textPrimary || '#080808');
   const bgColor = theme?.background || (isDark ? '#121314' : '#ffffff');
-  const haloColor = isDark 
-    ? 'rgba(255, 255, 255, 0.09)' 
-    : 'rgba(8, 8, 8, 0.06)';
 
   return (
     <div 
@@ -51,8 +48,7 @@ function SplashScreen({
             size={64}
             color={fgColor}
             bgColor={bgColor}
-            halo={true}
-            haloColor={haloColor}
+            halo={false}
             duration={4800}
             speed={1.0}
             interactive={true}
