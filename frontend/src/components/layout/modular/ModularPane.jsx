@@ -60,7 +60,7 @@ export default function ModularPane({
   const [dropZone, setDropZone] = useState(null); // 'left' | 'right' | 'top' | 'bottom' | 'center' | null
   const contentContainerRef = useRef(null);
 
-  const activeTab = (pane.tabs || []).find(t => t.id === pane.activeTabId) || pane.tabs?.[0];
+  const isMapOnlyPane = (pane.tabs || []).some(t => t.id === 'spatial' || t.type === 'spatial');
 
   // Sync dropZone when pointer drag coordinates change
   useEffect(() => {
@@ -88,14 +88,14 @@ export default function ModularPane({
       } else if (relY > 1 - edgeMargin) {
         zone = 'bottom';
       } else {
-        zone = 'center';
+        zone = isMapOnlyPane ? (relX < 0.5 ? 'left' : 'right') : 'center';
       }
 
       setDropZone(zone);
     } else {
       setDropZone(null);
     }
-  }, [draggedTabInfo]);
+  }, [draggedTabInfo, isMapOnlyPane]);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -123,7 +123,7 @@ export default function ModularPane({
     } else if (relY > 1 - edgeMargin) {
       zone = 'bottom';
     } else {
-      zone = 'center';
+      zone = isMapOnlyPane ? (relX < 0.5 ? 'left' : 'right') : 'center';
     }
 
     if (dropZone !== zone) {
@@ -188,8 +188,13 @@ export default function ModularPane({
   return (
     <div 
       data-modular-pane-id={pane.id}
-      className="relative w-full h-full flex flex-col overflow-hidden outline-none select-none"
+      className={`relative w-full h-full flex flex-col overflow-hidden outline-none select-none transition-shadow duration-150 ${
+        isActivePane && totalPanes > 1 
+          ? 'ring-1 ring-[var(--theme-accent,#38bdf8)]/35 shadow-[inset_0_0_20px_color-mix(in_srgb,var(--theme-accent,#38bdf8)_4%,transparent)]' 
+          : ''
+      }`}
       style={{ backgroundColor: 'var(--theme-background, #121314)' }}
+      onMouseDown={() => onActivatePane && onActivatePane(pane.id)}
       onClick={() => onActivatePane && onActivatePane(pane.id)}
     >
       {/* Pane Tab Strip Header */}

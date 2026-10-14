@@ -38,7 +38,10 @@ import {
   createTwoCodeFilesLayout,
   createMapCodeCodeLayout,
   createThreeCodeFilesLayout,
-  createCompetitiveProgrammingLayout
+  createCompetitiveProgrammingLayout,
+  isMapPane,
+  isEditorPane,
+  getCandidateEditorPane
 } from './components/layout/modular/layoutModel';
 
 import { applyTheme, getCurrentThemeId } from './config/themeConfig';
@@ -92,6 +95,20 @@ export default function App() {
     const panes = getAllPanes(layoutTree);
     return panes[0]?.id || null;
   });
+  const [lastActiveEditorPaneId, setLastActiveEditorPaneId] = useState(() => {
+    const panes = getAllPanes(layoutTree);
+    const candidate = panes.find(p => !isMapPane(p) && (p.tabs || []).some(t => t.type === 'file')) || panes.find(p => !isMapPane(p));
+    return candidate?.id || null;
+  });
+
+  const handleActivatePane = useCallback((paneId) => {
+    setActivePaneId(paneId);
+    if (!layoutTree) return;
+    const target = findPaneById(layoutTree, paneId);
+    if (target && !isMapPane(target)) {
+      setLastActiveEditorPaneId(paneId);
+    }
+  }, [layoutTree]);
 
   const isSpatialActive = useMemo(() => {
     const panes = getAllPanes(layoutTree);
@@ -1109,7 +1126,6 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
   const handleSwitchFile = useCallback((filename) => { 
     if (!filename) return;
-    setCenterView('editor');
     if ((settings?.autoSave ?? true) && workspace.currentFile && workspace.currentFile !== filename && dirtyFiles.has(workspace.currentFile)) {
       handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
     }
@@ -1124,32 +1140,46 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     setLayoutTree(prev => {
       const tabId = `file:${filename}`;
       const all = getAllPanes(prev);
-      let targetPane = findPaneById(prev, activePaneId);
-      if (!targetPane && all.length > 0) {
-        targetPane = all[0];
-        setActivePaneId(targetPane.id);
-      }
-      if (!targetPane) return prev;
 
-      if ((targetPane.tabs || []).some(t => t.id === tabId)) {
-        return setActiveTabInPane(prev, targetPane.id, tabId);
+      // Check 1: Is this file ALREADY OPEN in any pane?
+      const existingPane = findPaneByTabId(prev, tabId);
+      if (existingPane) {
+        setActivePaneId(existingPane.id);
+        if (!isMapPane(existingPane)) {
+          setLastActiveEditorPaneId(existingPane.id);
+        }
+        return setActiveTabInPane(prev, existingPane.id, tabId);
       }
 
-      const otherPane = findPaneByTabId(prev, tabId);
-      if (otherPane) {
-        setActivePaneId(otherPane.id);
-        return setActiveTabInPane(prev, otherPane.id, tabId);
-      }
+      // Check 2: Determine target editor pane (respecting active window & non-stackable Map)
+      const targetEditorPane = getCandidateEditorPane(prev, activePaneId, lastActiveEditorPaneId);
 
       const baseName = filename.split('/').pop();
-      return addTabToPane(prev, targetPane.id, {
+      const newTab = {
         id: tabId,
         type: 'file',
         path: filename,
         title: baseName
-      });
+      };
+
+      if (targetEditorPane) {
+        setActivePaneId(targetEditorPane.id);
+        setLastActiveEditorPaneId(targetEditorPane.id);
+        return addTabToPane(prev, targetEditorPane.id, newTab);
+      }
+
+      // Check 3: If NO editor pane exists (e.g. only Map is open), automatically split the Map horizontally!
+      const mapPane = all.find(isMapPane) || all[0];
+      if (mapPane) {
+        const splitResult = splitPane(prev, mapPane.id, 'horizontal', newTab, false);
+        setActivePaneId(splitResult.newPaneId);
+        setLastActiveEditorPaneId(splitResult.newPaneId);
+        return splitResult.tree;
+      }
+
+      return prev;
     });
-  }, [workspace, settings?.autoSave, dirtyFiles, handleSaveFile, setCenterView, activePaneId]);
+  }, [workspace, settings?.autoSave, dirtyFiles, handleSaveFile, activePaneId, lastActiveEditorPaneId]);
 
   const handleCloseTab = useCallback((fileToClose, e) => {
     if (e) e.stopPropagation();
@@ -1206,8 +1236,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
       handleSwitchFile(filePath);
     }
     setEditorFocusLine(line || 1);
-    setCenterView('editor');
-  }, [handleSwitchFile, setCenterView]);
+  }, [handleSwitchFile]);
 
   // STABLE WEBGPU HOVER ROUTER
   const handleNodeHover = useCallback((isHovering, id) => {
@@ -1299,17 +1328,33 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
   }, [activePaneId]);
 
   const handleAddTabToActivePane = useCallback((tab) => {
+    if (tab.type === 'file' && tab.path) {
+      handleSwitchFile(tab.path);
+      return;
+    }
     setLayoutTree(prev => {
-      const targetPane = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
+      const all = getAllPanes(prev);
+      let targetPane = findPaneById(prev, activePaneId) || all[0];
+      if (tab.type === 'spatial') {
+        const existingMapPane = all.find(isMapPane);
+        if (existingMapPane) {
+          setActivePaneId(existingMapPane.id);
+          return setActiveTabInPane(prev, existingMapPane.id, 'spatial');
+        }
+      } else if (targetPane && isMapPane(targetPane)) {
+        const candidate = getCandidateEditorPane(prev, activePaneId, lastActiveEditorPaneId);
+        if (candidate) {
+          targetPane = candidate;
+        }
+      }
       if (!targetPane) return prev;
       setActivePaneId(targetPane.id);
-      const updated = addTabToPane(prev, targetPane.id, tab);
-      if (tab.type === 'file' && tab.path) {
-        handleSwitchFile(tab.path);
+      if (!isMapPane(targetPane)) {
+        setLastActiveEditorPaneId(targetPane.id);
       }
-      return updated;
+      return addTabToPane(prev, targetPane.id, tab);
     });
-  }, [activePaneId, handleSwitchFile]);
+  }, [activePaneId, lastActiveEditorPaneId, handleSwitchFile]);
 
   if (isSplashVisible) {
     return (
@@ -1490,6 +1535,8 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
               setLayoutTree={setLayoutTree}
               activePaneId={activePaneId}
               setActivePaneId={setActivePaneId}
+              onActivatePane={handleActivatePane}
+              lastActiveEditorPaneId={lastActiveEditorPaneId}
               onActiveFileChange={handleSwitchFile}
               workspace={workspace}
               simDataRef={simDataRef}

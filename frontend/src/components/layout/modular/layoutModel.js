@@ -11,12 +11,12 @@ export function generateSplitId() {
 }
 
 export function createDefaultModularLayout(openFiles = [], activeFile = null, showTerminal = true, showStdin = true) {
-  const mainTabs = [{ id: 'spatial', type: 'spatial', title: 'Map' }];
+  const fileTabs = [];
 
   (openFiles || []).forEach(file => {
     if (!file) return;
     const baseName = file.split('/').pop();
-    mainTabs.push({
+    fileTabs.push({
       id: `file:${file}`,
       type: 'file',
       path: file,
@@ -24,14 +24,32 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
     });
   });
 
-  const activeTabId = activeFile ? `file:${activeFile}` : 'spatial';
-
-  const paneMain = {
+  const paneMap = {
     type: 'pane',
     id: generatePaneId(),
-    activeTabId,
-    tabs: mainTabs
+    activeTabId: 'spatial',
+    tabs: [{ id: 'spatial', type: 'spatial', title: 'Map' }]
   };
+
+  let centerNode = paneMap;
+
+  if (fileTabs.length > 0) {
+    const activeTabId = activeFile ? `file:${activeFile}` : fileTabs[0].id;
+    const paneCode = {
+      type: 'pane',
+      id: generatePaneId(),
+      activeTabId,
+      tabs: fileTabs
+    };
+
+    centerNode = {
+      type: 'split',
+      id: generateSplitId(),
+      direction: 'horizontal',
+      sizes: [50, 50],
+      children: [paneMap, paneCode]
+    };
+  }
 
   const paneBottom = {
     type: 'pane',
@@ -54,7 +72,7 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
   };
 
   if (!showTerminal && !showStdin) {
-    return paneMain;
+    return centerNode;
   }
 
   if (showTerminal && !showStdin) {
@@ -63,7 +81,7 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
       id: generateSplitId(),
       direction: 'vertical',
       sizes: [72, 28],
-      children: [paneMain, paneBottom]
+      children: [centerNode, paneBottom]
     };
   }
 
@@ -73,7 +91,7 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
       id: generateSplitId(),
       direction: 'horizontal',
       sizes: [75, 25],
-      children: [paneMain, paneRight]
+      children: [centerNode, paneRight]
     };
   }
 
@@ -88,7 +106,7 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
         id: generateSplitId(),
         direction: 'vertical',
         sizes: [72, 28],
-        children: [paneMain, paneBottom]
+        children: [centerNode, paneBottom]
       },
       paneRight
     ]
@@ -212,7 +230,6 @@ export function createTwoCodeFilesLayout(openFiles = [], activeFile = null, work
     id: generatePaneId(),
     activeTabId: `file:${file1}`,
     tabs: [
-      { id: 'spatial', type: 'spatial', title: 'Map' },
       { id: `file:${file1}`, type: 'file', path: file1, title: file1.split('/').pop() }
     ]
   };
@@ -299,7 +316,6 @@ export function createThreeCodeFilesLayout(openFiles = [], activeFile = null, wo
     id: generatePaneId(),
     activeTabId: `file:${file1}`,
     tabs: [
-      { id: 'spatial', type: 'spatial', title: 'Map' },
       { id: `file:${file1}`, type: 'file', path: file1, title: file1.split('/').pop() }
     ]
   };
@@ -471,6 +487,37 @@ export function cleanTree(node) {
       return null;
     }
 
+    const hasSpatial = uniqueTabs.some(t => t.id === 'spatial' || t.type === 'spatial');
+    if (hasSpatial && uniqueTabs.length > 1) {
+      // Map is strictly non-stackable: separate spatial into its own dedicated pane
+      const mapTab = uniqueTabs.find(t => t.id === 'spatial' || t.type === 'spatial');
+      const otherTabs = uniqueTabs.filter(t => t.id !== 'spatial' && t.type !== 'spatial');
+
+      const isMapActive = node.activeTabId === 'spatial';
+
+      const paneMap = {
+        type: 'pane',
+        id: isMapActive ? node.id : generatePaneId(),
+        activeTabId: 'spatial',
+        tabs: [mapTab]
+      };
+
+      const paneOther = {
+        type: 'pane',
+        id: isMapActive ? generatePaneId() : node.id,
+        activeTabId: isMapActive ? otherTabs[0].id : node.activeTabId,
+        tabs: otherTabs
+      };
+
+      return {
+        type: 'split',
+        id: generateSplitId(),
+        direction: 'horizontal',
+        sizes: [50, 50],
+        children: [paneMap, paneOther]
+      };
+    }
+
     let activeTabId = node.activeTabId;
     if (!uniqueTabs.some(t => t.id === activeTabId)) {
       activeTabId = uniqueTabs[0].id;
@@ -513,6 +560,50 @@ export function cleanTree(node) {
   return null;
 }
 
+export function isMapPane(pane) {
+  return Boolean(pane && (pane.tabs || []).some(t => t.id === 'spatial' || t.type === 'spatial'));
+}
+
+export function isEditorPane(pane) {
+  if (!pane || isMapPane(pane)) return false;
+  return (pane.tabs || []).some(t => t.type === 'file');
+}
+
+export function getCandidateEditorPane(tree, activePaneId = null, lastActiveEditorPaneId = null) {
+  const all = getAllPanes(tree);
+  if (all.length === 0) return null;
+
+  // 1. If activePaneId is a valid non-map pane, use it
+  if (activePaneId) {
+    const active = findPaneById(tree, activePaneId);
+    if (active && !isMapPane(active)) {
+      return active;
+    }
+  }
+
+  // 2. If lastActiveEditorPaneId exists and is still in tree, use it
+  if (lastActiveEditorPaneId) {
+    const lastActive = findPaneById(tree, lastActiveEditorPaneId);
+    if (lastActive && !isMapPane(lastActive)) {
+      return lastActive;
+    }
+  }
+
+  // 3. Any pane currently containing file tabs
+  const editorPanes = all.filter(p => !isMapPane(p) && (p.tabs || []).some(t => t.type === 'file'));
+  if (editorPanes.length > 0) {
+    return editorPanes[0];
+  }
+
+  // 4. Any non-map pane (e.g. terminal / output / ai)
+  const nonMapPanes = all.filter(p => !isMapPane(p));
+  if (nonMapPanes.length > 0) {
+    return nonMapPanes[0];
+  }
+
+  return null;
+}
+
 export function normalizeTree(tree) {
   const cleaned = cleanTree(tree);
   if (!cleaned) {
@@ -527,6 +618,36 @@ export function normalizeTree(tree) {
 }
 
 export function addTabToPane(tree, paneId, tab, targetIndex = -1) {
+  const isTabMap = tab.id === 'spatial' || tab.type === 'spatial';
+
+  // If trying to add Map tab
+  if (isTabMap) {
+    const existingMapPane = getAllPanes(tree).find(isMapPane);
+    if (existingMapPane) {
+      // Map pane already exists; focus it and do not duplicate
+      return setActiveTabInPane(tree, existingMapPane.id, 'spatial');
+    }
+    const targetPane = findPaneById(tree, paneId);
+    if (targetPane && (targetPane.tabs || []).length > 0) {
+      // Target pane has other tabs: split horizontally so Map gets its own dedicated pane
+      return splitPane(tree, paneId, 'horizontal', tab, true).tree;
+    }
+  }
+
+  // If trying to add non-map tab (code file, terminal, output, etc.)
+  if (!isTabMap) {
+    const targetPane = findPaneById(tree, paneId);
+    if (targetPane && isMapPane(targetPane)) {
+      // Target pane is a Map pane! Map is strictly non-stackable!
+      const candidate = getCandidateEditorPane(tree, null, null);
+      if (candidate) {
+        return addTabToPane(tree, candidate.id, tab, targetIndex);
+      }
+      // No editor pane exists: split the Map pane horizontally!
+      return splitPane(tree, targetPane.id, 'horizontal', tab, false).tree;
+    }
+  }
+
   function walk(node) {
     if (!node) return null;
     if (node.type === 'pane') {
@@ -701,6 +822,17 @@ export function moveTab(tree, sourcePaneId, targetPaneId, tabId, dropZone, targe
       tree: splitResult.tree,
       activePaneId: splitResult.newPaneId
     };
+  }
+
+  const targetPane = findPaneById(tree, targetPaneId);
+  const isMovingMap = tabId === 'spatial' || tab?.type === 'spatial';
+
+  // Map is strictly non-stackable: never stack inside or on top of Map
+  if (targetPane && isMapPane(targetPane) && !isMovingMap && dropZone === 'center') {
+    dropZone = 'right';
+  }
+  if (targetPane && !isMapPane(targetPane) && isMovingMap && dropZone === 'center') {
+    dropZone = 'left';
   }
 
   function removeTabWithoutClean(node) {
