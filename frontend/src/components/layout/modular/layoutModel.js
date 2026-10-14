@@ -28,7 +28,7 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
     type: 'pane',
     id: generatePaneId(),
     activeTabId: 'spatial',
-    tabs: [{ id: 'spatial', type: 'spatial', title: 'Map' }]
+    tabs: [{ id: 'spatial', type: 'spatial', title: 'Spatial Map' }]
   };
 
   let centerNode = paneMap;
@@ -189,7 +189,7 @@ export function createMapAndCodeLayout(openFiles = [], activeFile = null, worksp
     type: 'pane',
     id: generatePaneId(),
     activeTabId: 'spatial',
-    tabs: [{ id: 'spatial', type: 'spatial', title: 'Map' }]
+    tabs: [{ id: 'spatial', type: 'spatial', title: 'Spatial Map' }]
   };
 
   const codeTabs = [];
@@ -206,7 +206,7 @@ export function createMapAndCodeLayout(openFiles = [], activeFile = null, worksp
     type: 'pane',
     id: generatePaneId(),
     activeTabId: file1 ? `file:${file1}` : (codeTabs[0]?.id || 'spatial'),
-    tabs: codeTabs.length > 0 ? codeTabs : [{ id: 'spatial', type: 'spatial', title: 'Map' }]
+    tabs: codeTabs.length > 0 ? codeTabs : [{ id: 'spatial', type: 'spatial', title: 'Spatial Map' }]
   };
 
   const centerSplit = {
@@ -268,7 +268,7 @@ export function createMapCodeCodeLayout(openFiles = [], activeFile = null, works
     type: 'pane',
     id: generatePaneId(),
     activeTabId: 'spatial',
-    tabs: [{ id: 'spatial', type: 'spatial', title: 'Map' }]
+    tabs: [{ id: 'spatial', type: 'spatial', title: 'Spatial Map' }]
   };
 
   const paneCode1 = {
@@ -374,7 +374,7 @@ export function createCompetitiveProgrammingLayout(openFiles = [], activeFile = 
   });
 
   if (codeTabs.length === 0) {
-    codeTabs.push({ id: 'spatial', type: 'spatial', title: 'Map' });
+    codeTabs.push({ id: 'spatial', type: 'spatial', title: 'Spatial Map' });
   }
 
   const paneCode = {
@@ -474,7 +474,7 @@ export function cleanTree(node) {
       if (t && t.id && !seen.has(t.id)) {
         seen.add(t.id);
         let title = t.title;
-        if (t.type === 'spatial' || title === 'Spatial Map') title = 'Map';
+        if (t.type === 'spatial' || title === 'Map' || title === 'Spatial Map') title = 'Spatial Map';
         else if (t.type === 'ai' || title === 'AI Studio') title = 'AI Agent';
         else if (t.type === 'stdin') title = 'Input';
         else if (t.type === 'output') title = 'Output';
@@ -681,7 +681,7 @@ export function normalizeTree(tree) {
       type: 'pane',
       id: generatePaneId(),
       activeTabId: 'spatial',
-      tabs: [{ id: 'spatial', type: 'spatial', title: 'Map' }]
+      tabs: [{ id: 'spatial', type: 'spatial', title: 'Spatial Map' }]
     };
   }
   return cleaned;

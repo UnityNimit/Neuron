@@ -220,9 +220,9 @@ export default function TopBar({
     { separator: true },
     { isHeader: true, label: "Layout Presets" },
     { label: "1. Default Layout", action: () => onApplyLayoutPreset && onApplyLayoutPreset('default') },
-    { label: "2. Map + Code Split", action: () => onApplyLayoutPreset && onApplyLayoutPreset('map-code') },
+    { label: "2. Spatial Map + Code Split", action: () => onApplyLayoutPreset && onApplyLayoutPreset('map-code') },
     { label: "3. Two Code Files Split", action: () => onApplyLayoutPreset && onApplyLayoutPreset('two-code') },
-    { label: "4. Map + Code + Code Split", action: () => onApplyLayoutPreset && onApplyLayoutPreset('map-code-code') },
+    { label: "4. Spatial Map + Code + Code Split", action: () => onApplyLayoutPreset && onApplyLayoutPreset('map-code-code') },
     { label: "5. Three Code Files Split", action: () => onApplyLayoutPreset && onApplyLayoutPreset('three-code') },
     { label: "6. Competitive Programming", action: () => onApplyLayoutPreset && onApplyLayoutPreset('competitive') }
   ];
@@ -503,12 +503,12 @@ export default function TopBar({
                 <button
                   type="button"
                   onClick={() => {
-                    onAddTabToPane && onAddTabToPane({ id: 'spatial', type: 'spatial', title: 'Map' });
+                    onAddTabToPane && onAddTabToPane({ id: 'spatial', type: 'spatial', title: 'Spatial Map' });
                     setShowAddTabMenu(false);
                   }}
                   className="w-full px-2 py-1.5 rounded flex items-center hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer transition-colors"
                 >
-                  <span>Map</span>
+                  <span>Spatial Map</span>
                 </button>
                 <button
                   type="button"

@@ -646,7 +646,7 @@ export default function App() {
       return addTabToPane(prev, targetPane.id, {
         id: 'spatial',
         type: 'spatial',
-        title: 'Map'
+        title: 'Spatial Map'
       });
     });
   }, [activePaneId, setCenterView]);
