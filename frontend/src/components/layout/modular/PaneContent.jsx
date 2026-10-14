@@ -125,20 +125,19 @@ export default function PaneContent({
     });
   }, [refactorEnabled]);
 
-  const handleNodeRightClick = React.useCallback(({ nodeId, node, clientX, clientY, shiftKey }) => {
+  const handleNodeRightClick = React.useCallback(({ nodeId, node, clientX, clientY }) => {
     if (!refactorEnabled) return;
     setSelectedNodeIds(prev => {
       if (prev.includes(nodeId)) {
-        if (shiftKey) return prev.filter(id => id !== nodeId);
-        return prev;
+        setContextMenu({ isOpen: false, position: null, targetNode: null });
+        return prev.filter(id => id !== nodeId);
       }
+      setContextMenu({
+        isOpen: true,
+        position: { x: clientX, y: clientY },
+        targetNode: node
+      });
       return [...prev, nodeId];
-    });
-
-    setContextMenu({
-      isOpen: true,
-      position: { x: clientX, y: clientY },
-      targetNode: node
     });
   }, [refactorEnabled]);
 
