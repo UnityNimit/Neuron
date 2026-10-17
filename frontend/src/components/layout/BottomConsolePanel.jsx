@@ -1,5 +1,6 @@
 // frontend/src/components/layout/BottomConsolePanel.jsx
 import React, { useState, useEffect } from 'react';
+import { Trash2 } from 'lucide-react';
 import TerminalPanel from './TerminalPanel';
 import StdinPanel from './StdinPanel';
 
@@ -42,69 +43,77 @@ export default function BottomConsolePanel({
       }}
     >
       {/* ------------------------------------------------------------- */}
-      {/* Top Tab Strip: [ Output ] [ Terminal ] [ Input ]               */}
+      {/* Top Bar: Output   Terminal   Input (Explorer Normal Texts)   */}
       {/* ------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 flex items-center justify-between px-0 border-b select-none relative z-30"
+        className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide flex items-center justify-between shrink-0 border-b select-none"
         style={{
-          backgroundColor: 'var(--theme-secondary)',
-          borderColor: 'var(--theme-border)'
+          backgroundColor: 'var(--theme-secondary, #191a1b)',
+          borderColor: 'var(--theme-border, #242628)'
         }}
       >
-        <div className="h-full flex items-center px-1.5 gap-1.5 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
-          {/* Output Tab */}
+        <div className="flex items-center gap-4">
+          {/* Output */}
           <button
             type="button"
             onClick={() => handleTabClick('output')}
-            className={`neuron-tab-card px-3 font-mono shrink-0 cursor-pointer group ${
-              currentTab === 'output' 
-                ? 'neuron-tab-card-active' 
-                : 'neuron-tab-card-inactive'
+            className={`font-medium tracking-wide transition-colors cursor-pointer select-none outline-none ${
+              currentTab === 'output'
+                ? 'text-[var(--theme-text-bright,#f8fafc)]'
+                : 'text-[var(--theme-text-muted,#64748b)] hover:text-[var(--theme-text-primary,#cbd5e1)]'
             }`}
           >
-            <span className="leading-normal py-0.5">Output</span>
-            <span
-              className={`neuron-tab-indicator ${
-                currentTab === 'output' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
-              }`}
-            />
+            Output
           </button>
 
-          {/* Terminal Tab */}
+          {/* Terminal */}
           <button
             type="button"
             onClick={() => handleTabClick('terminal')}
-            className={`neuron-tab-card px-3 font-mono shrink-0 cursor-pointer group ${
-              currentTab === 'terminal' 
-                ? 'neuron-tab-card-active' 
-                : 'neuron-tab-card-inactive'
+            className={`font-medium tracking-wide transition-colors cursor-pointer select-none outline-none ${
+              currentTab === 'terminal'
+                ? 'text-[var(--theme-text-bright,#f8fafc)]'
+                : 'text-[var(--theme-text-muted,#64748b)] hover:text-[var(--theme-text-primary,#cbd5e1)]'
             }`}
           >
-            <span className="leading-normal py-0.5">Terminal</span>
-            <span
-              className={`neuron-tab-indicator ${
-                currentTab === 'terminal' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
-              }`}
-            />
+            Terminal
           </button>
 
-          {/* Input Tab */}
+          {/* Input */}
           <button
             type="button"
             onClick={() => handleTabClick('stdin')}
-            className={`neuron-tab-card px-3 font-mono shrink-0 cursor-pointer group ${
-              currentTab === 'stdin' 
-                ? 'neuron-tab-card-active' 
-                : 'neuron-tab-card-inactive'
+            className={`font-medium tracking-wide transition-colors cursor-pointer select-none outline-none ${
+              currentTab === 'stdin'
+                ? 'text-[var(--theme-text-bright,#f8fafc)]'
+                : 'text-[var(--theme-text-muted,#64748b)] hover:text-[var(--theme-text-primary,#cbd5e1)]'
             }`}
           >
-            <span className="leading-normal py-0.5">Input</span>
-            <span
-              className={`neuron-tab-indicator ${
-                currentTab === 'stdin' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
-              }`}
-            />
+            Input
           </button>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {currentTab === 'output' && (
+            <button
+              type="button"
+              onClick={() => workspace?.clearTerminalSession && workspace.clearTerminalSession('output')}
+              className="p-1 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] rounded transition-colors text-[var(--theme-text-muted)] cursor-pointer"
+              title="Clear Output"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+          {currentTab === 'terminal' && (
+            <button
+              type="button"
+              onClick={() => workspace?.clearTerminalSession && workspace.clearTerminalSession(interactiveSessionId)}
+              className="p-1 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] rounded transition-colors text-[var(--theme-text-muted)] cursor-pointer"
+              title="Clear Terminal"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
         </div>
       </div>
 

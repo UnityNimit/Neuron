@@ -21,31 +21,28 @@ export default function RightPanelContainer({
       }}
     >
       {/* ------------------------------------------------------------- */}
-      {/* TOP TAB BAR: [ AI Agent ] + Model Selector                    */}
+      {/* TOP BAR: AI Agent + Model Selector (Explorer Normal Texts)   */}
       {/* ------------------------------------------------------------- */}
       <div 
-        className="h-8 shrink-0 flex items-center justify-between px-0 border-b select-none relative z-30"
+        className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide flex items-center justify-between shrink-0 border-b select-none"
         style={{
-          backgroundColor: 'var(--theme-secondary)',
-          borderColor: 'var(--theme-border)'
+          backgroundColor: 'var(--theme-secondary, #191a1b)',
+          borderColor: 'var(--theme-border, #242628)'
         }}
       >
-        <div className="h-full flex items-center px-1.5 gap-1.5 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10">
-          <div
-            className="neuron-tab-card px-3 gap-1.5 font-mono shrink-0 cursor-default group neuron-tab-card-active"
-          >
-            <span className="leading-normal py-0.5">AI Agent</span>
-            {isStreaming && (
-              <span 
-                className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" 
-                style={{ backgroundColor: 'var(--theme-accent)' }}
-              />
-            )}
-            <span className="neuron-tab-indicator neuron-tab-indicator-active" />
-          </div>
+        <div className="flex items-center gap-2">
+          <span className="font-medium tracking-wide" style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}>
+            AI Agent
+          </span>
+          {isStreaming && (
+            <span 
+              className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" 
+              style={{ backgroundColor: 'var(--theme-accent, #38bdf8)' }}
+            />
+          )}
         </div>
 
-        <div className="shrink-0 flex items-center pr-2 relative z-20">
+        <div className="shrink-0 flex items-center pr-0 relative z-20">
           <ModelSelectorDropdown 
             activeModelId={aiStudio?.selectedModel || aiStudio?.activeModelId}
             onSelectModel={aiStudio?.handleSelectModel || aiStudio?.setActiveModelId}
