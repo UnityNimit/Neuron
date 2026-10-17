@@ -73,7 +73,7 @@ export default function RightPanelContainer({
                 : 'neuron-tab-card-inactive'
             }`}
           >
-            <span className="leading-none">Input</span>
+            <span className="leading-normal py-0.5">Input</span>
             <span
               className={`neuron-tab-indicator ${
                 activeTab === 'stdin' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
@@ -91,7 +91,7 @@ export default function RightPanelContainer({
                 : 'neuron-tab-card-inactive'
             }`}
           >
-            <span className="leading-none">Agent</span>
+            <span className="leading-normal py-0.5">Agent</span>
             {isStreaming && (
               <span 
                 className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" 

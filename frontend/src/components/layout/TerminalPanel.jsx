@@ -197,7 +197,7 @@ export default function TerminalPanel({
                 : 'neuron-tab-card-inactive'
             }`}
           >
-            <span className="relative z-[2] leading-normal">Output</span>
+            <span className="relative z-[2] leading-normal py-0.5">Output</span>
             <span
               className={`neuron-tab-indicator ${
                 activeSessionId === 'output' ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
@@ -222,7 +222,7 @@ export default function TerminalPanel({
                   className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-150 relative z-[2] ${s.isRunning ? 'animate-pulse' : ''}`}
                   style={{ backgroundColor: s.isRunning ? 'var(--theme-accent)' : 'var(--theme-text-muted)' }}
                 />
-                <span className="relative z-[2] leading-normal">{s.name}</span>
+                <span className="relative z-[2] leading-normal py-0.5">{s.name}</span>
                 <span
                   className={`neuron-tab-indicator ${
                     isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'

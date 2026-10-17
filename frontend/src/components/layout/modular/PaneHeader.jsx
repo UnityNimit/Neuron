@@ -285,7 +285,7 @@ export default function PaneHeader({
                 )}
 
                 <span 
-                  className={`relative z-[2] leading-none inline-flex items-center transition-colors duration-150 truncate max-w-[140px] select-none ${tabTextClass}`} 
+                  className={`relative z-[2] leading-normal transition-colors duration-150 truncate max-w-[140px] select-none py-0.5 ${tabTextClass}`} 
                   style={tabTextStyle}
                 >
                   {tab.title}
