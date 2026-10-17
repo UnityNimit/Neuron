@@ -41,7 +41,11 @@ import {
   createCompetitiveProgrammingLayout,
   isMapPane,
   isEditorPane,
-  getCandidateEditorPane
+  isBottomConsolePane,
+  isRightPanelPane,
+  getCandidateEditorPane,
+  attachBottomConsole,
+  attachRightPanel
 } from './components/layout/modular/layoutModel';
 
 import { applyTheme, getCurrentThemeId } from './config/themeConfig';
@@ -586,52 +590,72 @@ export default function App() {
   // Modular Layout Computations & Menu Toggles
   const effectiveLayout = useMemo(() => ({
     sidebar: layout.sidebar,
-    terminal: Boolean(findPaneByTabId(layoutTree, 'terminal') || findPaneByTabId(layoutTree, 'output')),
-    stdin: Boolean(findPaneByTabId(layoutTree, 'stdin'))
+    terminal: Boolean(getAllPanes(layoutTree).some(isBottomConsolePane)),
+    stdin: Boolean(getAllPanes(layoutTree).some(isRightPanelPane))
   }), [layout.sidebar, layoutTree]);
 
   const handleToggleLayout = useCallback((key) => {
+    if (typeof key === 'function') {
+      setLayout(key);
+      return;
+    }
     if (key === 'sidebar') {
       setLayout(prev => ({ ...prev, sidebar: !prev.sidebar }));
     } else if (key === 'terminal') {
       setLayoutTree(prev => {
-        const pane = findPaneByTabId(prev, 'terminal') || findPaneByTabId(prev, 'output');
-        if (pane) {
-          if ((pane.activeTabId === 'terminal' || pane.activeTabId === 'output') && getAllPanes(prev).length > 1) {
-            return closePane(prev, pane.id);
-          } else {
-            setActivePaneId(pane.id);
-            const targetTab = (pane.tabs || []).some(t => t.id === 'terminal') ? 'terminal' : (pane.tabs?.[0]?.id || 'output');
-            return setActiveTabInPane(prev, pane.id, targetTab);
+        const consolePane = getAllPanes(prev).find(isBottomConsolePane);
+        if (consolePane) {
+          setLayout(l => ({ ...l, terminal: false }));
+          if (getAllPanes(prev).length > 1) {
+            const nextTree = closePane(prev, consolePane.id);
+            if (activePaneId === consolePane.id) {
+              const nextActive = getCandidateEditorPane(nextTree) || getAllPanes(nextTree)[0];
+              if (nextActive) setActivePaneId(nextActive.id);
+            }
+            return nextTree;
           }
+          return prev;
         } else {
-          const active = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
-          if (!active) return prev;
-          const res = splitPane(prev, active.id, 'vertical', { id: 'terminal', type: 'terminal', title: 'Terminal' }, false);
-          setActivePaneId(res.newPaneId);
-          return res.tree;
+          setLayout(l => ({ ...l, terminal: true }));
+          const { tree: nextTree, newPaneId } = attachBottomConsole(prev, 'terminal');
+          setActivePaneId(newPaneId);
+          return nextTree;
         }
       });
     } else if (key === 'stdin') {
       setLayoutTree(prev => {
-        const pane = findPaneByTabId(prev, 'stdin');
-        if (pane) {
-          if (pane.activeTabId === 'stdin' && getAllPanes(prev).length > 1) {
-            return closePane(prev, pane.id);
-          } else {
-            setActivePaneId(pane.id);
-            return setActiveTabInPane(prev, pane.id, 'stdin');
+        const rightPane = getAllPanes(prev).find(isRightPanelPane);
+        if (rightPane) {
+          setLayout(l => ({ ...l, stdin: false }));
+          if (getAllPanes(prev).length > 1) {
+            const nextTree = closePane(prev, rightPane.id);
+            if (activePaneId === rightPane.id) {
+              const nextActive = getCandidateEditorPane(nextTree) || getAllPanes(nextTree)[0];
+              if (nextActive) setActivePaneId(nextActive.id);
+            }
+            return nextTree;
           }
+          return prev;
         } else {
-          const active = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
-          if (!active) return prev;
-          const res = splitPane(prev, active.id, 'horizontal', { id: 'stdin', type: 'stdin', title: 'Input' }, false);
-          setActivePaneId(res.newPaneId);
-          return res.tree;
+          setLayout(l => ({ ...l, stdin: true }));
+          const { tree: nextTree, newPaneId } = attachRightPanel(prev, 'stdin');
+          setActivePaneId(newPaneId);
+          return nextTree;
         }
       });
     }
   }, [activePaneId, setLayout]);
+
+  const handleToggleLayoutRef = useRef(handleToggleLayout);
+  useEffect(() => {
+    handleToggleLayoutRef.current = handleToggleLayout;
+  });
+
+  useEffect(() => {
+    if (layoutTree) {
+      saveLayoutToStorage(layoutTree);
+    }
+  }, [layoutTree]);
 
   const handleFocusSpatialMap = useCallback(() => {
     setCenterView('spatial');
@@ -794,12 +818,12 @@ export default function App() {
       // Toggle Terminal (Ctrl+` / Cmd+`)
       if ((e.ctrlKey || e.metaKey) && e.key === '`') {
         e.preventDefault();
-        handleToggleLayout('terminal');
+        handleToggleLayoutRef.current?.('terminal');
       }
       // Toggle Sidebar (Ctrl+B / Cmd+B)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         e.preventDefault();
-        handleToggleLayout('sidebar');
+        handleToggleLayoutRef.current?.('sidebar');
       }
       // Fullscreen Toggle (F11)
       if (e.key === 'F11') {
@@ -1041,6 +1065,13 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
     // Always reveal the bottom execution panel
     setLayout(prev => ({ ...prev, terminal: true }));
+    setLayoutTree(prev => {
+      const consolePane = getAllPanes(prev).find(isBottomConsolePane);
+      if (!consolePane) {
+        return attachBottomConsole(prev, 'output').tree;
+      }
+      return setActiveTabInPane(prev, consolePane.id, 'output');
+    });
 
     // Switch to the dedicated Output tab for clean compilation and execution streaming
     workspace.setActiveSessionId('output');
@@ -1101,6 +1132,13 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
     // Reveal the bottom execution panel
     setLayout(prev => ({ ...prev, terminal: true }));
+    setLayoutTree(prev => {
+      const consolePane = getAllPanes(prev).find(isBottomConsolePane);
+      if (!consolePane) {
+        return attachBottomConsole(prev, 'terminal').tree;
+      }
+      return setActiveTabInPane(prev, consolePane.id, 'terminal');
+    });
 
     // Find an idle interactive terminal session, or create a new one
     let targetSession = workspace.terminalSessions.find(s => s.id !== 'output' && !s.isRunning);

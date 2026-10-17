@@ -113,11 +113,11 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
   };
 }
 
-function createStandardBottomPane() {
+export function createStandardBottomPane(activeTabId = 'output') {
   return {
     type: 'pane',
     id: generatePaneId(),
-    activeTabId: 'output',
+    activeTabId,
     tabs: [
       { id: 'output', type: 'output', title: 'Output' },
       { id: 'terminal', type: 'terminal', title: 'Terminal' }
@@ -125,11 +125,11 @@ function createStandardBottomPane() {
   };
 }
 
-function createStandardRightPane() {
+export function createStandardRightPane(activeTabId = 'ai') {
   return {
     type: 'pane',
     id: generatePaneId(),
-    activeTabId: 'ai',
+    activeTabId,
     tabs: [
       { id: 'ai', type: 'ai', title: 'AI Agent' },
       { id: 'stdin', type: 'stdin', title: 'Input' }
@@ -1025,6 +1025,98 @@ export function closePane(tree, paneId) {
   }
 
   return normalizeTree(walk(tree));
+}
+
+export function attachBottomConsole(tree, activeTabId = 'terminal') {
+  const existingPane = getAllPanes(tree).find(isBottomConsolePane);
+  if (existingPane) {
+    const updated = setActiveTabInPane(tree, existingPane.id, activeTabId);
+    return {
+      tree: updated,
+      newPaneId: existingPane.id
+    };
+  }
+
+  const paneBottom = createStandardBottomPane(activeTabId);
+
+  if (!tree) {
+    return {
+      tree: paneBottom,
+      newPaneId: paneBottom.id
+    };
+  }
+
+  // Case 1: Tree has a top-level horizontal split containing the right panel
+  if (tree.type === 'split' && tree.direction === 'horizontal' && Array.isArray(tree.children) && tree.children.length === 2) {
+    const rightIndex = tree.children.findIndex(child => getAllPanes(child).some(isRightPanelPane));
+    if (rightIndex !== -1) {
+      const centerIndex = rightIndex === 0 ? 1 : 0;
+      const centerChild = tree.children[centerIndex];
+      const newCenter = {
+        type: 'split',
+        id: generateSplitId(),
+        direction: 'vertical',
+        sizes: [72, 28],
+        children: [centerChild, paneBottom]
+      };
+      const newChildren = [...tree.children];
+      newChildren[centerIndex] = newCenter;
+      return {
+        tree: normalizeTree({
+          ...tree,
+          children: newChildren
+        }),
+        newPaneId: paneBottom.id
+      };
+    }
+  }
+
+  // Case 2: Tree does not have top-level right panel split
+  const newTree = {
+    type: 'split',
+    id: generateSplitId(),
+    direction: 'vertical',
+    sizes: [72, 28],
+    children: [tree, paneBottom]
+  };
+
+  return {
+    tree: normalizeTree(newTree),
+    newPaneId: paneBottom.id
+  };
+}
+
+export function attachRightPanel(tree, activeTabId = 'stdin') {
+  const existingPane = getAllPanes(tree).find(isRightPanelPane);
+  if (existingPane) {
+    const updated = setActiveTabInPane(tree, existingPane.id, activeTabId);
+    return {
+      tree: updated,
+      newPaneId: existingPane.id
+    };
+  }
+
+  const paneRight = createStandardRightPane(activeTabId);
+
+  if (!tree) {
+    return {
+      tree: paneRight,
+      newPaneId: paneRight.id
+    };
+  }
+
+  const newTree = {
+    type: 'split',
+    id: generateSplitId(),
+    direction: 'horizontal',
+    sizes: [75, 25],
+    children: [tree, paneRight]
+  };
+
+  return {
+    tree: normalizeTree(newTree),
+    newPaneId: paneRight.id
+  };
 }
 
 const STORAGE_KEY = 'neuron-modular-layout-v3';

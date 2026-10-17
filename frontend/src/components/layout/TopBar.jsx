@@ -163,7 +163,7 @@ export default function TopBar({
   // -------------------------------------------------------------------------
   const toggleLayout = (panel) => {
     if (setLayout) {
-      setLayout(prev => ({ ...prev, [panel]: !prev[panel] }));
+      setLayout(panel);
     }
   };
 
