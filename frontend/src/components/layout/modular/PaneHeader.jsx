@@ -192,16 +192,6 @@ export default function PaneHeader({
         borderColor: 'var(--theme-border)'
       }}
     >
-      {/* Active Pane Top Accent Indicator (Code Editor Panes Only) */}
-      {isActivePane && isEditorPane(pane) && (
-        <div 
-          className="absolute top-0 left-0 right-0 h-[2px] z-50 pointer-events-none transition-all duration-200"
-          style={{
-            backgroundColor: 'var(--theme-accent, #38bdf8)',
-            boxShadow: '0 0 8px var(--theme-accent, #38bdf8)'
-          }}
-        />
-      )}
       {/* ----------------------------------------------------------------- */}
       {/* LEFT: Scrollable Tab Strip                                        */}
       {/* ----------------------------------------------------------------- */}
@@ -250,7 +240,7 @@ export default function PaneHeader({
             <React.Fragment key={tab.id}>
               {/* Visual drop insertion line before tab */}
               {dragOverIndex === tabIdx && !isFixedPane && (
-                <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shadow-[0_0_8px_var(--theme-accent)] shrink-0 transition-all pointer-events-none" />
+                <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shrink-0 transition-all pointer-events-none" />
               )}
               <div
                 draggable={!isFixedPane}
@@ -289,6 +279,13 @@ export default function PaneHeader({
                 } font-mono ${isFixedPane ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} shrink-0 group ${
                   isActive ? 'neuron-tab-card-active' : 'neuron-tab-card-inactive'
                 }`}
+                style={isActive ? {
+                  backgroundColor: 'var(--theme-background, #121314)',
+                  borderColor: 'var(--theme-border, #242628)',
+                  boxShadow: 'none'
+                } : {
+                  boxShadow: 'none'
+                }}
                 title={tab.title}
               >
                 {/* Only code files display an icon; Map, Output, Terminal, AI Agent, Input have no icon */}
@@ -340,19 +337,13 @@ export default function PaneHeader({
                     )}
                   </button>
                 )}
-
-                <span
-                  className={`neuron-tab-indicator ${
-                    isActive ? 'neuron-tab-indicator-active' : 'neuron-tab-indicator-inactive'
-                  }`}
-                />
               </div>
             </React.Fragment>
           );
         })}
         {/* Visual drop insertion line at end of tab strip */}
         {dragOverIndex === (pane.tabs || []).length && !isFixedPane && (
-          <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shadow-[0_0_8px_var(--theme-accent)] shrink-0 transition-all pointer-events-none" />
+          <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shrink-0 transition-all pointer-events-none" />
         )}
       </div>
 
