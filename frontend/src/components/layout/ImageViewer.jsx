@@ -2,6 +2,15 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Minus, Plus, Maximize2, RotateCcw, Image as ImageIcon, Loader2, Code } from 'lucide-react';
 
+// Persistent Global Image Cache (avoids reloading images when switching tabs)
+const globalImageCache = new Map(); // Map<string, { width: number, height: number, url: string }>
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('neuron-clear-editor-cache', () => {
+    globalImageCache.clear();
+  });
+}
+
 export default function ImageViewer({ 
   filename = "", 
   isSyncing = false,
@@ -17,11 +26,14 @@ export default function ImageViewer({
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
 
-  // Image metadata & loading states
-  const [naturalDimensions, setNaturalDimensions] = useState({ width: 0, height: 0 });
-  const [loading, setLoading] = useState(true);
+  // Image metadata & loading states from memory cache
+  const cachedMeta = globalImageCache.get(filename);
+  const [naturalDimensions, setNaturalDimensions] = useState(
+    cachedMeta ? { width: cachedMeta.width, height: cachedMeta.height } : { width: 0, height: 0 }
+  );
+  const [loading, setLoading] = useState(!cachedMeta);
   const [hasError, setHasError] = useState(false);
-  const [cacheBuster, setCacheBuster] = useState(Date.now());
+  const [cacheBuster, setCacheBuster] = useState(0);
 
   const effectiveIsSvg = isSvg || filename.toLowerCase().endsWith('.svg');
 
@@ -43,7 +55,8 @@ export default function ImageViewer({
   // Construct raw file image URL
   const imageUrl = useMemo(() => {
     if (!filename) return "";
-    return `${apiBase}/api/file/raw?path=${encodeURIComponent(filename)}&t=${cacheBuster}`;
+    const busterQuery = cacheBuster > 0 ? `&t=${cacheBuster}` : '';
+    return `${apiBase}/api/file/raw?path=${encodeURIComponent(filename)}${busterQuery}`;
   }, [filename, cacheBuster, apiBase]);
 
   // Robust Image probe & existence check (prevents indefinite loading on 404 or cached images)
@@ -55,6 +68,14 @@ export default function ImageViewer({
 
     setZoom(1.0);
     setPan({ x: 0, y: 0 });
+
+    // If image is already cached in memory and not manually busted, skip reloading
+    if (globalImageCache.has(filename) && cacheBuster === 0) {
+      setLoading(false);
+      setHasError(false);
+      return;
+    }
+
     setLoading(true);
     setHasError(false);
 
@@ -76,6 +97,7 @@ export default function ImageViewer({
         setNaturalDimensions({ width: nw, height: nh });
         setLoading(false);
         setHasError(false);
+        globalImageCache.set(filename, { width: nw, height: nh, url: imageUrl });
         clearTimeout(safetyTimer);
         return () => {
           isMounted = false;
@@ -107,7 +129,7 @@ export default function ImageViewer({
       controller.abort();
       clearTimeout(safetyTimer);
     };
-  }, [filename, imageUrl, effectiveIsSvg]);
+  }, [filename, imageUrl, effectiveIsSvg, cacheBuster]);
 
   // Image loaded callback
   const handleImageLoad = (e) => {
@@ -116,6 +138,7 @@ export default function ImageViewer({
     setNaturalDimensions({ width: nw, height: nh });
     setLoading(false);
     setHasError(false);
+    globalImageCache.set(filename, { width: nw, height: nh, url: imageUrl });
   };
 
   const handleImageError = () => {

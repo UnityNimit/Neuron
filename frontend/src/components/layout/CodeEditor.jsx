@@ -13,6 +13,19 @@ loader.config({ monaco });
 // Central dynamic Monaco theme registrations (Obsidian Black, Alabaster White, Sakura Rose)
 registerMonacoThemes(monaco);
 
+// Persistent Global Monaco Model and ViewState Registry (preserves models, undo stacks, cursor & scroll across tab switches and unmounts)
+const globalModelsMap = new Map(); // Map<filePath, ITextModel>
+const globalViewStatesMap = new Map(); // Map<filePath, ICodeEditorViewState>
+const globalLastUserEdits = new Map(); // Map<filePath, string>
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('neuron-clear-editor-cache', () => {
+    globalModelsMap.clear();
+    globalViewStatesMap.clear();
+    globalLastUserEdits.clear();
+  });
+}
+
 function CodeEditor({ 
   filename = "", 
   initialCode = "", 
@@ -28,8 +41,6 @@ function CodeEditor({
   const { theme } = useTheme();
   const monacoTheme = theme?.monacoTheme || 'neuron-obsidian';
   const editorRef = useRef(null);
-  const modelsMapRef = useRef(new Map()); // Map<filePath, ITextModel>
-  const lastUserEditRef = useRef(new Map()); // Map<filePath, string>
   const isDirtyRef = useRef(isDirty);
   const isExternalSyncRef = useRef(false);
 
@@ -144,35 +155,53 @@ function CodeEditor({
     return map[ext] || 'plaintext';
   }, [filename]);
 
+  // Save view state on unmount so switching between Spatial Map, Terminal, Images, and Editor never loses scroll/cursor
+  useEffect(() => {
+    return () => {
+      if (editorRef.current && filenameRef.current) {
+        try {
+          const vs = editorRef.current.saveViewState();
+          if (vs) {
+            globalViewStatesMap.set(filenameRef.current, vs);
+          }
+        } catch {}
+      }
+    };
+  }, []);
+
   // -------------------------------------------------------------------------
   // 3. MULTI-MODEL ISOLATION (Preserves Undo Stack & Cursor Across Saves)
   // -------------------------------------------------------------------------
   const getOrCreateModel = useCallback((file, codeContent, lang) => {
     if (!file) return null;
     
-    let model = modelsMapRef.current.get(file);
+    let model = globalModelsMap.get(file);
     if (!model || model.isDisposed()) {
       const uri = monaco.Uri.parse(`inmemory://neuron/${file}`);
       model = monaco.editor.getModel(uri);
       
       if (!model) {
         model = monaco.editor.createModel(codeContent || "", lang, uri);
-      } else if (codeContent !== undefined && model.getValue() !== codeContent) {
-        applyModelTextPreservingCursor(model, codeContent);
+      } else if (codeContent !== undefined) {
+        const curNorm = model.getValue().replace(/\r\n/g, '\n');
+        const codeNorm = codeContent.replace(/\r\n/g, '\n');
+        if (curNorm !== codeNorm) {
+          applyModelTextPreservingCursor(model, codeContent);
+        }
       }
-      modelsMapRef.current.set(file, model);
+      globalModelsMap.set(file, model);
     } else {
-      // Only sync existing model if it is empty (initial async load) or if changed externally while unfocused
-      const currentVal = model.getValue();
-      const hasTyped = lastUserEditRef.current.has(file);
+      const curNorm = model.getValue().replace(/\r\n/g, '\n');
+      const codeNorm = (codeContent || "").replace(/\r\n/g, '\n');
+      const hasTyped = globalLastUserEdits.has(file);
       const isFocusedActive = editorRef.current && editorRef.current.getModel() === model && editorRef.current.hasTextFocus();
 
       if (
         codeContent !== undefined &&
-        currentVal !== codeContent &&
+        curNorm !== codeNorm &&
         !isDirtyRef.current &&
         !isFocusedActive &&
-        (!hasTyped || currentVal === "")
+        (!hasTyped || curNorm === "")
       ) {
         applyModelTextPreservingCursor(model, codeContent);
       }
@@ -190,15 +219,36 @@ function CodeEditor({
     const targetModel = getOrCreateModel(filename, initialCode, language);
     if (targetModel) {
       if (editorRef.current.getModel() !== targetModel) {
+        // Save view state of outgoing file before switching models
+        const prevModel = editorRef.current.getModel();
+        if (prevModel && filenameRef.current && filenameRef.current !== filename) {
+          try {
+            const vs = editorRef.current.saveViewState();
+            if (vs) {
+              globalViewStatesMap.set(filenameRef.current, vs);
+            }
+          } catch {}
+        }
+
         editorRef.current.setModel(targetModel);
+
+        // Instantly restore cursor, selection, and scroll position
+        const savedVs = globalViewStatesMap.get(filename);
+        if (savedVs) {
+          try {
+            editorRef.current.restoreViewState(savedVs);
+          } catch {}
+        }
       } else if (
         !isDirty &&
         initialCode !== undefined &&
-        targetModel.getValue() !== initialCode &&
-        !editorRef.current.hasTextFocus() &&
-        (!lastUserEditRef.current.has(filename) || targetModel.getValue() === "")
+        !editorRef.current.hasTextFocus()
       ) {
-        applyModelTextPreservingCursor(targetModel, initialCode);
+        const curNorm = targetModel.getValue().replace(/\r\n/g, '\n');
+        const initNorm = initialCode.replace(/\r\n/g, '\n');
+        if (curNorm !== initNorm && (!globalLastUserEdits.has(filename) || curNorm === "")) {
+          applyModelTextPreservingCursor(targetModel, initialCode);
+        }
       }
     }
   }, [filename, initialCode, language, isDirty, getOrCreateModel, applyModelTextPreservingCursor]);
@@ -212,10 +262,10 @@ function CodeEditor({
       const cleanTarget = filePath.replace(/\\/g, '/').toLowerCase();
       const cleanCurrent = (filenameRef.current || '').replace(/\\/g, '/').toLowerCase();
 
-      // 1. Update matching cached model in modelsMapRef while preserving cursor
-      for (const [key, model] of modelsMapRef.current.entries()) {
+      // 1. Update matching cached model in globalModelsMap while preserving cursor
+      for (const [key, model] of globalModelsMap.entries()) {
         if (key.replace(/\\/g, '/').toLowerCase() === cleanTarget && !model.isDisposed()) {
-          lastUserEditRef.current.set(key, code);
+          globalLastUserEdits.set(key, code);
           applyModelTextPreservingCursor(model, code);
         }
       }
@@ -244,11 +294,17 @@ function CodeEditor({
       syncMonacoTheme(monaco, theme);
     }
 
-    // Attach initial file model
+    // Attach initial file model and restore view state
     if (filename) {
       const targetModel = getOrCreateModel(filename, initialCode, language);
       if (targetModel) {
         editor.setModel(targetModel);
+        const savedVs = globalViewStatesMap.get(filename);
+        if (savedVs) {
+          try {
+            editor.restoreViewState(savedVs);
+          } catch {}
+        }
       }
     }
 
@@ -257,7 +313,7 @@ function CodeEditor({
       const currentVal = editor.getValue();
       const currentFile = filenameRef.current;
       if (currentFile) {
-        lastUserEditRef.current.set(currentFile, currentVal);
+        globalLastUserEdits.set(currentFile, currentVal);
       }
       if (onCodeChangeRef.current && currentFile) {
         onCodeChangeRef.current(currentVal, currentFile);
@@ -307,7 +363,7 @@ function CodeEditor({
       const currentVal = editor.getValue();
       const currentFile = filenameRef.current;
       if (currentFile) {
-        lastUserEditRef.current.set(currentFile, currentVal);
+        globalLastUserEdits.set(currentFile, currentVal);
       }
       
       if (onCodeChangeRef.current && currentFile) {

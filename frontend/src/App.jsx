@@ -355,6 +355,7 @@ export default function App() {
         setCenterView('spatial');
         setDirtyFiles(new Set());
         currentCodeBufferRef.current = {};
+        window.dispatchEvent(new CustomEvent('neuron-clear-editor-cache'));
         const freshLayout = loadLayoutFromStorage(
           workspace.openFiles,
           workspace.currentFile,
@@ -1133,16 +1134,26 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
   const handleSwitchFile = useCallback((filename) => { 
     if (!filename) return;
     const cleanFile = filename.replace(/\\/g, '/');
-    if ((settings?.autoSave ?? true) && workspace.currentFile && workspace.currentFile !== cleanFile && dirtyFiles.has(workspace.currentFile)) {
+    if (cleanFile === workspace.currentFile) return;
+
+    if ((settings?.autoSave ?? true) && workspace.currentFile && dirtyFiles.has(workspace.currentFile)) {
       handleSaveFile(workspace.currentFile, currentCodeBufferRef.current[workspace.currentFile]);
     }
-    //  0ms Optimistic UI updates: instantly select tab, update path & breadcrumbs
+
+    const isAlreadyLoaded = (
+      (workspace.openFiles || []).includes(cleanFile) ||
+      currentCodeBufferRef.current[cleanFile] !== undefined ||
+      Boolean(nodesMap.get(cleanFile)?.data?.code)
+    );
+
+    // 0ms Optimistic UI updates: instantly select tab, update path & breadcrumbs
     workspace.setCurrentFile(cleanFile);
     workspace.setOpenFiles(prev => prev.includes(cleanFile) ? prev : [...prev, cleanFile]);
-    if (cleanFile !== workspace.currentFile) { 
+
+    if (!isAlreadyLoaded) { 
       workspace.setIsFileSyncing(true); 
-      workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: cleanFile })); 
     }
+    workspace.wsRef.current?.send(JSON.stringify({ event: 'SWITCH_FILE', filename: cleanFile })); 
 
     setLayoutTree(prev => {
       const tabId = `file:${cleanFile}`;
@@ -1195,7 +1206,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
       return prev;
     });
-  }, [workspace, settings?.autoSave, dirtyFiles, handleSaveFile, activePaneId, lastActiveEditorPaneId]);
+  }, [workspace, settings?.autoSave, dirtyFiles, handleSaveFile, activePaneId, lastActiveEditorPaneId, nodesMap]);
 
   const handleCloseTab = useCallback((fileToClose, e) => {
     if (e) e.stopPropagation();

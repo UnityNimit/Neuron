@@ -540,18 +540,31 @@ export function useWorkspace(session) {
               setIsFileSyncing(false);
               const { active_file, content } = data;
               if (active_file && content !== undefined) {
-                setNodes(prev => prev.map(n => {
-                  if (n.id === active_file && n.data?.nodeType === 'file') {
-                    return {
-                      ...n,
-                      data: {
-                        ...n.data,
-                        code: content
-                      }
-                    };
+                setNodes(prev => {
+                  const targetNode = prev.find(n => n.id === active_file);
+                  if (targetNode) {
+                    const existingCode = targetNode.data?.code;
+                    // If content is identical (normalizing CRLF/LF), do not replace nodes array
+                    if (
+                      typeof existingCode === 'string' &&
+                      existingCode.replace(/\r\n/g, '\n') === content.replace(/\r\n/g, '\n')
+                    ) {
+                      return prev;
+                    }
                   }
-                  return n;
-                }));
+                  return prev.map(n => {
+                    if (n.id === active_file && n.data?.nodeType === 'file') {
+                      return {
+                        ...n,
+                        data: {
+                          ...n.data,
+                          code: content
+                        }
+                      };
+                    }
+                    return n;
+                  });
+                });
               }
             }
 

@@ -93,16 +93,13 @@ function ModularWorkspace({
     } else {
       setActivePaneId(paneId);
     }
-    setLayoutTree(prev => {
-      const updated = setActiveTabInPane(prev, paneId, tabId);
-      const targetPane = findPaneById(updated, paneId);
-      const activeTab = (targetPane?.tabs || []).find(t => t.id === tabId);
-      if (activeTab?.type === 'file' && activeTab.path && onActiveFileChange) {
-        onActiveFileChange(activeTab.path);
-      }
-      return updated;
-    });
-  }, [onActivatePane, setActivePaneId, setLayoutTree, onActiveFileChange]);
+    const currentPane = findPaneById(layoutTree, paneId);
+    const targetTab = (currentPane?.tabs || []).find(t => t.id === tabId);
+    if (targetTab?.type === 'file' && targetTab.path && onActiveFileChange) {
+      onActiveFileChange(targetTab.path);
+    }
+    setLayoutTree(prev => setActiveTabInPane(prev, paneId, tabId));
+  }, [onActivatePane, setActivePaneId, layoutTree, onActiveFileChange, setLayoutTree]);
 
   const handleCloseTab = useCallback((paneId, tabId) => {
     setLayoutTree(prev => {
