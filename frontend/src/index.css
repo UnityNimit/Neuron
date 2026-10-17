@@ -94,18 +94,21 @@ canvas {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* 5. Minimalist Editor Card Tabs (Zero Glow, Theme Dark Background) */
+/* 5. Minimalist Editor Card Tabs (Connected Active Tab, Zero Glow) */
 .neuron-tab-card {
   position: relative;
-  height: 26px;
+  height: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 0px;
   font-size: 11px;
   line-height: normal;
   font-weight: 500;
-  border: 1px solid transparent;
+  border-top: 1px solid transparent;
+  border-left: 1px solid transparent;
+  border-right: 1px solid var(--theme-border, #242628);
+  border-bottom: 1px solid var(--theme-border, #242628);
   transition:
     background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
     border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -114,20 +117,19 @@ canvas {
 
 .neuron-tab-card-inactive {
   background-color: transparent;
-  border-color: transparent;
+  border-bottom-color: var(--theme-border, #242628);
   color: var(--theme-text-secondary);
   box-shadow: none;
 }
 
 .neuron-tab-card-inactive:hover {
   background-color: color-mix(in srgb, var(--theme-surface-hover) 50%, transparent);
-  border-color: transparent;
   color: var(--theme-text-bright);
 }
 
 .neuron-tab-card-active {
   background-color: var(--theme-background, #121314);
-  border-color: var(--theme-border, #242628);
+  border-bottom-color: var(--theme-background, #121314);
   color: var(--theme-text-bright);
   box-shadow: none;
 }

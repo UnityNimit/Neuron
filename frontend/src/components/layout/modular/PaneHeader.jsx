@@ -186,7 +186,7 @@ export default function PaneHeader({
 
   return (
     <div 
-      className="h-8 shrink-0 flex items-center justify-between px-0 border-b border-[var(--theme-border)] select-none relative z-40 transition-colors"
+      className="h-8 shrink-0 flex items-stretch justify-between px-0 select-none relative z-40 transition-colors"
       style={{
         backgroundColor: 'var(--theme-secondary)',
         borderColor: 'var(--theme-border)'
@@ -196,7 +196,7 @@ export default function PaneHeader({
       {/* LEFT: Scrollable Tab Strip                                        */}
       {/* ----------------------------------------------------------------- */}
       <div 
-        className="h-full flex items-center px-1.5 gap-1.5 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10"
+        className="h-full flex items-stretch px-0 overflow-x-auto flex-grow [&::-webkit-scrollbar]:hidden relative z-10"
         onDragOver={handleTabStripDragOver}
         onDrop={handleTabStripDrop}
       >
@@ -240,7 +240,7 @@ export default function PaneHeader({
             <React.Fragment key={tab.id}>
               {/* Visual drop insertion line before tab */}
               {dragOverIndex === tabIdx && !isFixedPane && (
-                <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shrink-0 transition-all pointer-events-none" />
+                <div className="self-center w-0.5 h-5 bg-[var(--theme-accent)] rounded-full shrink-0 transition-all pointer-events-none mx-0.5" />
               )}
               <div
                 draggable={!isFixedPane}
@@ -275,13 +275,13 @@ export default function PaneHeader({
                 }}
                 onClick={() => onSelectTab(pane.id, tab.id)}
                 className={`neuron-tab-card ${
-                  isFile ? 'pl-2.5 pr-1.5' : 'px-3'
+                  isFile ? 'pl-3 pr-2.5' : 'px-3'
                 } font-mono ${isFixedPane ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} shrink-0 group ${
                   isActive ? 'neuron-tab-card-active' : 'neuron-tab-card-inactive'
                 }`}
                 style={isActive ? {
                   backgroundColor: 'var(--theme-background, #121314)',
-                  borderColor: 'var(--theme-border, #242628)',
+                  borderBottomColor: 'var(--theme-background, #121314)',
                   boxShadow: 'none'
                 } : {
                   boxShadow: 'none'
@@ -322,7 +322,7 @@ export default function PaneHeader({
                       e.stopPropagation();
                       onCloseTab(pane.id, tab.id);
                     }}
-                    className={`ml-1 w-3.5 h-3.5 rounded flex items-center justify-center transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] relative z-[2] shrink-0 cursor-pointer ${
+                    className={`ml-1.5 w-4 h-4 rounded flex items-center justify-center transition-all text-[var(--theme-text-muted)] hover:text-[var(--theme-text-bright)] hover:bg-[var(--theme-surface-hover)] relative z-[2] shrink-0 cursor-pointer ${
                       isActive ? 'opacity-70 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'
                     }`}
                     title={isDirty ? "Unsaved changes (Click to close)" : "Close Tab"}
@@ -343,14 +343,22 @@ export default function PaneHeader({
         })}
         {/* Visual drop insertion line at end of tab strip */}
         {dragOverIndex === (pane.tabs || []).length && !isFixedPane && (
-          <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shrink-0 transition-all pointer-events-none" />
+          <div className="self-center w-0.5 h-5 bg-[var(--theme-accent)] rounded-full shrink-0 transition-all pointer-events-none mx-0.5" />
         )}
+        {/* Tab strip trailing spacer to ensure continuous bottom border across empty area */}
+        <div 
+          className="flex-grow h-full border-b"
+          style={{ borderColor: 'var(--theme-border, #242628)' }}
+        />
       </div>
 
       {/* ----------------------------------------------------------------- */}
       {/* RIGHT: Pane Action Buttons & Quick Add Menu                       */}
       {/* ----------------------------------------------------------------- */}
-      <div className="ml-auto flex items-center gap-0.5 pr-2 shrink-0 relative z-20">
+      <div 
+        className="ml-auto flex items-center gap-0.5 pr-2 shrink-0 relative z-20 h-full border-b"
+        style={{ borderColor: 'var(--theme-border, #242628)' }}
+      >
         {/* Code Editor Controls */}
         {isCodeFileActive && (
           <div className="flex items-center gap-0.5">
