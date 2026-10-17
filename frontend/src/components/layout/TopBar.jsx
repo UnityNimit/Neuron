@@ -5,6 +5,7 @@ import {
   Plus, Columns2, Rows2, PanelRightClose, FileCode2
 } from 'lucide-react';
 import NeuronLogo from '../common/NeuronLogo';
+import GenesisAnimatedLogo from '../common/GenesisAnimatedLogo';
 import { useTheme } from '../../config/themeConfig';
 import CommandPalette from './CommandPalette';
 
@@ -39,6 +40,7 @@ export default function TopBar({
   const [showAddTabMenu, setShowAddTabMenu] = useState(false);
   const [recentProjects, setRecentProjects] = useState([]);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isLogoHovered, setIsLogoHovered] = useState(false);
   const menuRef = useRef(null);
   const addTabMenuRef = useRef(null);
 
@@ -259,18 +261,30 @@ export default function TopBar({
       {/* ----------------------------------------------------------------- */}
       <div className="flex items-center gap-3 pointer-events-auto" data-tauri-drag-region>
         
-        {/* Official Vector Theme-Customizable Logo */}
+        {/* Official Vector Theme-Customizable Logo with Genesis Loading Animation on Hover */}
         <div 
-          className="flex items-center pr-1 cursor-pointer group transition-transform active:scale-95" 
-          onClick={onOpenSettings} 
-          title="Neuron IDE - Settings"
+          className="flex items-center pr-1 cursor-default select-none" 
+          onMouseEnter={() => setIsLogoHovered(true)}
+          onMouseLeave={() => setIsLogoHovered(false)}
+          title="Neuron IDE"
         >
-          <NeuronLogo 
-            size={18} 
-            color={theme?.accent || 'var(--theme-accent, #3b82f6)'}
-            style={{ color: theme?.accent || 'var(--theme-accent, #3b82f6)' }}
-            className="group-hover:brightness-125 transition-all" 
-          />
+          {isLogoHovered ? (
+            <GenesisAnimatedLogo 
+              size={18} 
+              color={theme?.accent || 'var(--theme-accent, #3b82f6)'}
+              bgColor={theme?.primary || '#121212'}
+              halo={false}
+              duration={4800}
+              speed={1.0}
+              interactive={false}
+            />
+          ) : (
+            <NeuronLogo 
+              size={18} 
+              color={theme?.accent || 'var(--theme-accent, #3b82f6)'}
+              style={{ color: theme?.accent || 'var(--theme-accent, #3b82f6)' }}
+            />
+          )}
         </div>
 
         {/* Desktop Menu Bar */}
