@@ -1,8 +1,8 @@
-// frontend/src/components/layout/modular/ModularPane.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Columns2, Rows2, PlusSquare } from 'lucide-react';
 import PaneHeader from './PaneHeader';
 import PaneContent from './PaneContent';
+import { isBottomConsolePane, isRightPanelPane } from './layoutModel';
 
 export default function ModularPane({
   pane,
@@ -62,9 +62,14 @@ export default function ModularPane({
 
   const activeTab = (pane.tabs || []).find(t => t.id === pane.activeTabId) || pane.tabs?.[0];
   const isMapOnlyPane = (pane.tabs || []).some(t => t.id === 'spatial' || t.type === 'spatial');
+  const isFixedPane = isBottomConsolePane(pane) || isRightPanelPane(pane);
 
   // Sync dropZone when pointer drag coordinates change
   useEffect(() => {
+    if (isFixedPane) {
+      if (dropZone) setDropZone(null);
+      return;
+    }
     if (!draggedTabInfo || !draggedTabInfo.isPointerDrag || !contentContainerRef.current) {
       if (!draggedTabInfo && dropZone) {
         setDropZone(null);
@@ -96,9 +101,10 @@ export default function ModularPane({
     } else {
       setDropZone(null);
     }
-  }, [draggedTabInfo, isMapOnlyPane]);
+  }, [draggedTabInfo, isMapOnlyPane, isFixedPane]);
 
   const handleDragOver = (e) => {
+    if (isFixedPane) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer) {
@@ -133,6 +139,7 @@ export default function ModularPane({
   };
 
   const handleDragLeave = (e) => {
+    if (isFixedPane) return;
     if (!contentContainerRef.current) return;
     const rect = contentContainerRef.current.getBoundingClientRect();
     if (
@@ -146,6 +153,7 @@ export default function ModularPane({
   };
 
   const handleDrop = (e) => {
+    if (isFixedPane) return;
     e.preventDefault();
     e.stopPropagation();
     const zone = dropZone || 'center';
@@ -271,7 +279,7 @@ export default function ModularPane({
         />
 
         {/* Drag-Capture Shield to isolate Monaco Editor, Pixi Canvas, and Terminal from intercepting drag */}
-        {draggedTabInfo && (
+        {draggedTabInfo && !isFixedPane && (
           <div 
             className="absolute inset-0 z-40 bg-transparent cursor-grabbing pointer-events-auto"
             onDragOver={handleDragOver}
@@ -282,7 +290,7 @@ export default function ModularPane({
         )}
 
         {/* Visual Drop Zone Feedback Overlay */}
-        {dropZone && (
+        {dropZone && !isFixedPane && (
           <div 
             className={`absolute z-50 pointer-events-auto cursor-grabbing rounded-lg flex items-center justify-center border-2 border-dashed transition-all duration-150 backdrop-blur-[2px] ${overlayStyle}`}
             style={{

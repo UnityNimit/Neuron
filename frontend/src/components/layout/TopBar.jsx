@@ -217,8 +217,8 @@ export default function TopBar({
   // --- LAYOUT MENU ---
   const layoutDropdownItems = [
     { label: "Explorer Sidebar", action: () => toggleLayout('sidebar'), toggle: layout.sidebar, shortcut: `${modKey}+B` },
-    { label: "Interactive Terminal", action: () => toggleLayout('terminal'), toggle: layout.terminal, shortcut: `${modKey}+\`` },
-    { label: "Standard Input Panel", action: () => toggleLayout('stdin'), toggle: layout.stdin },
+    { label: "Bottom Console", action: () => toggleLayout('terminal'), toggle: layout.terminal, shortcut: `${modKey}+\`` },
+    { label: "AI Agent Panel", action: () => toggleLayout('ai'), toggle: layout.ai ?? layout.stdin },
     { separator: true },
     { isHeader: true, label: "Layout Presets" },
     { label: "1. Default Layout", action: () => onApplyLayoutPreset && onApplyLayoutPreset('default') },

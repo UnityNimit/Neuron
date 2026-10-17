@@ -5,13 +5,9 @@ import {
   Terminal, 
   X, 
   Play, 
-  Plus, 
-  Loader2, 
-  Trash2,
-  Square,
-  ChevronDown
+  Loader2 
 } from 'lucide-react';
-import { isEditorPane } from './layoutModel';
+import { isEditorPane, isBottomConsolePane, isRightPanelPane } from './layoutModel';
 
 export default function PaneHeader({
   pane,
@@ -42,38 +38,15 @@ export default function PaneHeader({
   onCloseTerminalSession,
   onSelectTerminalSession
 }) {
-  const [showShellMenu, setShowShellMenu] = useState(false);
-  const [showSessionMenu, setShowSessionMenu] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState(null);
-
-  const shellMenuRef = useRef(null);
-  const sessionMenuRef = useRef(null);
   const dragPendingRef = useRef(null);
 
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (shellMenuRef.current && !shellMenuRef.current.contains(e.target)) {
-        setShowShellMenu(false);
-      }
-      if (sessionMenuRef.current && !sessionMenuRef.current.contains(e.target)) {
-        setShowSessionMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
+  const isFixedPane = isBottomConsolePane(pane) || isRightPanelPane(pane);
   const activeTab = (pane.tabs || []).find(t => t.id === pane.activeTabId) || pane.tabs?.[0];
   const isCodeFileActive = activeTab && activeTab.type === 'file';
-  const isOutputActive = activeTab && activeTab.type === 'output';
-  const isTerminalActive = activeTab && activeTab.type === 'terminal';
-  const isEditorView = Boolean(activeTab && (activeTab.type === 'file' || activeTab.type === 'spatial'));
-  const isMapOnlyPane = (pane.tabs || []).some(t => t.id === 'spatial' || t.type === 'spatial');
-
-  const activeTerminalSession = terminalSessions.find(s => s.id === activeSessionId) || terminalSessions[0];
-  const isCurrentTerminalRunning = Boolean(activeTerminalSession?.isRunning);
 
   const handleTabPointerDown = (e, tab) => {
+    if (isFixedPane) return;
     if (e.button !== 0) return;
     if (e.target.closest('button')) return;
 
@@ -116,6 +89,10 @@ export default function PaneHeader({
   };
 
   const handleTabDragStart = (e, tab) => {
+    if (isFixedPane) {
+      e.preventDefault();
+      return;
+    }
     const payload = {
       sourcePaneId: pane.id,
       tabId: tab.id,
@@ -140,6 +117,7 @@ export default function PaneHeader({
   };
 
   const handleTabDropOnTab = (e, targetIndex) => {
+    if (isFixedPane) return;
     e.preventDefault();
     e.stopPropagation();
     setDragOverIndex(null);
@@ -152,6 +130,7 @@ export default function PaneHeader({
   };
 
   const handleTabStripDragOver = (e) => {
+    if (isFixedPane) return;
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer) {
@@ -160,6 +139,7 @@ export default function PaneHeader({
   };
 
   const handleTabStripDrop = (e) => {
+    if (isFixedPane) return;
     e.preventDefault();
     e.stopPropagation();
     setDragOverIndex(null);
@@ -236,15 +216,16 @@ export default function PaneHeader({
           return (
             <React.Fragment key={tab.id}>
               {/* Visual drop insertion line before tab */}
-              {dragOverIndex === tabIdx && (
+              {dragOverIndex === tabIdx && !isFixedPane && (
                 <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shadow-[0_0_8px_var(--theme-accent)] shrink-0 transition-all pointer-events-none" />
               )}
               <div
-                draggable={true}
+                draggable={!isFixedPane}
                 onPointerDown={(e) => handleTabPointerDown(e, tab)}
                 onDragStart={(e) => handleTabDragStart(e, tab)}
                 onDragEnd={handleTabDragEnd}
                 onDragOver={(e) => {
+                  if (isFixedPane) return;
                   e.preventDefault();
                   e.stopPropagation();
                   if (e.dataTransfer) {
@@ -259,9 +240,11 @@ export default function PaneHeader({
                   }
                 }}
                 onDragLeave={() => {
+                  if (isFixedPane) return;
                   setDragOverIndex(null);
                 }}
                 onDrop={(e) => {
+                  if (isFixedPane) return;
                   e.preventDefault();
                   e.stopPropagation();
                   const targetIdx = dragOverIndex !== null ? dragOverIndex : tabIdx;
@@ -270,7 +253,7 @@ export default function PaneHeader({
                 onClick={() => onSelectTab(pane.id, tab.id)}
                 className={`neuron-tab-card ${
                   isFile ? 'pl-2.5 pr-1.5' : 'px-3'
-                } font-mono cursor-grab active:cursor-grabbing shrink-0 group ${
+                } font-mono ${isFixedPane ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'} shrink-0 group ${
                   isActive ? 'neuron-tab-card-active' : 'neuron-tab-card-inactive'
                 }`}
                 title={tab.title}
@@ -335,7 +318,7 @@ export default function PaneHeader({
           );
         })}
         {/* Visual drop insertion line at end of tab strip */}
-        {dragOverIndex === (pane.tabs || []).length && (
+        {dragOverIndex === (pane.tabs || []).length && !isFixedPane && (
           <div className="w-0.5 h-4 bg-[var(--theme-accent)] rounded-full shadow-[0_0_8px_var(--theme-accent)] shrink-0 transition-all pointer-events-none" />
         )}
       </div>
@@ -362,160 +345,6 @@ export default function PaneHeader({
               title="Run in Terminal"
             >
               <Terminal size={12} strokeWidth={2} />
-            </button>
-          </div>
-        )}
-
-        {/* Output Controls */}
-        {isOutputActive && (
-          <div className="flex items-center gap-0.5">
-            {isOutputRunning && (
-              <button
-                type="button"
-                onClick={() => onKillProcess && onKillProcess('output')}
-                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-rose-500 hover:text-rose-400 transition-all cursor-pointer"
-                title="Stop Running Process (Ctrl+C)"
-              >
-                <Square size={11} fill="currentColor" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onClearOutput && onClearOutput()}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-rose-400 transition-all cursor-pointer"
-              title="Clear Output"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        )}
-
-        {/* Terminal Controls */}
-        {isTerminalActive && (
-          <div className="flex items-center gap-0.5">
-            {isCurrentTerminalRunning && (
-              <button
-                type="button"
-                onClick={() => onKillProcess && onKillProcess(activeTerminalSession?.id || activeSessionId)}
-                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-rose-500 hover:text-rose-400 transition-all cursor-pointer"
-                title="Stop Running Process (Ctrl+C)"
-              >
-                <Square size={11} fill="currentColor" />
-              </button>
-            )}
-
-            {/* Session Switcher / Active Session Name */}
-            <div className="relative" ref={sessionMenuRef}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (terminalSessions.length > 1) {
-                    setShowSessionMenu(prev => !prev);
-                  }
-                }}
-                className={`h-6 px-1.5 flex items-center gap-1 rounded text-[10px] font-mono transition-all ${
-                  terminalSessions.length > 1
-                    ? 'hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] cursor-pointer'
-                    : 'text-[var(--theme-text-secondary)] cursor-default'
-                }`}
-                title={terminalSessions.length > 1 ? "Switch Terminal Session" : "Active Terminal Session"}
-              >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: isCurrentTerminalRunning ? 'var(--theme-accent)' : 'var(--theme-text-muted)' }} />
-                <span>{activeTerminalSession?.name || 'PowerShell 1'}</span>
-                {terminalSessions.length > 1 && (
-                  <ChevronDown size={10} className="opacity-70" />
-                )}
-              </button>
-              {terminalSessions.length > 1 && showSessionMenu && (
-                <div 
-                  className="absolute top-full right-0 mt-1 w-36 border shadow-2xl rounded-lg p-1 text-[11px] font-mono backdrop-blur-xl z-[100]"
-                  style={{
-                    backgroundColor: 'var(--theme-secondary)',
-                    borderColor: 'var(--theme-border)',
-                    color: 'var(--theme-text-primary)'
-                  }}
-                >
-                  {terminalSessions.map(s => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => {
-                        if (onSelectTerminalSession) onSelectTerminalSession(s.id);
-                        setShowSessionMenu(false);
-                      }}
-                      className={`w-full px-2 py-1 rounded flex items-center gap-1.5 text-left cursor-pointer ${
-                        (activeTerminalSession?.id === s.id) ? 'bg-[var(--theme-surface)] text-[var(--theme-accent)]' : 'hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)]'
-                      }`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: s.isRunning ? 'var(--theme-accent)' : 'var(--theme-text-muted)' }} />
-                      <span className="truncate">{s.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* New Shell Session Dropdown */}
-            <div className="relative" ref={shellMenuRef}>
-              <button
-                type="button"
-                onClick={() => setShowShellMenu(prev => !prev)}
-                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-all cursor-pointer"
-                title="New Terminal Session"
-              >
-                <Plus size={12} />
-              </button>
-              {showShellMenu && (
-                <div 
-                  className="absolute top-full right-0 mt-1 w-44 border shadow-2xl rounded-lg p-1 text-[11px] font-mono backdrop-blur-xl z-[100]"
-                  style={{
-                    backgroundColor: 'var(--theme-secondary)',
-                    borderColor: 'var(--theme-border)',
-                    color: 'var(--theme-text-primary)'
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onCreateTerminalSession) onCreateTerminalSession('powershell');
-                      setShowShellMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)] font-bold">PS</span> PowerShell
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onCreateTerminalSession) onCreateTerminalSession('cmd');
-                      setShowShellMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)] font-bold">&gt;_</span> Command Prompt
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onCreateTerminalSession) onCreateTerminalSession('bash');
-                      setShowShellMenu(false);
-                    }}
-                    className="w-full px-2 py-1.5 rounded flex items-center gap-2 hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer"
-                  >
-                    <span className="text-[var(--theme-accent)] font-bold">$</span> Bash
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Kill / Close Shell Session */}
-            <button
-              type="button"
-              onClick={() => onCloseTerminalSession && onCloseTerminalSession(activeTerminalSession?.id || activeSessionId)}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-rose-400 transition-all cursor-pointer"
-              title="Kill Terminal Session"
-            >
-              <Trash2 size={12} />
             </button>
           </div>
         )}

@@ -51,25 +51,8 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
     };
   }
 
-  const paneBottom = {
-    type: 'pane',
-    id: generatePaneId(),
-    activeTabId: 'output',
-    tabs: [
-      { id: 'output', type: 'output', title: 'Output' },
-      { id: 'terminal', type: 'terminal', title: 'Terminal' }
-    ]
-  };
-
-  const paneRight = {
-    type: 'pane',
-    id: generatePaneId(),
-    activeTabId: 'ai',
-    tabs: [
-      { id: 'ai', type: 'ai', title: 'AI Agent' },
-      { id: 'stdin', type: 'stdin', title: 'Input' }
-    ]
-  };
+  const paneBottom = createStandardBottomPane('output');
+  const paneRight = createStandardRightPane('ai');
 
   if (!showTerminal && !showStdin) {
     return centerNode;
@@ -120,7 +103,8 @@ export function createStandardBottomPane(activeTabId = 'output') {
     activeTabId,
     tabs: [
       { id: 'output', type: 'output', title: 'Output' },
-      { id: 'terminal', type: 'terminal', title: 'Terminal' }
+      { id: 'terminal', type: 'terminal', title: 'Terminal' },
+      { id: 'stdin', type: 'stdin', title: 'Input' }
     ]
   };
 }
@@ -131,8 +115,7 @@ export function createStandardRightPane(activeTabId = 'ai') {
     id: generatePaneId(),
     activeTabId,
     tabs: [
-      { id: 'ai', type: 'ai', title: 'AI Agent' },
-      { id: 'stdin', type: 'stdin', title: 'Input' }
+      { id: 'ai', type: 'ai', title: 'AI Agent' }
     ]
   };
 }
@@ -384,39 +367,14 @@ export function createCompetitiveProgrammingLayout(openFiles = [], activeFile = 
     tabs: codeTabs
   };
 
-  const paneInput = {
-    type: 'pane',
-    id: generatePaneId(),
-    activeTabId: 'stdin',
-    tabs: [
-      { id: 'stdin', type: 'stdin', title: 'Input' }
-    ]
-  };
-
-  const paneOutput = {
-    type: 'pane',
-    id: generatePaneId(),
-    activeTabId: 'output',
-    tabs: [
-      { id: 'output', type: 'output', title: 'Output' },
-      { id: 'terminal', type: 'terminal', title: 'Terminal' }
-    ]
-  };
-
-  const rightVerticalSplit = {
-    type: 'split',
-    id: generateSplitId(),
-    direction: 'vertical',
-    sizes: [50, 50],
-    children: [paneInput, paneOutput]
-  };
+  const paneBottom = createStandardBottomPane('stdin');
 
   return {
     type: 'split',
     id: generateSplitId(),
-    direction: 'horizontal',
-    sizes: [68, 32],
-    children: [paneCode, rightVerticalSplit]
+    direction: 'vertical',
+    sizes: [65, 35],
+    children: [paneCode, paneBottom]
   };
 }
 
@@ -515,12 +473,13 @@ export function cleanTree(node) {
       };
     }
 
-    // 2. Role 2: Dedicated Bottom Console (strictly output and terminal)
-    const hasConsole = uniqueTabs.some(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal');
-    const hasNonConsoleInConsole = hasConsole && uniqueTabs.some(t => t.id !== 'output' && t.type !== 'output' && t.id !== 'terminal' && t.type !== 'terminal');
+    // 2. Role 2: Dedicated Bottom Console (strictly output, terminal, and stdin)
+    const isConsoleTab = (t) => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal' || t.id === 'stdin' || t.type === 'stdin';
+    const hasConsole = uniqueTabs.some(isConsoleTab);
+    const hasNonConsoleInConsole = hasConsole && uniqueTabs.some(t => !isConsoleTab(t));
     if (hasNonConsoleInConsole) {
-      const consoleTabs = uniqueTabs.filter(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal');
-      const otherTabs = uniqueTabs.filter(t => t.id !== 'output' && t.type !== 'output' && t.id !== 'terminal' && t.type !== 'terminal');
+      const consoleTabs = uniqueTabs.filter(isConsoleTab);
+      const otherTabs = uniqueTabs.filter(t => !isConsoleTab(t));
 
       const isConsoleActive = consoleTabs.some(t => t.id === node.activeTabId);
       const paneConsole = {
@@ -544,12 +503,13 @@ export function cleanTree(node) {
       };
     }
 
-    // 3. Role 3: Dedicated Right Panel (strictly ai and stdin)
-    const hasRight = uniqueTabs.some(t => t.id === 'ai' || t.type === 'ai' || t.id === 'stdin' || t.type === 'stdin');
-    const hasNonRightInRight = hasRight && uniqueTabs.some(t => t.id !== 'ai' && t.type !== 'ai' && t.id !== 'stdin' && t.type !== 'stdin');
+    // 3. Role 3: Dedicated Right Panel (strictly ai)
+    const isAiTab = (t) => t.id === 'ai' || t.type === 'ai';
+    const hasRight = uniqueTabs.some(isAiTab);
+    const hasNonRightInRight = hasRight && uniqueTabs.some(t => !isAiTab(t));
     if (hasNonRightInRight) {
-      const rightTabs = uniqueTabs.filter(t => t.id === 'ai' || t.type === 'ai' || t.id === 'stdin' || t.type === 'stdin');
-      const otherTabs = uniqueTabs.filter(t => t.id !== 'ai' && t.type !== 'ai' && t.id !== 'stdin' && t.type !== 'stdin');
+      const rightTabs = uniqueTabs.filter(isAiTab);
+      const otherTabs = uniqueTabs.filter(t => !isAiTab(t));
 
       const isRightActive = rightTabs.some(t => t.id === node.activeTabId);
       const paneRight = {
@@ -621,12 +581,16 @@ export function isMapPane(pane) {
 
 export function isBottomConsolePane(pane) {
   if (!pane || isMapPane(pane)) return false;
-  return (pane.tabs || []).some(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal');
+  return (pane.tabs || []).some(t => 
+    t.id === 'output' || t.type === 'output' || 
+    t.id === 'terminal' || t.type === 'terminal' || 
+    t.id === 'stdin' || t.type === 'stdin'
+  );
 }
 
 export function isRightPanelPane(pane) {
-  if (!pane || isMapPane(pane)) return false;
-  return (pane.tabs || []).some(t => t.id === 'stdin' || t.type === 'stdin' || t.id === 'ai' || t.type === 'ai');
+  if (!pane || isMapPane(pane) || isBottomConsolePane(pane)) return false;
+  return (pane.tabs || []).some(t => t.id === 'ai' || t.type === 'ai');
 }
 
 export function isSpecializedPane(pane) {
@@ -675,7 +639,57 @@ export function getCandidateEditorPane(tree, activePaneId = null, lastActiveEdit
 }
 
 export function normalizeTree(tree) {
-  const cleaned = cleanTree(tree);
+  if (!tree) {
+    return {
+      type: 'pane',
+      id: generatePaneId(),
+      activeTabId: 'spatial',
+      tabs: [{ id: 'spatial', type: 'spatial', title: 'Spatial Map' }]
+    };
+  }
+
+  function sanitizeSpecialized(node) {
+    if (!node) return null;
+    if (node.type === 'pane') {
+      const hasAi = (node.tabs || []).some(t => t.id === 'ai' || t.type === 'ai');
+      const hasConsole = (node.tabs || []).some(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal' || t.id === 'stdin' || t.type === 'stdin');
+      if (hasAi) {
+        const nextTabs = (node.tabs || []).filter(t => t.id !== 'stdin' && t.type !== 'stdin' && t.id !== 'output' && t.id !== 'terminal');
+        return {
+          ...node,
+          tabs: nextTabs.length > 0 ? nextTabs : [{ id: 'ai', type: 'ai', title: 'AI Agent' }],
+          activeTabId: 'ai'
+        };
+      }
+      if (hasConsole) {
+        const standardTabs = [
+          { id: 'output', type: 'output', title: 'Output' },
+          { id: 'terminal', type: 'terminal', title: 'Terminal' },
+          { id: 'stdin', type: 'stdin', title: 'Input' }
+        ];
+        let activeTabId = node.activeTabId;
+        if (!standardTabs.some(t => t.id === activeTabId)) {
+          activeTabId = 'output';
+        }
+        return {
+          ...node,
+          tabs: standardTabs,
+          activeTabId
+        };
+      }
+      return node;
+    }
+    if (node.type === 'split') {
+      return {
+        ...node,
+        children: (node.children || []).map(sanitizeSpecialized)
+      };
+    }
+    return node;
+  }
+
+  const sanitized = sanitizeSpecialized(tree);
+  const cleaned = cleanTree(sanitized);
   if (!cleaned) {
     return {
       type: 'pane',
@@ -689,8 +703,8 @@ export function normalizeTree(tree) {
 
 export function addTabToPane(tree, paneId, tab, targetIndex = -1) {
   const isTabMap = tab.id === 'spatial' || tab.type === 'spatial';
-  const isTabConsole = tab.id === 'output' || tab.type === 'output' || tab.id === 'terminal' || tab.type === 'terminal';
-  const isTabRight = tab.id === 'ai' || tab.type === 'ai' || tab.id === 'stdin' || tab.type === 'stdin';
+  const isTabConsole = tab.id === 'output' || tab.type === 'output' || tab.id === 'terminal' || tab.type === 'terminal' || tab.id === 'stdin' || tab.type === 'stdin';
+  const isTabRight = tab.id === 'ai' || tab.type === 'ai';
   const isTabFile = tab.type === 'file';
 
   // 1. If trying to add Map tab
@@ -878,6 +892,18 @@ export function moveTab(tree, sourcePaneId, targetPaneId, tabId, dropZone, targe
   const sourcePane = findPaneById(tree, sourcePaneId);
   if (!sourcePane) return { tree, activePaneId: targetPaneId };
 
+  // Bottom Console and Right AI Panel are strictly non-draggable and cannot be changed by dragging
+  if (isBottomConsolePane(sourcePane) || isRightPanelPane(sourcePane)) {
+    return { tree, activePaneId: targetPaneId };
+  }
+
+  const targetPane = findPaneById(tree, targetPaneId);
+  if (!targetPane) return { tree, activePaneId: targetPaneId };
+
+  if (isBottomConsolePane(targetPane) || isRightPanelPane(targetPane)) {
+    return { tree, activePaneId: targetPaneId };
+  }
+
   const tab = (sourcePane.tabs || []).find(t => t.id === tabId);
   if (!tab) return { tree, activePaneId: targetPaneId };
 
@@ -923,10 +949,9 @@ export function moveTab(tree, sourcePaneId, targetPaneId, tabId, dropZone, targe
     };
   }
 
-  const targetPane = findPaneById(tree, targetPaneId);
   const isMovingMap = tabId === 'spatial' || tab?.type === 'spatial';
-  const isMovingConsole = tabId === 'output' || tab?.type === 'output' || tabId === 'terminal' || tab?.type === 'terminal';
-  const isMovingRight = tabId === 'ai' || tab?.type === 'ai' || tabId === 'stdin' || tab?.type === 'stdin';
+  const isMovingConsole = tabId === 'output' || tab?.type === 'output' || tabId === 'terminal' || tab?.type === 'terminal' || tabId === 'stdin' || tab?.type === 'stdin';
+  const isMovingRight = tabId === 'ai' || tab?.type === 'ai';
 
   // Specialized panes (Map, Bottom Console, Right Panel) are strictly non-stackable with foreign tabs
   if (targetPane && dropZone === 'center') {
@@ -1086,7 +1111,7 @@ export function attachBottomConsole(tree, activeTabId = 'terminal') {
   };
 }
 
-export function attachRightPanel(tree, activeTabId = 'stdin') {
+export function attachRightPanel(tree, activeTabId = 'ai') {
   const existingPane = getAllPanes(tree).find(isRightPanelPane);
   if (existingPane) {
     const updated = setActiveTabInPane(tree, existingPane.id, activeTabId);
@@ -1119,7 +1144,7 @@ export function attachRightPanel(tree, activeTabId = 'stdin') {
   };
 }
 
-const STORAGE_KEY = 'neuron-modular-layout-v3';
+const STORAGE_KEY = 'neuron-modular-layout-v5';
 
 export function saveLayoutToStorage(tree) {
   try {

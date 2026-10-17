@@ -627,16 +627,16 @@ export default function PaneContent({
           color: 'var(--theme-text-primary, #cbd5e1)'
         }}
       >
-        {/* Model Selector Bar at Top of AI Agent */}
+        {/* Model Selector Bar */}
         <div 
-          className="h-8 shrink-0 px-3 border-b flex items-center justify-between text-xs font-mono select-none"
+          className="h-7 shrink-0 px-3 border-b flex items-center justify-between text-xs font-mono select-none"
           style={{
             backgroundColor: 'var(--theme-background, #121314)',
             borderColor: 'var(--theme-border, #242628)'
           }}
         >
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-[var(--theme-text-bright)]">AI Agent</span>
+          <div className="flex items-center gap-1.5 text-[11px] text-[var(--theme-text-secondary)]">
+            <span>Model</span>
             {aiStudio?.isStreaming && (
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent)] animate-pulse" />
             )}

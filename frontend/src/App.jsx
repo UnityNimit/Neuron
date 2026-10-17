@@ -591,7 +591,8 @@ export default function App() {
   const effectiveLayout = useMemo(() => ({
     sidebar: layout.sidebar,
     terminal: Boolean(getAllPanes(layoutTree).some(isBottomConsolePane)),
-    stdin: Boolean(getAllPanes(layoutTree).some(isRightPanelPane))
+    stdin: Boolean(getAllPanes(layoutTree).some(isRightPanelPane)),
+    ai: Boolean(getAllPanes(layoutTree).some(isRightPanelPane))
   }), [layout.sidebar, layoutTree]);
 
   const handleToggleLayout = useCallback((key) => {
@@ -617,16 +618,16 @@ export default function App() {
           return prev;
         } else {
           setLayout(l => ({ ...l, terminal: true }));
-          const { tree: nextTree, newPaneId } = attachBottomConsole(prev, 'terminal');
+          const { tree: nextTree, newPaneId } = attachBottomConsole(prev, 'output');
           setActivePaneId(newPaneId);
           return nextTree;
         }
       });
-    } else if (key === 'stdin') {
+    } else if (key === 'ai' || key === 'stdin') {
       setLayoutTree(prev => {
         const rightPane = getAllPanes(prev).find(isRightPanelPane);
         if (rightPane) {
-          setLayout(l => ({ ...l, stdin: false }));
+          setLayout(l => ({ ...l, ai: false, stdin: false }));
           if (getAllPanes(prev).length > 1) {
             const nextTree = closePane(prev, rightPane.id);
             if (activePaneId === rightPane.id) {
@@ -637,8 +638,8 @@ export default function App() {
           }
           return prev;
         } else {
-          setLayout(l => ({ ...l, stdin: true }));
-          const { tree: nextTree, newPaneId } = attachRightPanel(prev, 'stdin');
+          setLayout(l => ({ ...l, ai: true, stdin: true }));
+          const { tree: nextTree, newPaneId } = attachRightPanel(prev, 'ai');
           setActivePaneId(newPaneId);
           return nextTree;
         }
@@ -1340,6 +1341,11 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     setLayoutTree(prev => {
       const active = findPaneById(prev, activePaneId) || getAllPanes(prev)[0];
       if (!active) return prev;
+
+      // Do not split specialized fixed panes (bottom console or right panel)
+      if (isBottomConsolePane(active) || isRightPanelPane(active)) {
+        return prev;
+      }
 
       const activeTab = (active.tabs || []).find(t => t.id === active.activeTabId) || active.tabs?.[0];
       if (!activeTab) return prev;
