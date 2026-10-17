@@ -55,6 +55,8 @@ import AiSidebar from './components/ai/AiSidebar';
 import TopBar from './components/layout/TopBar';
 import ActivityBar from './components/layout/ActivityBar';
 import Sidebar from './components/layout/Sidebar';
+import BottomConsolePanel from './components/layout/BottomConsolePanel';
+import RightPanelContainer from './components/layout/RightPanelContainer';
 import SourceControlPanel from './components/layout/SourceControlPanel';
 import SettingsModal from './components/layout/SettingsModal';
 import StatusBar from './components/layout/StatusBar';
@@ -90,6 +92,20 @@ export default function App() {
     centerView, setCenterView, 
     stdin, setStdin 
   } = usePersistentState();
+
+  const [bottomConsoleTab, setBottomConsoleTab] = useState('output');
+
+  const handleSelectBottomConsoleTab = useCallback((tabId) => {
+    setBottomConsoleTab(tabId);
+    if (tabId === 'output') {
+      workspace.setActiveSessionId('output');
+    } else if (tabId === 'terminal') {
+      const interactiveSession = (workspace.terminalSessions || []).find(s => s.id !== 'output');
+      if (interactiveSession) {
+        workspace.setActiveSessionId(interactiveSession.id);
+      }
+    }
+  }, [workspace]);
 
   // Modular Multi-Pane Layout Tree State (Preserved in localStorage)
   const [layoutTree, setLayoutTree] = useState(() => {
@@ -587,13 +603,13 @@ export default function App() {
     return workspace.commitGitChanges(message, options);
   }, [dirtyFiles, workspace]);
 
-  // Modular Layout Computations & Menu Toggles
+  // Layout Computations & Menu Toggles
   const effectiveLayout = useMemo(() => ({
-    sidebar: layout.sidebar,
-    terminal: Boolean(getAllPanes(layoutTree).some(isBottomConsolePane)),
-    stdin: Boolean(getAllPanes(layoutTree).some(isRightPanelPane)),
-    ai: Boolean(getAllPanes(layoutTree).some(isRightPanelPane))
-  }), [layout.sidebar, layoutTree]);
+    sidebar: Boolean(layout.sidebar),
+    terminal: Boolean(layout.terminal),
+    stdin: Boolean(layout.ai ?? layout.stdin),
+    ai: Boolean(layout.ai ?? layout.stdin)
+  }), [layout.sidebar, layout.terminal, layout.ai, layout.stdin]);
 
   const handleToggleLayout = useCallback((key) => {
     if (typeof key === 'function') {
@@ -603,49 +619,14 @@ export default function App() {
     if (key === 'sidebar') {
       setLayout(prev => ({ ...prev, sidebar: !prev.sidebar }));
     } else if (key === 'terminal') {
-      setLayoutTree(prev => {
-        const consolePane = getAllPanes(prev).find(isBottomConsolePane);
-        if (consolePane) {
-          setLayout(l => ({ ...l, terminal: false }));
-          if (getAllPanes(prev).length > 1) {
-            const nextTree = closePane(prev, consolePane.id);
-            if (activePaneId === consolePane.id) {
-              const nextActive = getCandidateEditorPane(nextTree) || getAllPanes(nextTree)[0];
-              if (nextActive) setActivePaneId(nextActive.id);
-            }
-            return nextTree;
-          }
-          return prev;
-        } else {
-          setLayout(l => ({ ...l, terminal: true }));
-          const { tree: nextTree, newPaneId } = attachBottomConsole(prev, 'output');
-          setActivePaneId(newPaneId);
-          return nextTree;
-        }
-      });
+      setLayout(prev => ({ ...prev, terminal: !prev.terminal }));
     } else if (key === 'ai' || key === 'stdin') {
-      setLayoutTree(prev => {
-        const rightPane = getAllPanes(prev).find(isRightPanelPane);
-        if (rightPane) {
-          setLayout(l => ({ ...l, ai: false, stdin: false }));
-          if (getAllPanes(prev).length > 1) {
-            const nextTree = closePane(prev, rightPane.id);
-            if (activePaneId === rightPane.id) {
-              const nextActive = getCandidateEditorPane(nextTree) || getAllPanes(nextTree)[0];
-              if (nextActive) setActivePaneId(nextActive.id);
-            }
-            return nextTree;
-          }
-          return prev;
-        } else {
-          setLayout(l => ({ ...l, ai: true, stdin: true }));
-          const { tree: nextTree, newPaneId } = attachRightPanel(prev, 'ai');
-          setActivePaneId(newPaneId);
-          return nextTree;
-        }
+      setLayout(prev => {
+        const val = !(prev.ai ?? prev.stdin);
+        return { ...prev, ai: val, stdin: val };
       });
     }
-  }, [activePaneId, setLayout]);
+  }, [setLayout]);
 
   const handleToggleLayoutRef = useRef(handleToggleLayout);
   useEffect(() => {
@@ -683,16 +664,28 @@ export default function App() {
 
     let newLayout;
     if (presetId === 'default') {
-      newLayout = createDefaultModularLayout(openFiles, activeFile, true, true);
+      setLayout(prev => ({ ...prev, sidebar: true, terminal: true, ai: true, stdin: true }));
+      setBottomConsoleTab('output');
+      newLayout = createDefaultModularLayout(openFiles, activeFile);
     } else if (presetId === 'map-code') {
+      setLayout(prev => ({ ...prev, sidebar: true, terminal: true, ai: true, stdin: true }));
+      setBottomConsoleTab('output');
       newLayout = createMapAndCodeLayout(openFiles, activeFile, workspaceFiles);
     } else if (presetId === 'two-code') {
+      setLayout(prev => ({ ...prev, sidebar: true, terminal: true, ai: true, stdin: true }));
+      setBottomConsoleTab('output');
       newLayout = createTwoCodeFilesLayout(openFiles, activeFile, workspaceFiles);
     } else if (presetId === 'map-code-code') {
+      setLayout(prev => ({ ...prev, sidebar: true, terminal: true, ai: true, stdin: true }));
+      setBottomConsoleTab('output');
       newLayout = createMapCodeCodeLayout(openFiles, activeFile, workspaceFiles);
     } else if (presetId === 'three-code') {
+      setLayout(prev => ({ ...prev, sidebar: true, terminal: true, ai: true, stdin: true }));
+      setBottomConsoleTab('output');
       newLayout = createThreeCodeFilesLayout(openFiles, activeFile, workspaceFiles);
     } else if (presetId === 'competitive') {
+      setLayout(prev => ({ ...prev, sidebar: true, terminal: true, ai: false, stdin: false }));
+      setBottomConsoleTab('stdin');
       newLayout = createCompetitiveProgrammingLayout(openFiles, activeFile, workspaceFiles);
     }
 
@@ -706,7 +699,7 @@ export default function App() {
       }
       workspace.addNotification?.('info', 'Layout Reset', `Applied ${presetId} layout preset.`, 'layout');
     }
-  }, [workspace.openFiles, workspace.currentFile, workspace.files, workspace.addNotification]);
+  }, [workspace.openFiles, workspace.currentFile, workspace.files, workspace.addNotification, setLayout]);
 
   // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
   const adjLists = useMemo(() => {
@@ -1066,13 +1059,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
     // Always reveal the bottom execution panel
     setLayout(prev => ({ ...prev, terminal: true }));
-    setLayoutTree(prev => {
-      const consolePane = getAllPanes(prev).find(isBottomConsolePane);
-      if (!consolePane) {
-        return attachBottomConsole(prev, 'output').tree;
-      }
-      return setActiveTabInPane(prev, consolePane.id, 'output');
-    });
+    setBottomConsoleTab('output');
 
     // Switch to the dedicated Output tab for clean compilation and execution streaming
     workspace.setActiveSessionId('output');
@@ -1133,13 +1120,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
     // Reveal the bottom execution panel
     setLayout(prev => ({ ...prev, terminal: true }));
-    setLayoutTree(prev => {
-      const consolePane = getAllPanes(prev).find(isBottomConsolePane);
-      if (!consolePane) {
-        return attachBottomConsole(prev, 'terminal').tree;
-      }
-      return setActiveTabInPane(prev, consolePane.id, 'terminal');
-    });
+    setBottomConsoleTab('terminal');
 
     // Find an idle interactive terminal session, or create a new one
     let targetSession = workspace.terminalSessions.find(s => s.id !== 'output' && !s.isRunning);
@@ -1583,49 +1564,93 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
             </>
           )}
 
-          <Panel id="modular-workspace" order={2} className="flex flex-col min-w-0 min-h-0 overflow-hidden" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
-            <ModularWorkspace
-              layoutTree={layoutTree}
-              setLayoutTree={setLayoutTree}
-              activePaneId={activePaneId}
-              setActivePaneId={setActivePaneId}
-              onActivatePane={handleActivatePane}
-              lastActiveEditorPaneId={lastActiveEditorPaneId}
-              onActiveFileChange={handleSwitchFile}
-              workspace={workspace}
-              simDataRef={simDataRef}
-              activeRay={activeRay}
-              focusIsolationId={focusIsolationId}
-              warpTargetNodeId={warpTargetNodeId}
-              refactorEnabled={refactorEnabled}
-              refactorFeedback={refactorFeedback}
-              setRefactorFeedback={showRefactorFeedback}
-              onDragStart={onDragStart}
-              onDragMove={onDragMove}
-              onDragEnd={onDragEnd}
-              handleRefactorDrop={handleRefactorDrop}
-              handleFileMergeDrop={handleFileMergeDrop}
-              handleNodeHover={handleNodeHover}
-              onDoubleClickNode={onDoubleClickNode}
-              hoveredNodeId={hoveredNodeId}
-              cspRejection={cspRejection}
-              setCspRejection={setCspRejection}
-              handleCreateItem={handleCreateItem}
-              getCodeForFile={getCodeForFile}
-              dirtyFiles={dirtyFiles}
-              settings={settings}
-              editorFocusLine={editorFocusLine}
-              setEditorFocusLine={setEditorFocusLine}
-              handleCodeChange={handleCodeChange}
-              handleSaveFile={handleSaveFile}
-              stdin={stdin}
-              setStdin={setStdin}
-              aiStudio={aiStudio}
-              handleOpenSettings={handleOpenSettings}
-              onRunCode={handleRunCode}
-              onRunInTerminal={handleRunInTerminal}
-            />
+          {/* CENTER WORKSPACE & BOTTOM CONSOLE */}
+          <Panel id="center-main-panel" order={2} className="flex flex-col min-w-0 min-h-0 overflow-hidden" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
+            <Group orientation="vertical" id="center-vertical-group" className="w-full h-full">
+              {/* TOP: Modular Multi-Pane Code / Spatial Map Workspace */}
+              <Panel id="modular-workspace-panel" order={1} minSize={20} defaultSize={72} className="flex flex-col min-w-0 min-h-0 overflow-hidden">
+                <ModularWorkspace
+                  layoutTree={layoutTree}
+                  setLayoutTree={setLayoutTree}
+                  activePaneId={activePaneId}
+                  setActivePaneId={setActivePaneId}
+                  onActivatePane={handleActivatePane}
+                  lastActiveEditorPaneId={lastActiveEditorPaneId}
+                  onActiveFileChange={handleSwitchFile}
+                  workspace={workspace}
+                  simDataRef={simDataRef}
+                  activeRay={activeRay}
+                  focusIsolationId={focusIsolationId}
+                  warpTargetNodeId={warpTargetNodeId}
+                  refactorEnabled={refactorEnabled}
+                  refactorFeedback={refactorFeedback}
+                  setRefactorFeedback={showRefactorFeedback}
+                  onDragStart={onDragStart}
+                  onDragMove={onDragMove}
+                  onDragEnd={onDragEnd}
+                  handleRefactorDrop={handleRefactorDrop}
+                  handleFileMergeDrop={handleFileMergeDrop}
+                  handleNodeHover={handleNodeHover}
+                  onDoubleClickNode={onDoubleClickNode}
+                  hoveredNodeId={hoveredNodeId}
+                  cspRejection={cspRejection}
+                  setCspRejection={setCspRejection}
+                  handleCreateItem={handleCreateItem}
+                  getCodeForFile={getCodeForFile}
+                  dirtyFiles={dirtyFiles}
+                  settings={settings}
+                  editorFocusLine={editorFocusLine}
+                  setEditorFocusLine={setEditorFocusLine}
+                  handleCodeChange={handleCodeChange}
+                  handleSaveFile={handleSaveFile}
+                  stdin={stdin}
+                  setStdin={setStdin}
+                  aiStudio={aiStudio}
+                  handleOpenSettings={handleOpenSettings}
+                  onRunCode={handleRunCode}
+                  onRunInTerminal={handleRunInTerminal}
+                />
+              </Panel>
+
+              {/* BOTTOM CONSOLE: Fixed dock for Output, Terminal, Input */}
+              {effectiveLayout.terminal && (
+                <>
+                  <Separator 
+                    className="h-[1px] w-full shrink-0 hover:bg-[var(--theme-accent)] cursor-row-resize z-50 flex justify-center transition-colors outline-none" 
+                    style={{ backgroundColor: 'var(--theme-border, #242628)' }}
+                  />
+                  <Panel id="bottom-console-dock-panel" order={2} minSize={12} defaultSize={28} className="flex flex-col min-w-0 min-h-0 overflow-hidden">
+                    <BottomConsolePanel 
+                      activeTab={bottomConsoleTab}
+                      onSelectTab={handleSelectBottomConsoleTab}
+                      workspace={workspace}
+                      stdin={stdin}
+                      setStdin={setStdin}
+                    />
+                  </Panel>
+                </>
+              )}
+            </Group>
           </Panel>
+
+          {/* RIGHT AI AGENT DOCK PANEL */}
+          {Boolean(effectiveLayout.ai) && (
+            <>
+              <Separator 
+                className="w-[1px] h-full shrink-0 hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
+                style={{ backgroundColor: 'var(--theme-border, #242628)' }}
+              />
+              <Panel id="right-ai-dock-panel" order={3} minSize={15} defaultSize={25} className="flex flex-col min-w-0 min-h-0 overflow-hidden">
+                <RightPanelContainer 
+                  activeFile={workspace.currentFile}
+                  fileContent={currentCodeBufferRef.current[workspace.currentFile] ?? activeCodeStr}
+                  aiStudio={aiStudio}
+                  projectName={workspace.repoName || (workspace.absTargetDir ? workspace.absTargetDir.split(/[\\/]/).pop() : "Neuron")}
+                  onOpenSettings={handleOpenSettings}
+                />
+              </Panel>
+            </>
+          )}
 
         </Group>
       </div>

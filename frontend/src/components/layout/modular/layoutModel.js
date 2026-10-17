@@ -51,95 +51,7 @@ export function createDefaultModularLayout(openFiles = [], activeFile = null, sh
     };
   }
 
-  const paneBottom = createStandardBottomPane('output');
-  const paneRight = createStandardRightPane('ai');
-
-  if (!showTerminal && !showStdin) {
-    return centerNode;
-  }
-
-  if (showTerminal && !showStdin) {
-    return {
-      type: 'split',
-      id: generateSplitId(),
-      direction: 'vertical',
-      sizes: [72, 28],
-      children: [centerNode, paneBottom]
-    };
-  }
-
-  if (!showTerminal && showStdin) {
-    return {
-      type: 'split',
-      id: generateSplitId(),
-      direction: 'horizontal',
-      sizes: [75, 25],
-      children: [centerNode, paneRight]
-    };
-  }
-
-  return {
-    type: 'split',
-    id: generateSplitId(),
-    direction: 'horizontal',
-    sizes: [75, 25],
-    children: [
-      {
-        type: 'split',
-        id: generateSplitId(),
-        direction: 'vertical',
-        sizes: [72, 28],
-        children: [centerNode, paneBottom]
-      },
-      paneRight
-    ]
-  };
-}
-
-export function createStandardBottomPane(activeTabId = 'output') {
-  return {
-    type: 'pane',
-    id: generatePaneId(),
-    activeTabId,
-    tabs: [
-      { id: 'output', type: 'output', title: 'Output' },
-      { id: 'terminal', type: 'terminal', title: 'Terminal' },
-      { id: 'stdin', type: 'stdin', title: 'Input' }
-    ]
-  };
-}
-
-export function createStandardRightPane(activeTabId = 'ai') {
-  return {
-    type: 'pane',
-    id: generatePaneId(),
-    activeTabId,
-    tabs: [
-      { id: 'ai', type: 'ai', title: 'AI Agent' }
-    ]
-  };
-}
-
-function assembleLayoutWithBottomAndRight(centerNode) {
-  const paneBottom = createStandardBottomPane();
-  const paneRight = createStandardRightPane();
-
-  return {
-    type: 'split',
-    id: generateSplitId(),
-    direction: 'horizontal',
-    sizes: [75, 25],
-    children: [
-      {
-        type: 'split',
-        id: generateSplitId(),
-        direction: 'vertical',
-        sizes: [72, 28],
-        children: [centerNode, paneBottom]
-      },
-      paneRight
-    ]
-  };
+  return centerNode;
 }
 
 function extractCandidateFiles(openFiles = [], activeFile = null, workspaceFiles = []) {
@@ -200,7 +112,7 @@ export function createMapAndCodeLayout(openFiles = [], activeFile = null, worksp
     children: [paneMap, paneCode]
   };
 
-  return assembleLayoutWithBottomAndRight(centerSplit);
+  return centerSplit;
 }
 
 export function createTwoCodeFilesLayout(openFiles = [], activeFile = null, workspaceFiles = []) {
@@ -239,7 +151,7 @@ export function createTwoCodeFilesLayout(openFiles = [], activeFile = null, work
     children: [paneCode1, paneCode2]
   };
 
-  return assembleLayoutWithBottomAndRight(centerSplit);
+  return centerSplit;
 }
 
 export function createMapCodeCodeLayout(openFiles = [], activeFile = null, workspaceFiles = []) {
@@ -285,7 +197,7 @@ export function createMapCodeCodeLayout(openFiles = [], activeFile = null, works
     children: [paneMap, paneCode1, paneCode2]
   };
 
-  return assembleLayoutWithBottomAndRight(centerSplit);
+  return centerSplit;
 }
 
 export function createThreeCodeFilesLayout(openFiles = [], activeFile = null, workspaceFiles = []) {
@@ -339,7 +251,7 @@ export function createThreeCodeFilesLayout(openFiles = [], activeFile = null, wo
     children: [paneCode1, paneCode2, paneCode3]
   };
 
-  return assembleLayoutWithBottomAndRight(centerSplit);
+  return centerSplit;
 }
 
 export function createCompetitiveProgrammingLayout(openFiles = [], activeFile = null, workspaceFiles = []) {
@@ -367,15 +279,7 @@ export function createCompetitiveProgrammingLayout(openFiles = [], activeFile = 
     tabs: codeTabs
   };
 
-  const paneBottom = createStandardBottomPane('stdin');
-
-  return {
-    type: 'split',
-    id: generateSplitId(),
-    direction: 'vertical',
-    sizes: [65, 35],
-    children: [paneCode, paneBottom]
-  };
+  return paneCode;
 }
 
 export function getAllPanes(node) {
@@ -429,14 +333,20 @@ export function cleanTree(node) {
     const seen = new Set();
     const uniqueTabs = [];
     for (const t of rawTabs) {
-      if (t && t.id && !seen.has(t.id)) {
+      if (!t || !t.id) continue;
+      // Filter out console and right panel tabs completely (they are top-level dock panels)
+      if (
+        t.id === 'output' || t.type === 'output' ||
+        t.id === 'terminal' || t.type === 'terminal' ||
+        t.id === 'stdin' || t.type === 'stdin' ||
+        t.id === 'ai' || t.type === 'ai'
+      ) {
+        continue;
+      }
+      if (!seen.has(t.id)) {
         seen.add(t.id);
         let title = t.title;
         if (t.type === 'spatial' || title === 'Map' || title === 'Spatial Map') title = 'Spatial Map';
-        else if (t.type === 'ai' || title === 'AI Studio') title = 'AI Agent';
-        else if (t.type === 'stdin') title = 'Input';
-        else if (t.type === 'output') title = 'Output';
-        else if (t.type === 'terminal') title = 'Terminal';
         uniqueTabs.push({ ...t, title });
       }
     }
@@ -445,7 +355,7 @@ export function cleanTree(node) {
       return null;
     }
 
-    // 1. Role 1: Dedicated Map Pane (strictly spatial)
+    // Role: Dedicated Map Pane (strictly spatial)
     const hasSpatial = uniqueTabs.some(t => t.id === 'spatial' || t.type === 'spatial');
     if (hasSpatial && uniqueTabs.length > 1) {
       const mapTab = uniqueTabs.find(t => t.id === 'spatial' || t.type === 'spatial');
@@ -470,66 +380,6 @@ export function cleanTree(node) {
         direction: 'horizontal',
         sizes: [50, 50],
         children: [paneMap, paneOther]
-      };
-    }
-
-    // 2. Role 2: Dedicated Bottom Console (strictly output, terminal, and stdin)
-    const isConsoleTab = (t) => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal' || t.id === 'stdin' || t.type === 'stdin';
-    const hasConsole = uniqueTabs.some(isConsoleTab);
-    const hasNonConsoleInConsole = hasConsole && uniqueTabs.some(t => !isConsoleTab(t));
-    if (hasNonConsoleInConsole) {
-      const consoleTabs = uniqueTabs.filter(isConsoleTab);
-      const otherTabs = uniqueTabs.filter(t => !isConsoleTab(t));
-
-      const isConsoleActive = consoleTabs.some(t => t.id === node.activeTabId);
-      const paneConsole = {
-        type: 'pane',
-        id: isConsoleActive ? node.id : generatePaneId(),
-        activeTabId: isConsoleActive ? node.activeTabId : consoleTabs[0].id,
-        tabs: consoleTabs
-      };
-      const paneOther = {
-        type: 'pane',
-        id: isConsoleActive ? generatePaneId() : node.id,
-        activeTabId: isConsoleActive ? otherTabs[0].id : node.activeTabId,
-        tabs: otherTabs
-      };
-      return {
-        type: 'split',
-        id: generateSplitId(),
-        direction: 'vertical',
-        sizes: [72, 28],
-        children: [paneOther, paneConsole]
-      };
-    }
-
-    // 3. Role 3: Dedicated Right Panel (strictly ai)
-    const isAiTab = (t) => t.id === 'ai' || t.type === 'ai';
-    const hasRight = uniqueTabs.some(isAiTab);
-    const hasNonRightInRight = hasRight && uniqueTabs.some(t => !isAiTab(t));
-    if (hasNonRightInRight) {
-      const rightTabs = uniqueTabs.filter(isAiTab);
-      const otherTabs = uniqueTabs.filter(t => !isAiTab(t));
-
-      const isRightActive = rightTabs.some(t => t.id === node.activeTabId);
-      const paneRight = {
-        type: 'pane',
-        id: isRightActive ? node.id : generatePaneId(),
-        activeTabId: isRightActive ? node.activeTabId : rightTabs[0].id,
-        tabs: rightTabs
-      };
-      const paneOther = {
-        type: 'pane',
-        id: isRightActive ? generatePaneId() : node.id,
-        activeTabId: isRightActive ? otherTabs[0].id : node.activeTabId,
-        tabs: otherTabs
-      };
-      return {
-        type: 'split',
-        id: generateSplitId(),
-        direction: 'horizontal',
-        sizes: [75, 25],
-        children: [paneOther, paneRight]
       };
     }
 
@@ -580,21 +430,15 @@ export function isMapPane(pane) {
 }
 
 export function isBottomConsolePane(pane) {
-  if (!pane || isMapPane(pane)) return false;
-  return (pane.tabs || []).some(t => 
-    t.id === 'output' || t.type === 'output' || 
-    t.id === 'terminal' || t.type === 'terminal' || 
-    t.id === 'stdin' || t.type === 'stdin'
-  );
+  return false;
 }
 
 export function isRightPanelPane(pane) {
-  if (!pane || isMapPane(pane) || isBottomConsolePane(pane)) return false;
-  return (pane.tabs || []).some(t => t.id === 'ai' || t.type === 'ai');
+  return false;
 }
 
 export function isSpecializedPane(pane) {
-  return isMapPane(pane) || isBottomConsolePane(pane) || isRightPanelPane(pane);
+  return isMapPane(pane);
 }
 
 export function isEditorPane(pane) {
@@ -648,48 +492,7 @@ export function normalizeTree(tree) {
     };
   }
 
-  function sanitizeSpecialized(node) {
-    if (!node) return null;
-    if (node.type === 'pane') {
-      const hasAi = (node.tabs || []).some(t => t.id === 'ai' || t.type === 'ai');
-      const hasConsole = (node.tabs || []).some(t => t.id === 'output' || t.type === 'output' || t.id === 'terminal' || t.type === 'terminal' || t.id === 'stdin' || t.type === 'stdin');
-      if (hasAi) {
-        const nextTabs = (node.tabs || []).filter(t => t.id !== 'stdin' && t.type !== 'stdin' && t.id !== 'output' && t.id !== 'terminal');
-        return {
-          ...node,
-          tabs: nextTabs.length > 0 ? nextTabs : [{ id: 'ai', type: 'ai', title: 'AI Agent' }],
-          activeTabId: 'ai'
-        };
-      }
-      if (hasConsole) {
-        const standardTabs = [
-          { id: 'output', type: 'output', title: 'Output' },
-          { id: 'terminal', type: 'terminal', title: 'Terminal' },
-          { id: 'stdin', type: 'stdin', title: 'Input' }
-        ];
-        let activeTabId = node.activeTabId;
-        if (!standardTabs.some(t => t.id === activeTabId)) {
-          activeTabId = 'output';
-        }
-        return {
-          ...node,
-          tabs: standardTabs,
-          activeTabId
-        };
-      }
-      return node;
-    }
-    if (node.type === 'split') {
-      return {
-        ...node,
-        children: (node.children || []).map(sanitizeSpecialized)
-      };
-    }
-    return node;
-  }
-
-  const sanitized = sanitizeSpecialized(tree);
-  const cleaned = cleanTree(sanitized);
+  const cleaned = cleanTree(tree);
   if (!cleaned) {
     return {
       type: 'pane',
@@ -702,9 +505,19 @@ export function normalizeTree(tree) {
 }
 
 export function addTabToPane(tree, paneId, tab, targetIndex = -1) {
+  if (!tab || !tab.id) return tree;
+
+  // Console and AI tabs are fixed top-level dock panels outside the workspace
+  if (
+    tab.id === 'output' || tab.type === 'output' ||
+    tab.id === 'terminal' || tab.type === 'terminal' ||
+    tab.id === 'stdin' || tab.type === 'stdin' ||
+    tab.id === 'ai' || tab.type === 'ai'
+  ) {
+    return tree;
+  }
+
   const isTabMap = tab.id === 'spatial' || tab.type === 'spatial';
-  const isTabConsole = tab.id === 'output' || tab.type === 'output' || tab.id === 'terminal' || tab.type === 'terminal' || tab.id === 'stdin' || tab.type === 'stdin';
-  const isTabRight = tab.id === 'ai' || tab.type === 'ai';
   const isTabFile = tab.type === 'file';
 
   // 1. If trying to add Map tab
@@ -730,34 +543,6 @@ export function addTabToPane(tree, paneId, tab, targetIndex = -1) {
       // No editor pane exists: split the Map pane horizontally!
       const mapPane = getAllPanes(tree).find(isMapPane) || targetPane;
       return splitPane(tree, mapPane.id, 'horizontal', tab, false).tree;
-    }
-  }
-
-  // 3. If trying to add a console tab (output, terminal)
-  if (isTabConsole) {
-    const targetPane = findPaneById(tree, paneId);
-    if (targetPane && !isBottomConsolePane(targetPane)) {
-      const existingConsolePane = getAllPanes(tree).find(isBottomConsolePane);
-      if (existingConsolePane) {
-        if ((existingConsolePane.tabs || []).some(t => t.id === tab.id)) {
-          return setActiveTabInPane(tree, existingConsolePane.id, tab.id);
-        }
-        return addTabToPane(tree, existingConsolePane.id, tab, targetIndex);
-      }
-    }
-  }
-
-  // 4. If trying to add a right panel tab (ai, stdin)
-  if (isTabRight) {
-    const targetPane = findPaneById(tree, paneId);
-    if (targetPane && !isRightPanelPane(targetPane)) {
-      const existingRightPane = getAllPanes(tree).find(isRightPanelPane);
-      if (existingRightPane) {
-        if ((existingRightPane.tabs || []).some(t => t.id === tab.id)) {
-          return setActiveTabInPane(tree, existingRightPane.id, tab.id);
-        }
-        return addTabToPane(tree, existingRightPane.id, tab, targetIndex);
-      }
     }
   }
 
@@ -950,21 +735,19 @@ export function moveTab(tree, sourcePaneId, targetPaneId, tabId, dropZone, targe
   }
 
   const isMovingMap = tabId === 'spatial' || tab?.type === 'spatial';
-  const isMovingConsole = tabId === 'output' || tab?.type === 'output' || tabId === 'terminal' || tab?.type === 'terminal' || tabId === 'stdin' || tab?.type === 'stdin';
-  const isMovingRight = tabId === 'ai' || tab?.type === 'ai';
+  if (
+    tabId === 'output' || tabId === 'terminal' || tabId === 'stdin' || tabId === 'ai' ||
+    tab?.type === 'output' || tab?.type === 'terminal' || tab?.type === 'stdin' || tab?.type === 'ai'
+  ) {
+    return { tree, activePaneId: targetPaneId };
+  }
 
-  // Specialized panes (Map, Bottom Console, Right Panel) are strictly non-stackable with foreign tabs
+  // Specialized panes (Map) are strictly non-stackable with foreign tabs
   if (targetPane && dropZone === 'center') {
     if (isMapPane(targetPane) && !isMovingMap) {
       dropZone = 'right';
     } else if (!isMapPane(targetPane) && isMovingMap) {
       dropZone = 'left';
-    } else if (isBottomConsolePane(targetPane) && !isMovingConsole) {
-      dropZone = 'top';
-    } else if (isRightPanelPane(targetPane) && !isMovingRight) {
-      dropZone = 'left';
-    } else if (isEditorPane(targetPane) && (isMovingConsole || isMovingRight)) {
-      dropZone = isMovingConsole ? 'bottom' : 'right';
     }
   }
 
@@ -1144,7 +927,7 @@ export function attachRightPanel(tree, activeTabId = 'ai') {
   };
 }
 
-const STORAGE_KEY = 'neuron-modular-layout-v5';
+const STORAGE_KEY = 'neuron-modular-layout-v6';
 
 export function saveLayoutToStorage(tree) {
   try {

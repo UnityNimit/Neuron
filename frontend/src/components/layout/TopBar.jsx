@@ -512,7 +512,7 @@ export default function TopBar({
                 }}
               >
                 <div className="px-2 py-1 text-[10px] text-[var(--theme-text-muted)] uppercase tracking-wider font-semibold">
-                  Core Sections
+                  Views
                 </div>
                 <button
                   type="button"
@@ -523,46 +523,6 @@ export default function TopBar({
                   className="w-full px-2 py-1.5 rounded flex items-center hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer transition-colors"
                 >
                   <span>Spatial Map</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onAddTabToPane && onAddTabToPane({ id: 'output', type: 'output', title: 'Output' });
-                    setShowAddTabMenu(false);
-                  }}
-                  className="w-full px-2 py-1.5 rounded flex items-center hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer transition-colors"
-                >
-                  <span>Output</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onAddTabToPane && onAddTabToPane({ id: 'terminal', type: 'terminal', title: 'Terminal' });
-                    setShowAddTabMenu(false);
-                  }}
-                  className="w-full px-2 py-1.5 rounded flex items-center hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer transition-colors"
-                >
-                  <span>Terminal</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onAddTabToPane && onAddTabToPane({ id: 'ai', type: 'ai', title: 'AI Agent' });
-                    setShowAddTabMenu(false);
-                  }}
-                  className="w-full px-2 py-1.5 rounded flex items-center hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer transition-colors"
-                >
-                  <span>AI Agent</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onAddTabToPane && onAddTabToPane({ id: 'stdin', type: 'stdin', title: 'Input' });
-                    setShowAddTabMenu(false);
-                  }}
-                  className="w-full px-2 py-1.5 rounded flex items-center hover:bg-[var(--theme-surface-hover)] hover:text-[var(--theme-text-bright)] text-left cursor-pointer transition-colors"
-                >
-                  <span>Input</span>
                 </button>
 
                 {(workspace.files || []).length > 0 && (
