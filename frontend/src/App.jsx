@@ -1470,15 +1470,15 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
           onLogin={handleLogin}
           onLogout={handleLogout} 
         />
-        <Group orientation="horizontal" className="flex-grow overflow-hidden" autoSaveId="neuron-layout-v14">
+        <Group orientation="horizontal" className="flex-grow overflow-hidden" autoSaveId="neuron-layout-v15">
           {layout.sidebar && (
             <>
               <Panel 
                 id="sidebar" 
                 order={1} 
-                defaultSize={17} 
-                minSize={12} 
-                maxSize={30} 
+                defaultSize={200} 
+                minSize={100} 
+                maxSize={500} 
                 style={{ backgroundColor: 'var(--theme-secondary, #191a1b)' }}
               >
                 {activeSidebarView === 'git' ? (
@@ -1565,7 +1565,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
           )}
 
           {/* CENTER WORKSPACE & BOTTOM CONSOLE */}
-          <Panel id="center-main-panel" order={2} defaultSize={45} minSize={25} className="flex flex-col min-w-0 min-h-0 overflow-hidden" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
+          <Panel id="center-main-panel" order={2} className="flex flex-col min-w-0 min-h-0 overflow-hidden" style={{ backgroundColor: 'var(--theme-background, #121314)' }}>
             <Group orientation="vertical" id="center-vertical-group" className="w-full h-full">
               {/* TOP: Modular Multi-Pane Code / Spatial Map Workspace */}
               <Panel id="modular-workspace-panel" order={1} minSize={20} defaultSize={72} className="flex flex-col min-w-0 min-h-0 overflow-hidden">
@@ -1640,7 +1640,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
                 className="w-[1px] h-full shrink-0 hover:bg-[var(--theme-accent)] cursor-col-resize z-50 flex justify-center transition-colors outline-none" 
                 style={{ backgroundColor: 'var(--theme-border, #242628)' }}
               />
-              <Panel id="right-ai-dock-panel" order={3} minSize={22} defaultSize={38} maxSize={55} className="flex flex-col min-w-0 min-h-0 overflow-hidden">
+              <Panel id="right-ai-dock-panel" order={3} minSize={55} defaultSize={275} maxSize={800} className="flex flex-col min-w-0 min-h-0 overflow-hidden">
                 <RightPanelContainer 
                   activeFile={workspace.currentFile}
                   fileContent={currentCodeBufferRef.current[workspace.currentFile] ?? activeCodeStr}
