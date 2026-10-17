@@ -100,14 +100,14 @@ canvas {
   height: 26px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
   border-bottom-left-radius: 0px;
   border-bottom-right-radius: 0px;
   font-size: 11px;
-  line-height: normal;
+  line-height: 1;
   font-weight: 500;
-  padding-bottom: 2.5px;
   border-top: 1px solid transparent;
   border-left: 1px solid transparent;
   border-right: 1px solid transparent;

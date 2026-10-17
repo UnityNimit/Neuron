@@ -269,7 +269,7 @@ export default function PaneHeader({
                 }}
                 onClick={() => onSelectTab(pane.id, tab.id)}
                 className={`neuron-tab-card ${
-                  isFile ? 'pl-2.5 pr-1.5' : 'pl-3 pr-1.5'
+                  isFile ? 'pl-2.5 pr-1.5' : 'px-3'
                 } font-mono cursor-grab active:cursor-grabbing shrink-0 group ${
                   isActive ? 'neuron-tab-card-active' : 'neuron-tab-card-inactive'
                 }`}
@@ -285,7 +285,7 @@ export default function PaneHeader({
                 )}
 
                 <span 
-                  className={`relative z-[2] leading-normal transition-colors duration-150 truncate max-w-[140px] select-none ${tabTextClass}`} 
+                  className={`relative z-[2] leading-none inline-flex items-center transition-colors duration-150 truncate max-w-[140px] select-none ${tabTextClass}`} 
                   style={tabTextStyle}
                 >
                   {tab.title}
