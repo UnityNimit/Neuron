@@ -927,18 +927,26 @@ export function attachRightPanel(tree, activeTabId = 'ai') {
   };
 }
 
-const STORAGE_KEY = 'neuron-modular-layout-v6';
+const BASE_STORAGE_KEY = 'neuron-modular-layout-v7';
 
-export function saveLayoutToStorage(tree) {
+export function getLayoutStorageKey(workspaceDir = "") {
+  if (!workspaceDir) return BASE_STORAGE_KEY;
+  const clean = String(workspaceDir).replace(/\\/g, '/').toLowerCase().trim();
+  return `${BASE_STORAGE_KEY}:${clean}`;
+}
+
+export function saveLayoutToStorage(tree, workspaceDir = "") {
   try {
     if (!tree) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(tree));
+    const key = getLayoutStorageKey(workspaceDir);
+    localStorage.setItem(key, JSON.stringify(tree));
   } catch {}
 }
 
-export function loadLayoutFromStorage(fallbackOpenFiles = [], fallbackActiveFile = null) {
+export function loadLayoutFromStorage(fallbackOpenFiles = [], fallbackActiveFile = null, workspaceDir = "") {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const key = getLayoutStorageKey(workspaceDir);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       const normalized = normalizeTree(parsed);
@@ -949,4 +957,89 @@ export function loadLayoutFromStorage(fallbackOpenFiles = [], fallbackActiveFile
   } catch {}
 
   return createDefaultModularLayout(fallbackOpenFiles, fallbackActiveFile, true, true);
+}
+
+export function purgeMissingFileTabs(tree, validFiles = [], fallbackFile = null) {
+  if (!tree || !Array.isArray(validFiles) || validFiles.length === 0) {
+    return tree;
+  }
+
+  const validSet = new Set();
+  validFiles.forEach(f => {
+    if (f) {
+      validSet.add(f);
+      validSet.add(f.replace(/\\/g, '/'));
+      validSet.add(f.replace(/\//g, '\\'));
+    }
+  });
+
+  function cleanNode(node) {
+    if (!node) return null;
+    if (node.type === 'pane') {
+      const currentTabs = node.tabs || [];
+      const cleanedTabs = currentTabs.filter(tab => {
+        if (tab.type !== 'file') return true;
+        const p = tab.path || "";
+        return validSet.has(p) || validSet.has(p.replace(/\\/g, '/')) || validSet.has(p.replace(/\//g, '\\'));
+      });
+
+      let activeTabId = node.activeTabId;
+      const tabStillExists = cleanedTabs.some(t => t.id === activeTabId);
+      if (!tabStillExists) {
+        if (cleanedTabs.length > 0) {
+          activeTabId = cleanedTabs[cleanedTabs.length - 1].id;
+        } else if (fallbackFile && (validSet.has(fallbackFile) || validSet.has(fallbackFile.replace(/\\/g, '/')))) {
+          const cleanFallback = fallbackFile.replace(/\\/g, '/');
+          const newTabId = `file:${cleanFallback}`;
+          cleanedTabs.push({
+            id: newTabId,
+            type: 'file',
+            path: cleanFallback,
+            title: cleanFallback.split('/').pop()
+          });
+          activeTabId = newTabId;
+        } else {
+          activeTabId = null;
+        }
+      }
+
+      return {
+        ...node,
+        tabs: cleanedTabs,
+        activeTabId
+      };
+    }
+
+    if (node.children) {
+      return {
+        ...node,
+        children: node.children.map(cleanNode).filter(Boolean)
+      };
+    }
+
+    return node;
+  }
+
+  const cleaned = cleanNode(tree);
+  return normalizeTree(cleaned);
+}
+
+export function setTabProperty(tree, paneId, tabId, propName, propValue) {
+  function walk(node) {
+    if (!node) return null;
+    if (node.id === paneId && node.tabs) {
+      const nextTabs = node.tabs.map(t => {
+        if (t.id === tabId) {
+          return { ...t, [propName]: propValue };
+        }
+        return t;
+      });
+      return { ...node, tabs: nextTabs };
+    }
+    if (node.children) {
+      return { ...node, children: node.children.map(walk) };
+    }
+    return node;
+  }
+  return normalizeTree(walk(tree));
 }

@@ -65,7 +65,8 @@ function PaneContent({
   aiStudio,
   handleOpenSettings,
   // Pane Switch / Open actions
-  onOpenTabInPane
+  onOpenTabInPane,
+  onSwitchTabMode
 }) {
   // Multi-Orb Refactoring & Selection State
   const [selectedNodeIds, setSelectedNodeIds] = React.useState([]);
@@ -513,15 +514,19 @@ function PaneContent({
   if (activeTab.type === 'file') {
     const filePath = activeTab.path;
     const fileExt = filePath ? filePath.split('.').pop().toLowerCase() : '';
+    const isSvg = fileExt === 'svg';
     const isImageFile = IMAGE_EXTENSIONS.has(fileExt);
     const isUnsupportedFile = UNSUPPORTED_EXTENSIONS.has(fileExt);
+    const isCodeMode = activeTab.viewMode === 'code';
     const fileCode = getCodeForFile(filePath);
 
-    if (isImageFile) {
+    if (isImageFile && !isCodeMode) {
       return (
         <ImageViewer 
           filename={filePath} 
           isSyncing={workspace.isFileSyncing && workspace.currentFile === filePath}
+          isSvg={isSvg}
+          onOpenAsCode={onSwitchTabMode ? () => onSwitchTabMode(paneId, activeTab.id, 'code') : undefined}
         />
       );
     }
@@ -546,6 +551,7 @@ function PaneContent({
         onCodeChange={(newCode) => handleCodeChange(filePath, newCode)}
         onSave={() => handleSaveFile(filePath)}
         onClearFocus={() => setEditorFocusLine(null)} 
+        onSwitchToPreview={isSvg && onSwitchTabMode ? () => onSwitchTabMode(paneId, activeTab.id, 'preview') : undefined}
       />
     );
   }

@@ -33,6 +33,7 @@ import {
   closePane,
   loadLayoutFromStorage,
   saveLayoutToStorage,
+  purgeMissingFileTabs,
   createDefaultModularLayout,
   createMapAndCodeLayout,
   createTwoCodeFilesLayout,
@@ -109,7 +110,7 @@ export default function App() {
 
   // Modular Multi-Pane Layout Tree State (Preserved in localStorage)
   const [layoutTree, setLayoutTree] = useState(() => {
-    return loadLayoutFromStorage(workspace.openFiles, workspace.currentFile);
+    return loadLayoutFromStorage(workspace.openFiles, workspace.currentFile, workspace.absTargetDir);
   });
   const [activePaneId, setActivePaneId] = useState(() => {
     const panes = getAllPanes(layoutTree);
@@ -354,6 +355,12 @@ export default function App() {
         setCenterView('spatial');
         setDirtyFiles(new Set());
         currentCodeBufferRef.current = {};
+        const freshLayout = loadLayoutFromStorage(
+          workspace.openFiles,
+          workspace.currentFile,
+          workspace.absTargetDir
+        );
+        setLayoutTree(freshLayout);
       }
       prevTargetDirRef.current = workspace.absTargetDir;
       try {
@@ -362,7 +369,21 @@ export default function App() {
         localStorage.setItem('neuron_recent_projects', JSON.stringify(updated));
       } catch (e) {}
     }
-  }, [workspace.absTargetDir, setCenterView]);
+  }, [workspace.absTargetDir, workspace.openFiles, workspace.currentFile, setCenterView]);
+
+  // --- PURGE RESIDUAL GHOST TABS FROM PREVIOUS PROJECTS / DELETED FILES ---
+  useEffect(() => {
+    if (!workspace.files || workspace.files.length === 0) return;
+    setLayoutTree(prev => {
+      if (!prev) return prev;
+      const cleaned = purgeMissingFileTabs(prev, workspace.files, workspace.currentFile);
+      if (JSON.stringify(cleaned) !== JSON.stringify(prev)) {
+        saveLayoutToStorage(cleaned, workspace.absTargetDir);
+        return cleaned;
+      }
+      return prev;
+    });
+  }, [workspace.files, workspace.currentFile, workspace.absTargetDir]);
 
   const handleOpenRecentWorkspace = useCallback((folderPath) => {
     if (folderPath && workspace.wsRef.current?.readyState === WebSocket.OPEN) {
@@ -600,9 +621,9 @@ export default function App() {
 
   useEffect(() => {
     if (layoutTree) {
-      saveLayoutToStorage(layoutTree);
+      saveLayoutToStorage(layoutTree, workspace.absTargetDir);
     }
-  }, [layoutTree]);
+  }, [layoutTree, workspace.absTargetDir]);
 
   const handleFocusSpatialMap = useCallback(() => {
     setCenterView('spatial');
@@ -656,7 +677,7 @@ export default function App() {
 
     if (newLayout) {
       setLayoutTree(newLayout);
-      saveLayoutToStorage(newLayout);
+      saveLayoutToStorage(newLayout, workspace.absTargetDir);
       const all = getAllPanes(newLayout);
       if (all.length > 0) {
         const activePane = all.find(p => (p.tabs || []).some(t => t.id === `file:${activeFile}`)) || all[0];
@@ -664,7 +685,7 @@ export default function App() {
       }
       workspace.addNotification?.('info', 'Layout Reset', `Applied ${presetId} layout preset.`, 'layout');
     }
-  }, [workspace.openFiles, workspace.currentFile, workspace.files, workspace.addNotification, setLayout]);
+  }, [workspace.openFiles, workspace.currentFile, workspace.files, workspace.absTargetDir, workspace.addNotification, setLayout]);
 
   // --- OPTIMIZATION 1: O(1) ADJACENCY CACHE ---
   const adjLists = useMemo(() => {

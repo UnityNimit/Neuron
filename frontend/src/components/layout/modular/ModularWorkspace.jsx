@@ -13,7 +13,8 @@ import {
   moveTab,
   closePane,
   normalizeTree,
-  saveLayoutToStorage
+  saveLayoutToStorage,
+  setTabProperty
 } from './layoutModel';
 
 function ModularWorkspace({
@@ -69,9 +70,9 @@ function ModularWorkspace({
   // Auto-persist layout changes to localStorage
   useEffect(() => {
     if (layoutTree) {
-      saveLayoutToStorage(layoutTree);
+      saveLayoutToStorage(layoutTree, workspace?.absTargetDir);
     }
-  }, [layoutTree]);
+  }, [layoutTree, workspace?.absTargetDir]);
 
   // Keep workspace.currentFile in sync when active tab in active pane changes
   useEffect(() => {
@@ -167,6 +168,10 @@ function ModularWorkspace({
       return updated;
     });
   }, [setActivePaneId, setLayoutTree, onActiveFileChange]);
+
+  const handleSwitchTabMode = useCallback((paneId, tabId, mode) => {
+    setLayoutTree(prev => setTabProperty(prev, paneId, tabId, 'viewMode', mode));
+  }, [setLayoutTree]);
 
   // Global pointer move and pointer up coordinator for tab dragging
   useEffect(() => {
@@ -296,6 +301,7 @@ function ModularWorkspace({
           setStdin={setStdin}
           aiStudio={aiStudio}
           handleOpenSettings={handleOpenSettings}
+          onSwitchTabMode={handleSwitchTabMode}
         />
       );
     }

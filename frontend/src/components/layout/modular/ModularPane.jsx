@@ -55,7 +55,8 @@ function ModularPane({
   stdin,
   setStdin,
   aiStudio,
-  handleOpenSettings
+  handleOpenSettings,
+  onSwitchTabMode
 }) {
   const [dropZone, setDropZone] = useState(null); // 'left' | 'right' | 'top' | 'bottom' | 'center' | null
   const contentContainerRef = useRef(null);
@@ -277,6 +278,7 @@ function ModularPane({
           aiStudio={aiStudio}
           handleOpenSettings={handleOpenSettings}
           onOpenTabInPane={onAddTabToPane}
+          onSwitchTabMode={onSwitchTabMode}
         />
 
         {/* Drag-Capture Shield to isolate Monaco Editor, Pixi Canvas, and Terminal from intercepting drag */}

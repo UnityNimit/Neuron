@@ -238,16 +238,16 @@ async def ping_supabase():
 # -------------------------------------------------------------------------
 # 3.5 RAW STATIC FILE SERVING (Images, Media, Binary Assets)
 # -------------------------------------------------------------------------
-@app.get("/api/file/raw")
+@app.api_route("/api/file/raw", methods=["GET", "HEAD"])
 async def get_raw_file(path: str = Query(...)):
     """
     Safely serves a raw file (images, binaries, media) from disk.
-    Accepts workspace-relative or absolute paths.
+    Accepts workspace-relative or absolute paths. Supports GET and HEAD.
     """
     if not path:
         return JSONResponse({"status": "error", "reason": "Path is required"}, status_code=400)
 
-    clean_path = path.replace("\\", "/").strip()
+    clean_path = urllib.parse.unquote(path).replace("\\", "/").strip()
     if os.path.isabs(clean_path):
         target_file = os.path.abspath(clean_path)
     else:

@@ -5,6 +5,7 @@ import * as monaco from 'monaco-editor';
 
 import { registerMonacoThemes, syncMonacoTheme, useTheme } from '../../config/themeConfig';
 import FindReplaceWidget from './FindReplaceWidget';
+import { Eye } from 'lucide-react';
 
 // Direct local bundling (Zero CDN network requests, 100% offline)
 loader.config({ monaco });
@@ -21,7 +22,8 @@ function CodeEditor({
   onCodeChange, 
   onSave, 
   onClearFocus,
-  isSyncing = false
+  isSyncing = false,
+  onSwitchToPreview
 }) {
   const { theme } = useTheme();
   const monacoTheme = theme?.monacoTheme || 'neuron-obsidian';
@@ -379,12 +381,25 @@ function CodeEditor({
               );
             })}
           </div>
-          {isSyncing && (
-            <span className="neuron-loading-text pl-2 shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent)] animate-pulse" />
-              <span>Loading...</span>
-            </span>
-          )}
+          <div className="flex items-center gap-2 pl-2 shrink-0">
+            {onSwitchToPreview && (
+              <button
+                type="button"
+                onClick={onSwitchToPreview}
+                className="px-2 py-0.5 rounded text-[10px] font-mono border border-[var(--theme-border)] text-[var(--theme-text-muted)] hover:text-[var(--theme-text-primary)] hover:border-[var(--theme-accent)] transition-all cursor-pointer flex items-center gap-1.5"
+                title="Switch to Image Preview"
+              >
+                <Eye size={11} />
+                <span>Preview</span>
+              </button>
+            )}
+            {isSyncing && (
+              <span className="neuron-loading-text shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--theme-accent)] animate-pulse" />
+                <span>Loading...</span>
+              </span>
+            )}
+          </div>
         </div>
       )}
 

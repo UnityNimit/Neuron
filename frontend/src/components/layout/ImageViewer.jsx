@@ -1,8 +1,13 @@
 // frontend/src/components/layout/ImageViewer.jsx
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Minus, Plus, Maximize2, RotateCcw, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Minus, Plus, Maximize2, RotateCcw, Image as ImageIcon, Loader2, Code } from 'lucide-react';
 
-export default function ImageViewer({ filename = "", isSyncing = false }) {
+export default function ImageViewer({ 
+  filename = "", 
+  isSyncing = false,
+  isSvg = false,
+  onOpenAsCode
+}) {
   const containerRef = useRef(null);
   const imgRef = useRef(null);
 
@@ -18,6 +23,8 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
   const [hasError, setHasError] = useState(false);
   const [cacheBuster, setCacheBuster] = useState(Date.now());
 
+  const effectiveIsSvg = isSvg || filename.toLowerCase().endsWith('.svg');
+
   // -------------------------------------------------------------------------
   // 1. FILE PATH BREADCRUMBS (Identical to CodeEditor.jsx)
   // -------------------------------------------------------------------------
@@ -26,25 +33,87 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
     return filename.replace(/\\/g, '/').split('/').filter(Boolean);
   }, [filename]);
 
+  // Dynamic API Base URL (prevents CORS / cross-host issues)
+  const apiBase = useMemo(() => {
+    if (typeof window === 'undefined') return 'http://127.0.0.1:8000';
+    const host = window.location.hostname || '127.0.0.1';
+    return `http://${host}:8000`;
+  }, []);
+
   // Construct raw file image URL
   const imageUrl = useMemo(() => {
     if (!filename) return "";
-    return `http://127.0.0.1:8000/api/file/raw?path=${encodeURIComponent(filename)}&t=${cacheBuster}`;
-  }, [filename, cacheBuster]);
+    return `${apiBase}/api/file/raw?path=${encodeURIComponent(filename)}&t=${cacheBuster}`;
+  }, [filename, cacheBuster, apiBase]);
 
-  // Reset viewport whenever filename changes
+  // Robust Image probe & existence check (prevents indefinite loading on 404 or cached images)
   useEffect(() => {
+    if (!filename || !imageUrl) {
+      setLoading(false);
+      return;
+    }
+
     setZoom(1.0);
     setPan({ x: 0, y: 0 });
     setLoading(true);
     setHasError(false);
-    setCacheBuster(Date.now());
-  }, [filename]);
+
+    let isMounted = true;
+    const controller = new AbortController();
+
+    // Safety timeout: Never stay in loading state longer than 3.5 seconds
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setLoading(false);
+      }
+    }, 3500);
+
+    // Check cached element directly
+    if (imgRef.current && imgRef.current.complete) {
+      const nw = imgRef.current.naturalWidth || (effectiveIsSvg ? 300 : 0);
+      const nh = imgRef.current.naturalHeight || (effectiveIsSvg ? 300 : 0);
+      if (nw > 0 || nh > 0) {
+        setNaturalDimensions({ width: nw, height: nh });
+        setLoading(false);
+        setHasError(false);
+        clearTimeout(safetyTimer);
+        return () => {
+          isMounted = false;
+          controller.abort();
+          clearTimeout(safetyTimer);
+        };
+      }
+    }
+
+    // Direct HTTP probe to verify file existence and catch 404 immediately
+    fetch(imageUrl, { method: 'HEAD', signal: controller.signal })
+      .then(resp => {
+        if (!isMounted) return;
+        if (!resp.ok) {
+          // If HEAD is not allowed or 404, check GET
+          if (resp.status === 404) {
+            setHasError(true);
+            setLoading(false);
+            clearTimeout(safetyTimer);
+          }
+        }
+      })
+      .catch(() => {
+        // If HEAD fails due to network or CORS, let img tag handle it with safetyTimer
+      });
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+      clearTimeout(safetyTimer);
+    };
+  }, [filename, imageUrl, effectiveIsSvg]);
 
   // Image loaded callback
   const handleImageLoad = (e) => {
-    const { naturalWidth, naturalHeight } = e.target;
-    setNaturalDimensions({ width: naturalWidth, height: naturalHeight });
+    const nw = e.target.naturalWidth || (effectiveIsSvg ? 300 : 0);
+    const nh = e.target.naturalHeight || (effectiveIsSvg ? 300 : 0);
+    setNaturalDimensions({ width: nw, height: nh });
     setLoading(false);
     setHasError(false);
   };
@@ -218,6 +287,17 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
             </span>
           )}
 
+          {onOpenAsCode && (
+            <button
+              onClick={onOpenAsCode}
+              className="px-1.5 py-0.5 rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-[10px] font-mono flex items-center gap-1"
+              title="Edit Source Code"
+            >
+              <Code size={11} />
+              <span>Source</span>
+            </button>
+          )}
+
           <button
             onClick={handleResetZoom}
             className="px-1.5 py-0.5 rounded hover:bg-[var(--theme-surface-hover)] text-[var(--theme-text-secondary)] hover:text-[var(--theme-text-bright)] transition-colors cursor-pointer text-[10px] font-mono font-medium"
@@ -229,7 +309,7 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
       </div>
 
       {/* BEAUTIFULLY ANIMATED THEME ACCENT LOADING LINE */}
-      {isSyncing && (
+      {isSyncing && !hasError && (
         <div className="neuron-loading-line-track">
           <div className="neuron-loading-line-bar" />
         </div>
@@ -260,7 +340,7 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
         }`}
       >
         {/* Loading Spinner */}
-        {(loading || isSyncing) && (
+        {(loading || isSyncing) && !hasError && (
           <div 
             className="absolute inset-0 flex flex-col items-center justify-center gap-2 z-10 pointer-events-none backdrop-blur-sm"
             style={{ backgroundColor: 'var(--theme-background, #121314)' }}
@@ -271,20 +351,31 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
         )}
 
         {/* Error Fallback */}
-        {hasError && !loading && (
-          <div className="flex flex-col items-center justify-center gap-2 text-center p-6 bg-[#18191b] border border-[#242628] rounded-xl shadow-lg">
+        {hasError && (
+          <div className="flex flex-col items-center justify-center gap-2 text-center p-6 bg-[#18191b] border border-[#242628] rounded-xl shadow-lg z-20">
             <ImageIcon size={28} className="text-slate-500" />
             <p className="text-slate-300 font-sans text-xs">Failed to load image.</p>
-            <button
-              onClick={() => {
-                setLoading(true);
-                setHasError(false);
-                setCacheBuster(Date.now());
-              }}
-              className="mt-1 px-3 py-1 rounded bg-[#222426] hover:bg-[#2c2f32] border border-[#2e3235] text-slate-300 hover:text-white text-[11px] font-sans transition-colors cursor-pointer"
-            >
-              Retry
-            </button>
+            <p className="text-slate-500 font-mono text-[10px] max-w-[280px] truncate">{filename}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                onClick={() => {
+                  setLoading(true);
+                  setHasError(false);
+                  setCacheBuster(Date.now());
+                }}
+                className="px-3 py-1 rounded bg-[#222426] hover:bg-[#2c2f32] border border-[#2e3235] text-slate-300 hover:text-white text-[11px] font-sans transition-colors cursor-pointer"
+              >
+                Retry
+              </button>
+              {onOpenAsCode && (
+                <button
+                  onClick={onOpenAsCode}
+                  className="px-3 py-1 rounded bg-[var(--theme-accent)]/20 hover:bg-[var(--theme-accent)]/30 border border-[var(--theme-accent)] text-[var(--theme-text-bright)] text-[11px] font-sans transition-colors cursor-pointer"
+                >
+                  Edit Code
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -307,7 +398,9 @@ export default function ImageViewer({ filename = "", isSyncing = false }) {
               loading ? 'opacity-0' : 'opacity-100'
             }`}
             style={{
-              imageRendering: zoom > 2 ? 'pixelated' : 'auto'
+              imageRendering: zoom > 2 ? 'pixelated' : 'auto',
+              minWidth: effectiveIsSvg ? '160px' : undefined,
+              minHeight: effectiveIsSvg ? '160px' : undefined
             }}
           />
         </div>

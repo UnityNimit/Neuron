@@ -78,6 +78,21 @@ export function useWorkspace(session) {
     }
   }, []);
   const [isFileSyncing, setIsFileSyncing] = useState(false);
+  const isFileSyncingTimeoutRef = useRef(null);
+  const setIsFileSyncingSafe = useCallback((syncing) => {
+    if (isFileSyncingTimeoutRef.current) {
+      clearTimeout(isFileSyncingTimeoutRef.current);
+      isFileSyncingTimeoutRef.current = null;
+    }
+    if (syncing) {
+      setIsFileSyncing(true);
+      isFileSyncingTimeoutRef.current = setTimeout(() => {
+        setIsFileSyncing(false);
+      }, 2500);
+    } else {
+      setIsFileSyncing(false);
+    }
+  }, []);
   const [isWsConnected, setIsWsConnected] = useState(false);
   const [wsLatency, setWsLatency] = useState(0);
   
@@ -1034,7 +1049,7 @@ export function useWorkspace(session) {
   return {
     isGraphLoaded, setIsGraphLoaded, 
     isFolderLoading, setIsFolderLoading: setIsFolderLoadingSafe,
-    isFileSyncing, setIsFileSyncing,
+    isFileSyncing, setIsFileSyncing: setIsFileSyncingSafe,
     isWsConnected, wsLatency,
     items, files, currentFile, setCurrentFile, absTargetDir,
     openFiles, setOpenFiles, closeFile,
