@@ -7,7 +7,7 @@ import {
   Play, 
   Loader2 
 } from 'lucide-react';
-import { isEditorPane, isBottomConsolePane, isRightPanelPane } from './layoutModel';
+import { isEditorPane, isMapPane, isBottomConsolePane, isRightPanelPane } from './layoutModel';
 
 export default function PaneHeader({
   pane,
@@ -36,10 +36,43 @@ export default function PaneHeader({
   onKillProcess,
   onCreateTerminalSession,
   onCloseTerminalSession,
-  onSelectTerminalSession
+  onSelectTerminalSession,
+  onActivatePane
 }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const dragPendingRef = useRef(null);
+
+  // Dedicated Spatial Map pane header (Explorer Normal Text)
+  if (isMapPane(pane)) {
+    return (
+      <div 
+        className="h-8 px-3 text-[11px] font-mono font-medium tracking-wide flex items-center justify-between shrink-0 border-b select-none transition-colors"
+        style={{
+          backgroundColor: 'var(--theme-secondary, #191a1b)',
+          borderColor: 'var(--theme-border, #242628)'
+        }}
+        onClick={() => onActivatePane && onActivatePane(pane.id)}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const info = draggedTabInfo || window.__neuronDraggedTab;
+          if (info && info.sourcePaneId && onMoveTab) {
+            onMoveTab(info.sourcePaneId, pane.id, info.tabId, 'right');
+            if (setDraggedTabInfo) setDraggedTabInfo(null);
+            window.__neuronDraggedTab = null;
+          }
+        }}
+      >
+        <span className="font-medium tracking-wide" style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}>
+          Spatial Map
+        </span>
+      </div>
+    );
+  }
 
   const isFixedPane = isBottomConsolePane(pane) || isRightPanelPane(pane);
   const activeTab = (pane.tabs || []).find(t => t.id === pane.activeTabId) || pane.tabs?.[0];

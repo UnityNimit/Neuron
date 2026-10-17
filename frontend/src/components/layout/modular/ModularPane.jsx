@@ -231,6 +231,7 @@ export default function ModularPane({
         onCreateTerminalSession={workspace.createTerminalSession}
         onCloseTerminalSession={workspace.closeTerminalSession}
         onSelectTerminalSession={workspace.setActiveSessionId}
+        onActivatePane={onActivatePane}
       />
 
       {/* Pane Content Area with Drag-over Drop Detection */}
