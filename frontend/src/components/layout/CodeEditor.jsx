@@ -1,5 +1,5 @@
 // src/components/layout/CodeEditor.jsx
-import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 
@@ -12,7 +12,7 @@ loader.config({ monaco });
 // Central dynamic Monaco theme registrations (Obsidian Black, Alabaster White, Sakura Rose)
 registerMonacoThemes(monaco);
 
-export default function CodeEditor({ 
+function CodeEditor({ 
   filename = "", 
   initialCode = "", 
   isDirty = false,
@@ -443,3 +443,5 @@ export default function CodeEditor({
     </div>
   );
 }
+
+export default memo(CodeEditor);

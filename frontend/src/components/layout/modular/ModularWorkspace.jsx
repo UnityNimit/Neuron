@@ -1,5 +1,5 @@
 // frontend/src/components/layout/modular/ModularWorkspace.jsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { FileCode2 } from 'lucide-react';
 import ModularPane from './ModularPane';
@@ -16,7 +16,7 @@ import {
   saveLayoutToStorage
 } from './layoutModel';
 
-export default function ModularWorkspace({
+function ModularWorkspace({
   layoutTree,
   setLayoutTree,
   activePaneId,
@@ -377,3 +377,5 @@ export default function ModularWorkspace({
     </div>
   );
 }
+
+export default memo(ModularWorkspace);

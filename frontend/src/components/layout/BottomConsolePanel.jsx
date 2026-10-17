@@ -1,10 +1,10 @@
 // frontend/src/components/layout/BottomConsolePanel.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Trash2 } from 'lucide-react';
 import TerminalPanel from './TerminalPanel';
 import StdinPanel from './StdinPanel';
 
-export default function BottomConsolePanel({
+function BottomConsolePanel({
   activeTab = 'output',
   onSelectTab,
   workspace,
@@ -167,3 +167,5 @@ export default function BottomConsolePanel({
     </div>
   );
 }
+
+export default memo(BottomConsolePanel);

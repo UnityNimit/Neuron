@@ -1,5 +1,5 @@
 // frontend/src/components/layout/modular/PaneHeader.jsx
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { 
   FileCode2, 
   Terminal, 
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { isEditorPane, isMapPane, isBottomConsolePane, isRightPanelPane } from './layoutModel';
 
-export default function PaneHeader({
+function PaneHeader({
   pane,
   isActivePane,
   totalPanes = 1,
@@ -384,3 +384,5 @@ export default function PaneHeader({
     </div>
   );
 }
+
+export default memo(PaneHeader);

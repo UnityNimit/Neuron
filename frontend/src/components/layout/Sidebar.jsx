@@ -1,12 +1,12 @@
 // src/components/layout/Sidebar.jsx
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, memo } from 'react';
 import { 
   Folder, FileCode2, X, ChevronRight, ChevronDown, 
   FilePlus, FolderPlus, RefreshCw, ListCollapse 
 } from 'lucide-react';
 import ExplorerContextMenu from './ExplorerContextMenu';
 
-export default function Sidebar({ 
+function Sidebar({ 
   items = [], 
   currentFile = "", 
   absTargetDir = "", 
@@ -673,3 +673,5 @@ export default function Sidebar({
     </div>
   );
 }
+
+export default memo(Sidebar);

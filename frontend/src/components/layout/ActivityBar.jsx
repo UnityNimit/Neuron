@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { Files, GitBranch, Brain, Settings, User, LogOut } from 'lucide-react';
 import ThemeSelector from './ThemeSelector';
 
-export default function ActivityBar({ 
+function ActivityBar({ 
   layout = {}, 
   setLayout, 
   activeSidebarView = 'explorer',
@@ -192,4 +192,6 @@ export default function ActivityBar({
     </div>
   );
 }
+
+export default memo(ActivityBar);
 

@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Columns2, Rows2, PlusSquare } from 'lucide-react';
 import PaneHeader from './PaneHeader';
 import PaneContent from './PaneContent';
 import { isBottomConsolePane, isRightPanelPane } from './layoutModel';
 
-export default function ModularPane({
+function ModularPane({
   pane,
   isActivePane,
   totalPanes = 1,
@@ -321,3 +321,5 @@ export default function ModularPane({
     </div>
   );
 }
+
+export default memo(ModularPane);

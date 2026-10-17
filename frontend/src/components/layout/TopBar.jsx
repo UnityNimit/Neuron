@@ -1,5 +1,5 @@
 // src/components/layout/TopBar.jsx
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react';
 import { 
   Minus, Square, Copy, X, Check,
   Plus, Columns2, Rows2, PanelRightClose, FileCode2
@@ -9,7 +9,7 @@ import GenesisAnimatedLogo from '../common/GenesisAnimatedLogo';
 import { useTheme } from '../../config/themeConfig';
 import CommandPalette from './CommandPalette';
 
-export default function TopBar({ 
+function TopBar({ 
   onOpenFolder, 
   onOpenRecent, 
   onSave, 
@@ -622,3 +622,5 @@ export default function TopBar({
     </div>
   );
 }
+
+export default memo(TopBar);

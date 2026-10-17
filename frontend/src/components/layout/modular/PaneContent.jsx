@@ -1,5 +1,5 @@
 // frontend/src/components/layout/modular/PaneContent.jsx
-import React from 'react';
+import React, { memo } from 'react';
 import { AlertOctagon, X, Terminal } from 'lucide-react';
 
 import PixiSpatialEngine from '../../canvas/PixiSpatialEngine';
@@ -26,7 +26,7 @@ const UNSUPPORTED_EXTENSIONS = new Set([
   'db', 'sqlite', 'sqlite3', 'mdb'
 ]);
 
-export default function PaneContent({
+function PaneContent({
   activeTab,
   paneId,
   // Workspace & Canvas
@@ -680,3 +680,5 @@ export default function PaneContent({
 
   return null;
 }
+
+export default memo(PaneContent);

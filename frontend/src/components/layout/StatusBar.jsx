@@ -1,10 +1,10 @@
 // frontend/src/components/layout/StatusBar.jsx
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { 
   Bell, X, GitBranch, CheckCircle2, Loader2, Trash2 
 } from 'lucide-react';
 
-export default function StatusBar({ 
+function StatusBar({ 
   activeFile = "", 
   errorCount = 0, 
   warningCount = 0, 
@@ -441,3 +441,5 @@ export default function StatusBar({
     </div>
   );
 }
+
+export default memo(StatusBar);

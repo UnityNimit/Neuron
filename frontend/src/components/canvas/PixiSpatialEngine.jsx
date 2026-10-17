@@ -610,6 +610,10 @@ export default function PixiSpatialEngine({
       rebuildHierarchyTopology(initialNodes, initialEdges);
 
       let frameCount = 0;
+      const frameMassAccum = new Map();
+      const framePulseAccum = new Map();
+      const drawnConduits = new Set();
+      let cachedNebulaHulls = [];
 
       // -----------------------------------------------------------------------
       // 4. THE 300 FPS HARDWARE TICK LOOP
@@ -778,8 +782,8 @@ export default function PixiSpatialEngine({
         const { parentMap, nodeMetaMap, topDownOrder, bottomUpOrder } = hierarchyCache;
 
         // Pass 1: Compute snappy threshold-driven mergeProgress per node & reset frame mass accumulators
-        const frameMassAccum = new Map();
-        const framePulseAccum = new Map();
+        frameMassAccum.clear();
+        framePulseAccum.clear();
 
         for (let i = 0; i < topDownOrder.length; i++) {
           const id = topDownOrder[i];
@@ -1052,93 +1056,110 @@ export default function PixiSpatialEngine({
         if (zoom <= 1.65) {
           const closeUpFade = zoom > 1.15 ? Math.max(0, 1 - (zoom - 1.15) / 0.50) : 1.0;
           const nebulaZoomScale = Math.pow(0.45 / Math.max(0.02, zoom), 0.25) * globalNodeScale;
-          const groups = {};
-          const groupWeights = {};
-
-          currentGraphNodes.forEach(n => {
-            const comm = n.data?.community;
-            const obj = spriteMap.get(n.id);
-            if (comm === undefined || comm === null || !obj || (n.spawnProgress || 0) <= 0.3) return;
-
-            const m = obj.mergeProgress;
-            const pId = parentMap.get(n.id);
-            const pObj = pId ? spriteMap.get(pId) : null;
-            const sameCommParent = pObj && pObj.node?.data?.community === comm;
-
-            // If this node has fully merged into a parent of the SAME community, the parent orb already carries the hull
-            if (sameCommParent && m > 0.94) return;
-
-            // If merging into a parent of a DIFFERENT community (e.g. final root hub), smoothly fade this node's contribution
-            const memberWeight = (!sameCommParent && pObj) ? Math.max(0, 1 - m * 1.15) : (1 - m * 0.4);
-            if (memberWeight <= 0.04) return;
-
-            if (!groups[comm]) {
-              groups[comm] = [];
-              groupWeights[comm] = 0;
-            }
-            groups[comm].push({ obj, m, sameCommParent, memberWeight });
-            if (memberWeight > groupWeights[comm]) {
-              groupWeights[comm] = memberWeight;
-            }
-          });
-
           const nebulaColors = THEME.nebula?.colors || [];
-          const baseNebulaPad = (THEME.nebula?.padding || 65) * 0.55 * nebulaZoomScale;
-          const NEBULA_ANGLES = 12;
 
-          Object.entries(groups).forEach(([commId, entries]) => {
-            if (entries.length === 0 || nebulaColors.length === 0) return;
-            const commAlphaWeight = Math.min(1, groupWeights[commId] || 0) * closeUpFade;
-            if (commAlphaWeight <= 0.02) return;
+          if (frameCount % 3 === 0 || cachedNebulaHulls.length === 0) {
+            cachedNebulaHulls = [];
+            const groups = {};
+            const groupWeights = {};
 
-            const pts = [];
-            for (let i = 0; i < entries.length; i++) {
-              const { obj: o, m, memberWeight } = entries[i];
-              // Dynamic halo radius around each orb that swells with worldRadius and contracts as children merge in
-              const padRadius = (o.worldRadius * 1.35 + baseNebulaPad * (1 - m * 0.70)) * Math.max(0.25, memberWeight);
-              for (let a = 0; a < NEBULA_ANGLES; a++) {
-                const theta = (a * Math.PI * 2) / NEBULA_ANGLES;
-                pts.push([
-                  o.rx + Math.cos(theta) * padRadius,
-                  o.ry + Math.sin(theta) * padRadius
-                ]);
+            currentGraphNodes.forEach(n => {
+              const comm = n.data?.community;
+              const obj = spriteMap.get(n.id);
+              if (comm === undefined || comm === null || !obj || (n.spawnProgress || 0) <= 0.3) return;
+
+              const m = obj.mergeProgress;
+              const pId = parentMap.get(n.id);
+              const pObj = pId ? spriteMap.get(pId) : null;
+              const sameCommParent = pObj && pObj.node?.data?.community === comm;
+
+              // If this node has fully merged into a parent of the SAME community, the parent orb already carries the hull
+              if (sameCommParent && m > 0.94) return;
+
+              // If merging into a parent of a DIFFERENT community (e.g. final root hub), smoothly fade this node's contribution
+              const memberWeight = (!sameCommParent && pObj) ? Math.max(0, 1 - m * 1.15) : (1 - m * 0.4);
+              if (memberWeight <= 0.04) return;
+
+              if (!groups[comm]) {
+                groups[comm] = [];
+                groupWeights[comm] = 0;
               }
-            }
-
-            const hull = pts.length >= 3 ? polygonHull(pts) : null;
-            if (hull && hull.length >= 3) {
-              drewAnyNebula = true;
-              const colorObj = nebulaColors[parseInt(commId, 10) % nebulaColors.length];
-              const hLen = hull.length;
-
-              // Render a C1-continuous rounded B-spline curve through the convex hull midpoints
-              const startMidX = (hull[hLen - 1][0] + hull[0][0]) * 0.5;
-              const startMidY = (hull[hLen - 1][1] + hull[0][1]) * 0.5;
-              nebulaLayer.moveTo(startMidX, startMidY);
-
-              for (let idx = 0; idx < hLen; idx++) {
-                const curr = hull[idx];
-                const next = hull[(idx + 1) % hLen];
-                const midX = (curr[0] + next[0]) * 0.5;
-                const midY = (curr[1] + next[1]) * 0.5;
-                nebulaLayer.quadraticCurveTo(curr[0], curr[1], midX, midY);
+              groups[comm].push({ obj, m, sameCommParent, memberWeight });
+              if (memberWeight > groupWeights[comm]) {
+                groupWeights[comm] = memberWeight;
               }
-              nebulaLayer.closePath();
+            });
 
-              const fillAlpha = (THEME.nebula?.fillOpacity || 0.08) * commAlphaWeight;
-              const strokeAlpha = (THEME.nebula?.strokeOpacity || 0.22) * commAlphaWeight;
-              const strokeWidth = Math.max(12, 34 * nebulaZoomScale);
+            const baseNebulaPad = (THEME.nebula?.padding || 65) * 0.55 * nebulaZoomScale;
+            const NEBULA_ANGLES = 12;
 
-              nebulaLayer.fill({ color: hexToNumber(colorObj.fill), alpha: fillAlpha });
-              nebulaLayer.stroke({
-                color: hexToNumber(colorObj.stroke),
-                alpha: strokeAlpha,
-                width: strokeWidth,
-                join: 'round',
-                cap: 'round'
-              });
+            Object.entries(groups).forEach(([commId, entries]) => {
+              if (entries.length === 0 || nebulaColors.length === 0) return;
+              const commAlphaWeight = Math.min(1, groupWeights[commId] || 0) * closeUpFade;
+              if (commAlphaWeight <= 0.02) return;
+
+              const pts = [];
+              for (let i = 0; i < entries.length; i++) {
+                const { obj: o, m, memberWeight } = entries[i];
+                // Dynamic halo radius around each orb that swells with worldRadius and contracts as children merge in
+                const padRadius = (o.worldRadius * 1.35 + baseNebulaPad * (1 - m * 0.70)) * Math.max(0.25, memberWeight);
+                for (let a = 0; a < NEBULA_ANGLES; a++) {
+                  const theta = (a * Math.PI * 2) / NEBULA_ANGLES;
+                  pts.push([
+                    o.rx + Math.cos(theta) * padRadius,
+                    o.ry + Math.sin(theta) * padRadius
+                  ]);
+                }
+              }
+
+              const hull = pts.length >= 3 ? polygonHull(pts) : null;
+              if (hull && hull.length >= 3) {
+                const colorObj = nebulaColors[parseInt(commId, 10) % nebulaColors.length];
+                const fillAlpha = (THEME.nebula?.fillOpacity || 0.08) * commAlphaWeight;
+                const strokeAlpha = (THEME.nebula?.strokeOpacity || 0.22) * commAlphaWeight;
+                const strokeWidth = Math.max(12, 34 * nebulaZoomScale);
+                cachedNebulaHulls.push({
+                  hull,
+                  colorObj,
+                  fillAlpha,
+                  strokeAlpha,
+                  strokeWidth
+                });
+              }
+            });
+          }
+
+          for (let k = 0; k < cachedNebulaHulls.length; k++) {
+            const item = cachedNebulaHulls[k];
+            const hull = item.hull;
+            const hLen = hull.length;
+            drewAnyNebula = true;
+
+            // Render a C1-continuous rounded B-spline curve through the convex hull midpoints
+            const startMidX = (hull[hLen - 1][0] + hull[0][0]) * 0.5;
+            const startMidY = (hull[hLen - 1][1] + hull[0][1]) * 0.5;
+            nebulaLayer.moveTo(startMidX, startMidY);
+
+            for (let idx = 0; idx < hLen; idx++) {
+              const curr = hull[idx];
+              const next = hull[(idx + 1) % hLen];
+              const midX = (curr[0] + next[0]) * 0.5;
+              const midY = (curr[1] + next[1]) * 0.5;
+              nebulaLayer.quadraticCurveTo(curr[0], curr[1], midX, midY);
             }
-          });
+            nebulaLayer.closePath();
+
+            nebulaLayer.fill({ color: hexToNumber(item.colorObj.fill), alpha: item.fillAlpha });
+            nebulaLayer.stroke({
+              color: hexToNumber(item.colorObj.stroke),
+              alpha: item.strokeAlpha,
+              width: item.strokeWidth,
+              join: 'round',
+              cap: 'round'
+            });
+          }
+        } else {
+          cachedNebulaHulls = [];
         }
         nebulaLayer.visible = drewAnyNebula;
 
@@ -1148,7 +1169,7 @@ export default function PixiSpatialEngine({
         edgeLayer.clear();
         bridgePhotonLayer.clear();
 
-        const drawnConduits = new Set();
+        drawnConduits.clear();
 
         currentGraphEdges.forEach(edge => {
           const srcId = typeof edge.source === 'object' ? edge.source.id : edge.source;

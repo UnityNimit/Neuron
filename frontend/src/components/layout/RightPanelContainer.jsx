@@ -1,9 +1,9 @@
 // frontend/src/components/layout/RightPanelContainer.jsx
-import React from 'react';
+import React, { memo } from 'react';
 import AiChatView from '../ai/AiChatView';
 import ModelSelectorDropdown from '../ai/ModelSelectorDropdown';
 
-export default function RightPanelContainer({
+function RightPanelContainer({
   activeFile = "",
   fileContent = "",
   aiStudio,
@@ -82,3 +82,5 @@ export default function RightPanelContainer({
     </div>
   );
 }
+
+export default memo(RightPanelContainer);

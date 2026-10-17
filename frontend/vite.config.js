@@ -23,9 +23,6 @@ export default defineConfig({
             if (id.includes('d3-force') || id.includes('d3-polygon')) {
               return 'vendor-d3';
             }
-            if (id.includes('@xyflow')) {
-              return 'vendor-xyflow';
-            }
             if (id.includes('@supabase')) {
               return 'vendor-supabase';
             }

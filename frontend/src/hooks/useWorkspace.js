@@ -1,6 +1,5 @@
 // frontend/src/hooks/useWorkspace.js
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNodesState, useEdgesState } from '@xyflow/react';
 
 // Dynamic WebSocket URL Resolver
 const getWebSocketUrl = () => {
@@ -121,8 +120,10 @@ export function useWorkspace(session) {
   const [activeSessionId, setActiveSessionId] = useState("output");
   const [isOutputRunning, setIsOutputRunning] = useState(false);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  const onNodesChange = useCallback(() => {}, []);
+  const onEdgesChange = useCallback(() => {}, []);
   
   const wsRef = useRef(null);
   const lastTargetDirRef = useRef("");

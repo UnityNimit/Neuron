@@ -145,43 +145,8 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCompilerReady, setIsCompilerReady] = useState(false);
-  // 5-second minimum display guarantee on startup and whenever the splash screen appears
-  const [minSplashElapsed, setMinSplashElapsed] = useState(false);
-  const splashLockSessionRef = useRef(false);
-  const splashLockTimerRef = useRef(null);
 
   const rawSplashNeeded = !workspace.isGraphLoaded || workspace.isFolderLoading;
-
-  useEffect(() => {
-    if (rawSplashNeeded) {
-      if (!splashLockSessionRef.current) {
-        splashLockSessionRef.current = true;
-        setMinSplashElapsed(false);
-
-        if (splashLockTimerRef.current) {
-          clearTimeout(splashLockTimerRef.current);
-        }
-
-        splashLockTimerRef.current = setTimeout(() => {
-          setMinSplashElapsed(true);
-          splashLockSessionRef.current = false;
-        }, 5000);
-      }
-    }
-  }, [rawSplashNeeded]);
-
-  // Initial startup splash timer
-  useEffect(() => {
-    splashLockSessionRef.current = true;
-    const timer = setTimeout(() => {
-      setMinSplashElapsed(true);
-      splashLockSessionRef.current = false;
-    }, 5000);
-    return () => {
-      clearTimeout(timer);
-      if (splashLockTimerRef.current) clearTimeout(splashLockTimerRef.current);
-    };
-  }, []);
   
   const [editorFocusLine, setEditorFocusLine] = useState(null);
   const [focusIsolationId, setFocusIsolationId] = useState(null);
@@ -293,7 +258,7 @@ export default function App() {
     applyTheme(getCurrentThemeId());
   }, []);
 
-  const isSplashVisible = !minSplashElapsed || rawSplashNeeded;
+  const isSplashVisible = rawSplashNeeded;
 
   // --- ACTIVATE WEBGPU PURE-RAM PHYSICS ENGINE ---
   const { simDataRef, onDragStart, onDragMove, onDragEnd } = usePhysicsEngine(
@@ -1303,7 +1268,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
 
   // --- INIT PYODIDE ENGINE (Deferred until splash completes so startup animation runs at full 60fps) ---
   useEffect(() => { 
-    if (!minSplashElapsed) return;
+    if (rawSplashNeeded) return;
 
     const timer = setTimeout(() => {
       loadPyodideEngine(
@@ -1313,7 +1278,7 @@ function getTerminalRunCommand(filePath, shellType = 'powershell') {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [minSplashElapsed, workspace]);
+  }, [rawSplashNeeded, workspace]);
 
     const allModularPanes = useMemo(() => getAllPanes(layoutTree), [layoutTree]);
   const canCloseSplit = allModularPanes.length > 1;

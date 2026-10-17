@@ -29,17 +29,33 @@ export function usePhysicsEngine(nodes = [], edges = [], wsRef, isGraphLoaded, c
     isSpawningComplete: false
   });
 
-  //  TOPOLOGY FINGERPRINTS: Detects link reconnections even if total counts remain identical
+  // TOPOLOGY FINGERPRINTS: Fast 32-bit numeric hash avoids allocating thousands of strings/arrays every render
   const nodeTopologyKey = useMemo(() => {
-    return (nodes || []).map(n => n.id).join('|');
+    if (!nodes || nodes.length === 0) return 0;
+    let hash = nodes.length;
+    for (let i = 0; i < nodes.length; i++) {
+      const id = nodes[i]?.id || '';
+      for (let j = 0; j < id.length; j++) {
+        hash = ((hash << 5) - hash + id.charCodeAt(j)) | 0;
+      }
+    }
+    return hash;
   }, [nodes]);
 
   const edgeTopologyKey = useMemo(() => {
-    return (edges || []).map(e => {
-      const s = typeof e.source === 'object' ? e.source.id : e.source;
-      const t = typeof e.target === 'object' ? e.target.id : e.target;
-      return `${e.id || 'edge'}:${s}->${t}`;
-    }).join('|');
+    if (!edges || edges.length === 0) return 0;
+    let hash = edges.length;
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
+      const s = typeof e.source === 'object' ? (e.source?.id || '') : (e.source || '');
+      const t = typeof e.target === 'object' ? (e.target?.id || '') : (e.target || '');
+      const id = e.id || '';
+      const str = `${id}:${s}->${t}`;
+      for (let j = 0; j < str.length; j++) {
+        hash = ((hash << 5) - hash + str.charCodeAt(j)) | 0;
+      }
+    }
+    return hash;
   }, [edges]);
 
   useEffect(() => {
