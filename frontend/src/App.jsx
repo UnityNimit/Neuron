@@ -269,7 +269,8 @@ export default function App() {
     workspace.isGraphLoaded, 
     isSpatialActive ? 'spatial' : 'editor',
     !isSplashVisible && (settings?.physicsSimulation ?? true),
-    settings?.spatialAnimationSpeed ?? 1.0
+    settings?.spatialAnimationSpeed ?? 1.0,
+    settings
   );
 
   // ---  PERMANENT DESKTOP & WEB AUTH RESOLVER ---

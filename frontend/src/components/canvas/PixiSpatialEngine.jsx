@@ -640,20 +640,20 @@ export default function PixiSpatialEngine({
         // Live Configurable Spatial & LOD Parameters from Settings
         const animSpeed = Math.max(0.05, Math.min(10.0, Number(curSettings.spatialAnimationSpeed ?? 1.0)));
         const globalNodeScale = Math.max(0.05, Number(curSettings.spatialNodeScale ?? 1.0));
-        const globalLineScale = Math.max(0.05, Number(curSettings.spatialLineScale ?? 1.0));
+        const globalLineScale = Math.max(0.05, Number(curSettings.spatialLineScale ?? 2.5));
         const globalTextScale = Math.max(0.05, Number(curSettings.spatialTextScale ?? 1.0));
-        const selectedLineWidth = Math.max(0.1, Number(curSettings.spatialSelectedLineWidth ?? 3.8));
-        const bridgeLineWidth = Math.max(0.1, Number(curSettings.spatialBridgeLineWidth ?? 2.5));
-        const purpleLineWidth = Math.max(0.1, Number(curSettings.spatialPurpleLineWidth ?? 1.6));
-        const folderLabelZoom = Math.max(0.005, Number(curSettings.spatialFolderLabelZoom ?? 0.10));
+        const selectedLineWidth = Math.max(0.1, Number(curSettings.spatialSelectedLineWidth ?? 1.0));
+        const bridgeLineWidth = Math.max(0.1, Number(curSettings.spatialBridgeLineWidth ?? 1.0));
+        const purpleLineWidth = Math.max(0.1, Number(curSettings.spatialPurpleLineWidth ?? 1.0));
+        const folderLabelZoom = Math.max(0.005, Number(curSettings.spatialFolderLabelZoom ?? 0.05));
         const fileLabelZoom = Math.max(0.01, Number(curSettings.spatialFileLabelZoom ?? 0.25));
-        const funcLabelZoom = Math.max(0.01, Number(curSettings.spatialFuncLabelZoom ?? 0.55));
+        const funcLabelZoom = Math.max(0.01, Number(curSettings.spatialFuncLabelZoom ?? 1.2));
         const repulseStrength = Math.max(0.05, Number(curSettings.spatialMergeRepulsion ?? 1.5));
         const transitionSpeed = Math.max(0.01, Math.min(2.0, Number(curSettings.spatialTransitionSpeed ?? 0.28)));
         const lod1Zoom = Math.max(0.01, Number(curSettings.spatialLod1Zoom ?? 0.35));
-        const lod2Zoom = Math.max(0.005, Number(curSettings.spatialLod2Zoom ?? 0.22));
-        const lod3Zoom = Math.max(0.002, Number(curSettings.spatialLod3Zoom ?? 0.12));
-        const lod4Zoom = Math.max(0.001, Number(curSettings.spatialLod4Zoom ?? 0.05));
+        const lod2Zoom = Math.max(0.005, Number(curSettings.spatialLod2Zoom ?? 0.07));
+        const lod3Zoom = Math.max(0.001, Number(curSettings.spatialLod3Zoom ?? 0.03));
+        const lod4Zoom = Math.max(0.0005, Number(curSettings.spatialLod4Zoom ?? 0.001));
 
         const currentGraphNodes = simDataRef.current.nodes || [];
         const currentGraphEdges = simDataRef.current.edges || [];
@@ -1171,6 +1171,41 @@ export default function PixiSpatialEngine({
 
         drawnConduits.clear();
 
+        // Effective mass resolution helper across hierarchical merging for all line endpoints
+        const getEffectiveMass = (obj) => {
+          if (!obj) return 0;
+          let mass = obj.absorbedMass || 0;
+          let currId = obj.node?.id;
+          while (currId && parentMap.has(currId)) {
+            const pId = parentMap.get(currId);
+            const pObj = spriteMap.get(pId);
+            if (pObj && (pObj.absorbedMass || 0) > mass) {
+              mass = pObj.absorbedMass || 0;
+            }
+            currId = pId;
+          }
+          return mass;
+        };
+
+        // Pre-pass: count converged edge connections between merged orbs for proportional bundle swell
+        const conduitBundleCounts = new Map();
+        for (let i = 0; i < currentGraphEdges.length; i++) {
+          const e = currentGraphEdges[i];
+          const sId = typeof e.source === 'object' ? e.source.id : e.source;
+          const tId = typeof e.target === 'object' ? e.target.id : e.target;
+          const s = spriteMap.get(sId);
+          const t = spriteMap.get(tId);
+          if (!s || !t) continue;
+          const qx1 = Math.round(s.rx * 0.25);
+          const qy1 = Math.round(s.ry * 0.25);
+          const qx2 = Math.round(t.rx * 0.25);
+          const qy2 = Math.round(t.ry * 0.25);
+          const pairKey = (qx1 < qx2 || (qx1 === qx2 && qy1 <= qy2))
+            ? `${e.type || 'hierarchy'}:${qx1},${qy1}-${qx2},${qy2}`
+            : `${e.type || 'hierarchy'}:${qx2},${qy2}-${qx1},${qy1}`;
+          conduitBundleCounts.set(pairKey, (conduitBundleCounts.get(pairKey) || 0) + 1);
+        }
+
         currentGraphEdges.forEach(edge => {
           const srcId = typeof edge.source === 'object' ? edge.source.id : edge.source;
           const tgtId = typeof edge.target === 'object' ? edge.target.id : edge.target;
@@ -1213,15 +1248,16 @@ export default function PixiSpatialEngine({
 
           const isCall = edge.type === 'call';
           const isBridge = edge.type === 'network_bridge';
-          const isHierarchy = edge.type === 'hierarchy';
+          const isHierarchy = edge.type === 'hierarchy' || !edge.type;
+          const isImport = edge.type === 'import';
 
           // Rapidly fade hierarchy edges as child orbs merge into their parent orb so transitions stay clean
           let mergeEdgeFade = 1.0;
           if (isHierarchy) {
-            const childM = Math.max(srcObj.mergeProgress, tgtObj.mergeProgress);
+            const childM = Math.max(srcObj.mergeProgress || 0, tgtObj.mergeProgress || 0);
             mergeEdgeFade = Math.max(0, 1 - childM * 1.65);
           } else {
-            // For call/bridge edges, fade only if the two endpoints physically converge into the same parent orb
+            // For call/bridge/import edges, fade only if the two endpoints physically converge into the same parent orb
             mergeEdgeFade = Math.min(1, edgeLen / Math.max(18, (srcObj.worldRadius + tgtObj.worldRadius) * 0.6));
           }
           if (mergeEdgeFade < 0.02) return;
@@ -1229,30 +1265,64 @@ export default function PixiSpatialEngine({
           const isHoveredHighlight = currentActiveRay?.activeE?.has(edge.id);
           const isDimmedByRay = currentActiveRay && !isHoveredHighlight;
 
+          const qx1 = Math.round(sx * 0.25);
+          const qy1 = Math.round(sy * 0.25);
+          const qx2 = Math.round(tx * 0.25);
+          const qy2 = Math.round(ty * 0.25);
+          const pairKey = (qx1 < qx2 || (qx1 === qx2 && qy1 <= qy2))
+            ? `${edge.type || 'hierarchy'}:${qx1},${qy1}-${qx2},${qy2}`
+            : `${edge.type || 'hierarchy'}:${qx2},${qy2}-${qx1},${qy1}`;
+
           // Deduplicate converged non-highlighted edges when child connections bundle between merged parent orbs
           if (!isHoveredHighlight && !isBridge) {
-            const qx1 = Math.round(sx * 0.25);
-            const qy1 = Math.round(sy * 0.25);
-            const qx2 = Math.round(tx * 0.25);
-            const qy2 = Math.round(ty * 0.25);
-            const pairKey = (qx1 < qx2 || (qx1 === qx2 && qy1 <= qy2))
-              ? `${edge.type}:${qx1},${qy1}-${qx2},${qy2}`
-              : `${edge.type}:${qx2},${qy2}-${qx1},${qy1}`;
             if (drawnConduits.has(pairKey)) return;
             drawnConduits.add(pairKey);
           }
 
-          const combinedMass = (srcObj.absorbedMass || 0) + (tgtObj.absorbedMass || 0);
+          const bundleCount = conduitBundleCounts.get(pairKey) || 1;
+          const bundleBoost = bundleCount > 1 ? (1.0 + Math.min(1.25, Math.log2(bundleCount) * 0.35)) : 1.0;
+
+          // Effective mass scaling based on zoom and host orb mass for all connecting line types
+          const srcMass = getEffectiveMass(srcObj);
+          const tgtMass = getEffectiveMass(tgtObj);
+          const combinedMass = srcMass + tgtMass;
           const massConduitBoost = 1.0 + Math.min(0.75, Math.pow(Math.max(0, combinedMass), 0.38) * 0.14);
 
-          let edgeColor = hexToNumber(isCall ? (THEME.edges?.call || '#8b5cf6') : isBridge ? '#00f0ff' : (THEME.edges?.hierarchy || '#334155'));
+          let baseLineWidth = (THEME.edges?.widthHierarchy || 1.0);
+          if (isCall) {
+            baseLineWidth = purpleLineWidth;
+          } else if (isBridge) {
+            baseLineWidth = bridgeLineWidth;
+          } else if (isImport) {
+            baseLineWidth = Math.max(1.0, purpleLineWidth * 0.85);
+          }
+
+          let edgeColor = hexToNumber(
+            isCall
+              ? (THEME.edges?.call || '#8b5cf6')
+              : isBridge
+                ? '#00f0ff'
+                : isImport
+                  ? '#38bdf8'
+                  : (THEME.edges?.hierarchy || '#334155')
+          );
           let edgeAlpha = Math.min(0.92, (THEME.edges?.opacityNormal || 0.45) * zoomAlphaBoost) * edgeSpawnAlpha * mergeEdgeFade;
-          let edgeWidth = (isCall ? purpleLineWidth : isBridge ? bridgeLineWidth : (THEME.edges?.widthHierarchy || 1.0)) * globalLineScale * edgeZoomBoost * massConduitBoost;
+          
+          // Unified dynamic zoom scaling applied to every single line type with sub-pixel visibility clamping
+          let edgeWidth = Math.max(0.35 / Math.max(0.01, zoom), baseLineWidth * edgeZoomBoost * massConduitBoost * bundleBoost);
 
           if (isHoveredHighlight) {
-            edgeColor = hexToNumber(isCall ? (THEME.edges?.callGlow || '#c084fc') : isBridge ? '#00ffff' : (THEME.edges?.hierarchyGlow || '#60a5fa'));
+            edgeColor = hexToNumber(
+              isCall
+                ? (THEME.edges?.callGlow || '#c084fc')
+                : isBridge
+                  ? '#00ffff'
+                  : isImport
+                    ? '#67e8f9'
+                    : (THEME.edges?.hierarchyGlow || '#60a5fa')
+            );
             edgeAlpha = 1.0 * mergeEdgeFade;
-            edgeWidth = selectedLineWidth * globalLineScale * edgeZoomBoost * massConduitBoost; 
+            edgeWidth = Math.max(0.55 / Math.max(0.01, zoom), selectedLineWidth * edgeZoomBoost * massConduitBoost * bundleBoost); 
           } else if (isDimmedByRay) {
             edgeAlpha = (THEME.edges?.opacityDimmed || 0.04) * edgeSpawnAlpha * mergeEdgeFade;
           }
@@ -1262,21 +1332,22 @@ export default function PixiSpatialEngine({
           edgeLayer.lineTo(Math.round(tx), Math.round(ty));
           edgeLayer.stroke({ width: edgeWidth, color: edgeColor, alpha: edgeAlpha });
 
-          // 2.  RENDER TRAVELING ENERGY PHOTONS ON CROSS-STACK BRIDGES (Frontend -> Backend)
+          // 2. RENDER TRAVELING ENERGY PHOTONS ON CROSS-STACK BRIDGES (Frontend -> Backend)
           const allowPhotons = curSettings.spatialParticles ?? true;
           if (isBridge && edgeSpawnAlpha > 0.4 && mergeEdgeFade > 0.2 && allowPhotons) {
+            const bridgeGlowWidth = Math.max(3.2 * bridgeLineWidth, 4.0) * edgeZoomBoost * massConduitBoost * bundleBoost;
             edgeLayer.moveTo(Math.round(sx), Math.round(sy));
             edgeLayer.lineTo(Math.round(tx), Math.round(ty));
-            edgeLayer.stroke({ width: Math.max(4.0, bridgeLineWidth * 3.0) * globalLineScale * edgeZoomBoost, color: 0x00f0ff, alpha: 0.18 * edgeSpawnAlpha * mergeEdgeFade });
+            edgeLayer.stroke({ width: bridgeGlowWidth, color: 0x00f0ff, alpha: 0.18 * edgeSpawnAlpha * mergeEdgeFade });
 
             for (let pIdx = 0; pIdx < 2; pIdx++) {
               const photonT = ((frameCount * 0.018 * animSpeed) + (pIdx * 0.5)) % 1.0;
               const px = sx + (tx - sx) * photonT;
               const py = sy + (ty - sy) * photonT;
 
-              bridgePhotonLayer.circle(Math.round(px), Math.round(py), Math.max(1.5, bridgeLineWidth * 1.4) * edgeZoomBoost);
+              bridgePhotonLayer.circle(Math.round(px), Math.round(py), Math.max(1.5, bridgeLineWidth * 1.4) * edgeZoomBoost * massConduitBoost);
               bridgePhotonLayer.fill({ color: 0xffffff, alpha: 0.95 * mergeEdgeFade });
-              bridgePhotonLayer.circle(Math.round(px), Math.round(py), Math.max(3.0, bridgeLineWidth * 2.8) * edgeZoomBoost);
+              bridgePhotonLayer.circle(Math.round(px), Math.round(py), Math.max(3.0, bridgeLineWidth * 2.8) * edgeZoomBoost * massConduitBoost);
               bridgePhotonLayer.fill({ color: 0x00f0ff, alpha: 0.35 * mergeEdgeFade });
             }
           }

@@ -1,28 +1,39 @@
 // src/config/engineConfig.js
 
 export const ENGINE_CONFIG = {
-  //  THE WEBGPU PHYSICS ENGINE LAWS
+  // THE WEBGPU PHYSICS ENGINE LAWS
   PHYSICS: {
-    GRAVITY_PULL: 0.025,         // Gentle centering (prevents black-hole crushing)
+    GRAVITY_PULL: 0.008,         // Gentle centering (prevents black-hole crushing)
     REPULSION: {
       folder: -1800,             // Suns push outwards firmly
       file: -600,                // Planets space out cleanly
       function: -150             // Moons orbit smoothly without exploding
     },
+    MAX_REPULSION_DISTANCE: 2600,// Max distance for many-body repulsion
     SPRING_DISTANCE: {
       moonOrbit: 45,             // Tight, clean functional orbits
       planetOrbit: 95,           // Space between files and directories
-      neuralCall: 180            // Long cross-file call conduits
+      neuralCall: 180,           // Long cross-file call conduits
+      networkBridge: 216         // Cross-stack network conduits
     },
     SPRING_STRENGTH: {
-      structural: 0.9,           // Elastic spring tension
-      neural: 0.15               // Flexible call pathways
+      hierarchy: 0.95,           // Elastic hierarchy spring tension
+      neural: 0.25,              // Flexible call pathways
+      networkBridge: 0.35        // Cross-stack bridge tension
     },
     COLLISION_RADIUS: {
       folder: 40, file: 22, function: 12
     },
-    ALPHA_DECAY: 0.02,           // Smooth natural settling
-    VELOCITY_DECAY: 0.45         // Fluid momentum with clean friction
+    COLLISION_PADDING: 10,       // Buffer padding around collision circles
+    COLLISION_ITERATIONS: 2,     // Solver passes per tick
+    ALPHA_DECAY: 0.012,          // Smooth natural settling
+    VELOCITY_DECAY: 0.54,        // Fluid momentum with clean friction
+    RESTING_ALPHA: 0.018,        // Continuous idle cosmic floating
+    DRAGGING_ALPHA: 0.25,        // Responsive dragging alpha target
+    SPAWN_SPEED: {
+      file: 6.5,
+      function: 3.5
+    }
   },
 
   //  THE LEVEL-OF-DETAIL (LOD) CAMERA BREAKPOINTS

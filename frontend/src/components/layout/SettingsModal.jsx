@@ -260,26 +260,54 @@ const EDITOR_DEFAULT_SETTINGS = {
 };
 
 const SPATIAL_DEFAULT_SETTINGS = {
-  spatialFolderLabelZoom: 0.10,
+  spatialFolderLabelZoom: 0.05,
   spatialFileLabelZoom: 0.25,
-  spatialFuncLabelZoom: 0.55,
+  spatialFuncLabelZoom: 1.2,
   spatialMergeRepulsion: 1.5,
   spatialTransitionSpeed: 0.28,
   spatialLod1Zoom: 0.35,
-  spatialLod2Zoom: 0.22,
-  spatialLod3Zoom: 0.12,
-  spatialLod4Zoom: 0.05,
+  spatialLod2Zoom: 0.07,
+  spatialLod3Zoom: 0.03,
+  spatialLod4Zoom: 0.001,
   spatialMinimap: true,
   showNodeLabels: true,
   spatialParticles: true,
   physicsSimulation: true,
   spatialAnimationSpeed: 1.0,
   spatialNodeScale: 1.0,
-  spatialLineScale: 1.0,
+  spatialLineScale: 2.5,
   spatialTextScale: 1.0,
-  spatialSelectedLineWidth: 3.8,
-  spatialBridgeLineWidth: 2.5,
-  spatialPurpleLineWidth: 1.6,
+  spatialSelectedLineWidth: 1.0,
+  spatialBridgeLineWidth: 1.0,
+  spatialPurpleLineWidth: 1.0,
+};
+
+const PHYSICS_DEFAULT_SETTINGS = {
+  physicsSimulation: true,
+  physicsGravity: 0.008,
+  spatialMergeRepulsion: 1.5,
+  physicsRepulsionFolder: -1800,
+  physicsRepulsionFile: -600,
+  physicsRepulsionFunction: -150,
+  physicsMaxRepulsionDistance: 2600,
+  physicsSpringMoonDistance: 45,
+  physicsSpringPlanetDistance: 95,
+  physicsSpringNeuralDistance: 180,
+  physicsSpringBridgeDistance: 216,
+  physicsSpringHierarchyStrength: 0.95,
+  physicsSpringCallStrength: 0.25,
+  physicsSpringBridgeStrength: 0.35,
+  physicsCollisionFolder: 40,
+  physicsCollisionFile: 22,
+  physicsCollisionFunction: 12,
+  physicsCollisionPadding: 10,
+  physicsCollisionIterations: 2,
+  physicsAlphaDecay: 0.012,
+  physicsVelocityDecay: 0.54,
+  physicsRestingAlpha: 0.018,
+  physicsDraggingAlpha: 0.25,
+  physicsSpawnFileSpeed: 6.5,
+  physicsSpawnFuncSpeed: 3.5,
 };
 
 export default function SettingsModal({ isOpen, onClose, settings, updateSetting, initialTab = 'general' }) {
@@ -556,6 +584,10 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
       Object.entries(SPATIAL_DEFAULT_SETTINGS).forEach(([key, val]) => {
         updateSetting(key, val);
       });
+    } else if (activeTab === 'physics') {
+      Object.entries(PHYSICS_DEFAULT_SETTINGS).forEach(([key, val]) => {
+        updateSetting(key, val);
+      });
     } else if (activeTab === 'appearance') {
       handleRestoreTheme();
     }
@@ -632,7 +664,8 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
     { id: 'general', label: 'General', desc: 'Workspace preferences, auto-saving, and system safety' },
     { id: 'ai', label: 'Agent', desc: 'API keys, model discovery, and agent configuration' },
     { id: 'editor', label: 'Editor', desc: 'Code editing, typography, formatting, and layout' },
-    { id: 'spatial', label: 'Spatial Map', desc: '3D celestial canvas, radar minimap, and physics simulation' },
+    { id: 'spatial', label: 'Spatial Map', desc: '3D celestial canvas, radar minimap, and visual rendering' },
+    { id: 'physics', label: 'Physics', desc: 'WebGPU force simulation laws, node repulsion, collision, gravity, and spring tension' },
     { id: 'appearance', label: 'Appearance', desc: 'Visual theme, color palettes, and custom theme token overrides' },
     { id: 'reference', label: 'Reference', desc: 'Complete keyboard shortcuts and interactive command reference' },
   ];
@@ -755,7 +788,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
             </div>
 
             <div className="flex items-center gap-1">
-              {['general', 'editor', 'spatial', 'appearance'].includes(activeTab) && (
+              {['general', 'editor', 'spatial', 'physics', 'appearance'].includes(activeTab) && (
                 <button 
                   type="button"
                   onClick={handleResetCurrentTabDefaults}
@@ -1431,7 +1464,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialLineScale ?? 1.0} 
+                    value={settings?.spatialLineScale ?? 2.5} 
                     min={0.05} 
                     max={10.0} 
                     step={0.05} 
@@ -1515,7 +1548,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialSelectedLineWidth ?? 3.8} 
+                    value={settings?.spatialSelectedLineWidth ?? 1.0} 
                     min={0.2} 
                     max={20.0} 
                     step={0.1} 
@@ -1543,7 +1576,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialBridgeLineWidth ?? 2.5} 
+                    value={settings?.spatialBridgeLineWidth ?? 1.0} 
                     min={0.2} 
                     max={20.0} 
                     step={0.1} 
@@ -1571,7 +1604,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialPurpleLineWidth ?? 1.6} 
+                    value={settings?.spatialPurpleLineWidth ?? 1.0} 
                     min={0.2} 
                     max={20.0} 
                     step={0.1} 
@@ -1599,7 +1632,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialFolderLabelZoom ?? 0.10} 
+                    value={settings?.spatialFolderLabelZoom ?? 0.05} 
                     min={0.005} 
                     max={3.0} 
                     step={0.005} 
@@ -1655,7 +1688,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialFuncLabelZoom ?? 0.55} 
+                    value={settings?.spatialFuncLabelZoom ?? 1.2} 
                     min={0.01} 
                     max={5.0} 
                     step={0.01} 
@@ -1767,7 +1800,7 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialLod2Zoom ?? 0.22} 
+                    value={settings?.spatialLod2Zoom ?? 0.07} 
                     min={0.005} 
                     max={2.0} 
                     step={0.005} 
@@ -1795,10 +1828,10 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialLod3Zoom ?? 0.12} 
-                    min={0.002} 
+                    value={settings?.spatialLod3Zoom ?? 0.03} 
+                    min={0.001} 
                     max={1.5} 
-                    step={0.005} 
+                    step={0.001} 
                     onChange={(val) => updateSetting('spatialLod3Zoom', val)} 
                   />
                 </div>
@@ -1823,10 +1856,10 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                     </span>
                   </div>
                   <MinimalSliderNumberInput 
-                    value={settings?.spatialLod4Zoom ?? 0.05} 
-                    min={0.001} 
+                    value={settings?.spatialLod4Zoom ?? 0.001} 
+                    min={0.0005} 
                     max={1.0} 
-                    step={0.002} 
+                    step={0.0005} 
                     onChange={(val) => updateSetting('spatialLod4Zoom', val)} 
                   />
                 </div>
@@ -1931,6 +1964,815 @@ export default function SettingsModal({ isOpen, onClose, settings, updateSetting
                   />
                 </div>
               </>
+            )}
+
+{/* ============================================================= */}
+            {/* 3.5. PHYSICS LAWS & FORCE SIMULATION SETTINGS                 */}
+            {/* ============================================================= */}
+            {activeTab === 'physics' && (
+              <div className="flex flex-col gap-6 py-2">
+                {/* 1. Core Engine & Centering Gravity */}
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <span 
+                      className="text-[12px] font-mono font-medium tracking-wide uppercase"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
+                    >
+                      Engine Core & Gravitational Centering
+                    </span>
+                  </div>
+
+                  {/* Physics Simulation */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Physics Simulation
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Enables real-time WebGPU node repulsion, collision, and spring physics.
+                      </span>
+                    </div>
+                    <MinimalToggle 
+                      checked={settings?.physicsSimulation ?? true} 
+                      onChange={(val) => updateSetting('physicsSimulation', val)} 
+                    />
+                  </div>
+
+                  {/* Centering Gravity Pull */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Centering Gravity Pull
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Continuous gravitational pull drawing celestial bodies inward toward the coordinate origin (0, 0).
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsGravity ?? 0.008} 
+                      min={0.0} 
+                      max={0.1} 
+                      step={0.001} 
+                      onChange={(val) => updateSetting('physicsGravity', val)} 
+                    />
+                  </div>
+
+                  {/* Merge Repulsion Multiplier */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Merge Repulsion Multiplier
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Push-away multiplier preventing clustered nodes from clumping together during hierarchical zoom transitions.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.spatialMergeRepulsion ?? 1.5} 
+                      min={0.1} 
+                      max={5.0} 
+                      step={0.1} 
+                      onChange={(val) => updateSetting('spatialMergeRepulsion', val)} 
+                    />
+                  </div>
+                </div>
+
+                {/* 2. Many-Body Repulsion Forces */}
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <span 
+                      className="text-[12px] font-mono font-medium tracking-wide uppercase"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
+                    >
+                      Many-Body Repulsion (Push Forces)
+                    </span>
+                  </div>
+
+                  {/* Folder Repulsion */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Folder Repulsion Strength
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Outward electrostatic repulsion force exerted by root directory and module suns.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsRepulsionFolder ?? -1800} 
+                      min={-8000} 
+                      max={-100} 
+                      step={50} 
+                      onChange={(val) => updateSetting('physicsRepulsionFolder', val)} 
+                    />
+                  </div>
+
+                  {/* File Repulsion */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        File Repulsion Strength
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Outward electrostatic repulsion force exerted by code file planet nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsRepulsionFile ?? -600} 
+                      min={-4000} 
+                      max={-50} 
+                      step={25} 
+                      onChange={(val) => updateSetting('physicsRepulsionFile', val)} 
+                    />
+                  </div>
+
+                  {/* Function Repulsion */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Function Repulsion Strength
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Outward electrostatic repulsion force exerted by individual function and method moon nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsRepulsionFunction ?? -150} 
+                      min={-1500} 
+                      max={-10} 
+                      step={10} 
+                      onChange={(val) => updateSetting('physicsRepulsionFunction', val)} 
+                    />
+                  </div>
+
+                  {/* Max Repulsion Distance */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Max Repulsion Distance
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Maximum spatial distance cutoff beyond which many-body node repulsion forces are zeroed out.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsMaxRepulsionDistance ?? 2600} 
+                      min={200} 
+                      max={10000} 
+                      step={100} 
+                      onChange={(val) => updateSetting('physicsMaxRepulsionDistance', val)} 
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Spring Link Distances */}
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <span 
+                      className="text-[12px] font-mono font-medium tracking-wide uppercase"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
+                    >
+                      Spring Distances (Orbit Radii)
+                    </span>
+                  </div>
+
+                  {/* Moon Orbit Spring Distance */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Moon Orbit Distance
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Resting structural spring distance between parent files and child function moon nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpringMoonDistance ?? 45} 
+                      min={10} 
+                      max={300} 
+                      step={1} 
+                      onChange={(val) => updateSetting('physicsSpringMoonDistance', val)} 
+                    />
+                  </div>
+
+                  {/* Planet Orbit Spring Distance */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Planet Orbit Distance
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Resting structural spring distance between directory folders and nested file planet nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpringPlanetDistance ?? 95} 
+                      min={20} 
+                      max={500} 
+                      step={5} 
+                      onChange={(val) => updateSetting('physicsSpringPlanetDistance', val)} 
+                    />
+                  </div>
+
+                  {/* Neural Call Spring Distance */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Neural Call Spring Distance
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Resting spring distance for cross-file function calls, imports, and execution dependencies.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpringNeuralDistance ?? 180} 
+                      min={30} 
+                      max={800} 
+                      step={5} 
+                      onChange={(val) => updateSetting('physicsSpringNeuralDistance', val)} 
+                    />
+                  </div>
+
+                  {/* Bridge Spring Distance */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Bridge Spring Distance
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Resting spring distance for cross-stack network bridge lines between frontend and backend architectures.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpringBridgeDistance ?? 216} 
+                      min={30} 
+                      max={1000} 
+                      step={5} 
+                      onChange={(val) => updateSetting('physicsSpringBridgeDistance', val)} 
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Spring Tensions (Elasticity) */}
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <span 
+                      className="text-[12px] font-mono font-medium tracking-wide uppercase"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
+                    >
+                      Spring Tensions (Elasticity)
+                    </span>
+                  </div>
+
+                  {/* Hierarchy Spring Tension */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Hierarchy Spring Tension
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Elastic tension strength holding parent-child AST hierarchical structures together.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpringHierarchyStrength ?? 0.95} 
+                      min={0.05} 
+                      max={1.0} 
+                      step={0.01} 
+                      onChange={(val) => updateSetting('physicsSpringHierarchyStrength', val)} 
+                    />
+                  </div>
+
+                  {/* Neural Call Spring Tension */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Neural Call Spring Tension
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Elastic tension strength for cross-file neural call and dependency lines.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpringCallStrength ?? 0.25} 
+                      min={0.01} 
+                      max={1.0} 
+                      step={0.01} 
+                      onChange={(val) => updateSetting('physicsSpringCallStrength', val)} 
+                    />
+                  </div>
+
+                  {/* Bridge Spring Tension */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Bridge Spring Tension
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Elastic tension strength for cross-stack network bridge conduits.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpringBridgeStrength ?? 0.35} 
+                      min={0.01} 
+                      max={1.0} 
+                      step={0.01} 
+                      onChange={(val) => updateSetting('physicsSpringBridgeStrength', val)} 
+                    />
+                  </div>
+                </div>
+
+                {/* 5. Collision Boundaries & Buffers */}
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <span 
+                      className="text-[12px] font-mono font-medium tracking-wide uppercase"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
+                    >
+                      Collision Boundaries & Buffers
+                    </span>
+                  </div>
+
+                  {/* Folder Collision Radius */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Folder Collision Radius
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Physical collision boundary radius for folder directory suns.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsCollisionFolder ?? 40} 
+                      min={5} 
+                      max={200} 
+                      step={1} 
+                      onChange={(val) => updateSetting('physicsCollisionFolder', val)} 
+                    />
+                  </div>
+
+                  {/* File Collision Radius */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        File Collision Radius
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Physical collision boundary radius for code file planets.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsCollisionFile ?? 22} 
+                      min={5} 
+                      max={150} 
+                      step={1} 
+                      onChange={(val) => updateSetting('physicsCollisionFile', val)} 
+                    />
+                  </div>
+
+                  {/* Function Collision Radius */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Function Collision Radius
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Physical collision boundary radius for function and method moon nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsCollisionFunction ?? 12} 
+                      min={2} 
+                      max={100} 
+                      step={1} 
+                      onChange={(val) => updateSetting('physicsCollisionFunction', val)} 
+                    />
+                  </div>
+
+                  {/* Collision Buffer Padding */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Collision Buffer Padding
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Extra buffer spacing added around all collision boundaries to prevent celestial overlapping.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsCollisionPadding ?? 10} 
+                      min={0} 
+                      max={100} 
+                      step={1} 
+                      onChange={(val) => updateSetting('physicsCollisionPadding', val)} 
+                    />
+                  </div>
+
+                  {/* Collision Solver Iterations */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Collision Solver Iterations
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Number of solver iteration passes per tick to strictly resolve overlapping nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsCollisionIterations ?? 2} 
+                      min={1} 
+                      max={8} 
+                      step={1} 
+                      onChange={(val) => updateSetting('physicsCollisionIterations', val)} 
+                    />
+                  </div>
+                </div>
+
+                {/* 6. Simulation Momentum, Friction & Alpha */}
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <span 
+                      className="text-[12px] font-mono font-medium tracking-wide uppercase"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
+                    >
+                      Simulation Energy & Momentum
+                    </span>
+                  </div>
+
+                  {/* Alpha Decay Rate */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Simulation Alpha Decay Rate
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Thermal cooling rate determining how quickly the force simulation settles into steady state.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsAlphaDecay ?? 0.012} 
+                      min={0.001} 
+                      max={0.1} 
+                      step={0.001} 
+                      onChange={(val) => updateSetting('physicsAlphaDecay', val)} 
+                    />
+                  </div>
+
+                  {/* Velocity Decay (Friction) */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Velocity Friction (Decay)
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Kinetic friction and momentum dampening applied to node velocities on each simulation step.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsVelocityDecay ?? 0.54} 
+                      min={0.1} 
+                      max={0.95} 
+                      step={0.01} 
+                      onChange={(val) => updateSetting('physicsVelocityDecay', val)} 
+                    />
+                  </div>
+
+                  {/* Resting Alpha Target */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Resting Alpha Target
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Continuous energy threshold maintaining perpetual celestial floating motion when idle.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsRestingAlpha ?? 0.018} 
+                      min={0.0} 
+                      max={0.1} 
+                      step={0.001} 
+                      onChange={(val) => updateSetting('physicsRestingAlpha', val)} 
+                    />
+                  </div>
+
+                  {/* Dragging Alpha Target */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Dragging Alpha Target
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Simulation energy target activated during node dragging for instant elastic responsiveness.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsDraggingAlpha ?? 0.25} 
+                      min={0.05} 
+                      max={1.0} 
+                      step={0.01} 
+                      onChange={(val) => updateSetting('physicsDraggingAlpha', val)} 
+                    />
+                  </div>
+                </div>
+
+                {/* 7. Celestial Spawning Impulses */}
+                <div className="flex flex-col gap-1">
+                  <div 
+                    className="pb-2 border-b"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <span 
+                      className="text-[12px] font-mono font-medium tracking-wide uppercase"
+                      style={{ color: 'var(--theme-accent, #3b82f6)' }}
+                    >
+                      Celestial Spawning Impulses
+                    </span>
+                  </div>
+
+                  {/* File Spawn Impulse Speed */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        File Spawn Impulse Speed
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Initial radial velocity impulse imparted onto newly spawned file planet nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpawnFileSpeed ?? 6.5} 
+                      min={0.5} 
+                      max={25.0} 
+                      step={0.5} 
+                      onChange={(val) => updateSetting('physicsSpawnFileSpeed', val)} 
+                    />
+                  </div>
+
+                  {/* Function Spawn Impulse Speed */}
+                  <div 
+                    className="py-3 flex items-center justify-between gap-6"
+                    style={{ borderColor: 'var(--theme-border, #242628)' }}
+                  >
+                    <div className="flex flex-col gap-0.5 max-w-[420px]">
+                      <span 
+                        className="text-[11.5px] font-mono font-medium"
+                        style={{ color: 'var(--theme-text-primary, #cbd5e1)' }}
+                      >
+                        Function Spawn Impulse Speed
+                      </span>
+                      <span 
+                        className="text-[11px] font-sans leading-relaxed"
+                        style={{ color: 'var(--theme-text-muted, #64748b)' }}
+                      >
+                        Initial radial velocity impulse imparted onto newly spawned function moon nodes.
+                      </span>
+                    </div>
+                    <MinimalSliderNumberInput 
+                      value={settings?.physicsSpawnFuncSpeed ?? 3.5} 
+                      min={0.5} 
+                      max={20.0} 
+                      step={0.5} 
+                      onChange={(val) => updateSetting('physicsSpawnFuncSpeed', val)} 
+                    />
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* ============================================================= */}
