@@ -33,11 +33,11 @@ This document provides a formal Software Engineering System Design for **Neuron 
 
 ```mermaid
 flowchart LR
-    Dev(["👤 Software Developer"])
-    Supervisor(["🤖 AI Supervisor"])
-    LLM(["☁️ LLM Service (Gemini / Ollama)"])
-    HostOS(["💻 Host OS / Runtime"])
-    Supabase(["🔐 Supabase Auth"])
+    Dev(["Software Developer"])
+    Supervisor(["AI Supervisor"])
+    LLM(["LLM Service (Gemini / Ollama)"])
+    HostOS(["Host OS / Runtime"])
+    Supabase(["Supabase Auth"])
 
     subgraph NeuronSystem ["Neuron Spatial IDE System Boundary"]
         UC1(["Explore Spatial Codebase"])
@@ -104,11 +104,11 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Dev["👤 Developer / Client"]
-    Disk["💾 Host File System"]
-    LLM["☁️ LLM Provider (Gemini / Ollama)"]
-    Auth["🔐 Supabase OAuth"]
-    SubProc["⚙️ OS Subprocess Runtimes"]
+    Dev["Developer / Client"]
+    Disk["Host File System"]
+    LLM["LLM Provider (Gemini / Ollama)"]
+    Auth["Supabase OAuth"]
+    SubProc["OS Subprocess Runtimes"]
 
     P0(("0.0<br/>Neuron Spatial IDE<br/>System"))
 
@@ -134,9 +134,9 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Dev["👤 Developer"]
-    Disk["💾 Host File System"]
-    LLM["☁️ LLM Engine"]
+    Dev["Developer"]
+    Disk["Host File System"]
+    LLM["LLM Engine"]
 
     %% Data Stores
     D1[("D1: Project Source Files")]
